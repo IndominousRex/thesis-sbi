@@ -1,0 +1,11 @@
+{
+  "types": {
+    "aliases": "aliases",
+    "cssclasses": "multitext",
+    "tags": "tags",
+    "created": "date",
+    "zotero_link": "text",
+    "publication": "text",
+    "related": "multitext"
+  }
+}
