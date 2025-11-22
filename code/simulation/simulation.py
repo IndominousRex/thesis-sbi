@@ -15,7 +15,7 @@ from simulation.VehicleModel import (  # your existing module
     vehicle_fy,
     radius_tire,
 )
-from ..configs.config import ExperimentConfig, PARAMETER_ORDER
+from configs.config import ExperimentConfig, PARAMETER_ORDER
 
 
 # --- Global-ish holders for config-dependent constants ---
