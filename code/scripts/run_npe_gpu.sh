@@ -1,35 +1,53 @@
 #!/bin/bash -l
-#SBATCH --job-name=npe_vehicle
+#SBATCH --job-name=npe_paramsweep
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
-#SBATCH --mem-per-cpu=8G
+#SBATCH --mem-per-cpu=4G
 #SBATCH --time=04:00:00
-#SBATCH --output=npe_gpu_%j.out
-#SBATCH --error=npe_gpu_%j.err
-#SBATCH --mail-user=aritra.saha@stud.uni-hannover.de
-#SBATCH --mail-type=END,FAIL
+#SBATCH --output=npe_gpu_%A_%a.out
+#SBATCH --error=npe_gpu_%A_%a.err
+#SBATCH --array=0-3
 
-# go back to the folder where you submitted the job from
-cd /bigwork/nhkbarit/thesis-code/code
+# -------------
+# PARAMETER SETS
+# -------------
 
-export XLA_PYTHON_CLIENT_PREALLOCATE=false
-export JAX_PLATFORM_NAME=cpu
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+# 0 -> infer mu only
+# 1 -> infer cd only
+# 2 -> infer m only
+# 3 -> infer all three (mu, cd, m)
 
-# load conda
-module load Miniforge3   
+PARAMS_LIST=("mu" "cd" "m" "mu,cd,m")
+EXP_SUFFIX_LIST=("mu_only" "cd_only" "m_only" "all_three")
 
-# activating the env in BIGWORK
+IDX=${SLURM_ARRAY_TASK_ID}
+PARAMS="${PARAMS_LIST[$IDX]}"
+EXP_SUFFIX="${EXP_SUFFIX_LIST[$IDX]}"
+
+echo "[$(date)] Starting array task ${IDX} with params='${PARAMS}' (suffix='${EXP_SUFFIX}')"
+
+# -------------------
+# ENV + WORKING DIR
+# -------------------
+cd /bigwork/nhkbarit/thesis-code/thesis/code
+
+module load Miniforge3
 conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 
-# running the experiment
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export JAX_PLATFORM_NAME=gpu
+
+# -------------------
+# RUN THE EXPERIMENT
+# -------------------
+
 srun python main.py \
-    --exp-name baseline_bigru_maf \
-    --num-sim 200 \
-    --device cuda \
+    --exp-name baseline_bigru_maf_${EXP_SUFFIX} \
+    --num-sim 20000 \
+    --device auto \
     --seed 42 \
     --dt 0.01 \
     --T-seg 3000 \
@@ -37,4 +55,5 @@ srun python main.py \
     --encoder bigru \
     --lr 1e-3 \
     --batch-train 512 \
-    --stop-after-epochs 20
+    --stop-after-epochs 20 \
+    --params "${PARAMS}"
