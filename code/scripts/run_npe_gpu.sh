@@ -3,13 +3,13 @@
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
-#SBATCH --mem-per-cpu=4G
-#SBATCH --time=08:00:00
+#SBATCH --mem-per-cpu=8G
+#SBATCH --time=04:00:00
 #SBATCH --output=npe_gpu_%j.out
 #SBATCH --error=npe_gpu_%j.err
-#SBATCH --mail-user=your.mail@stud.uni-hannover.de
+#SBATCH --mail-user=aritra.saha@stud.uni-hannover.de
 #SBATCH --mail-type=END,FAIL
 
 # go back to the folder where you submitted the job from
