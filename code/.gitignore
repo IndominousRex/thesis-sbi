@@ -5,3 +5,5 @@ __pycache__/
 *.npy
 experiments/results/
 .ipynb_checkpoints/
+*.err
+*.out

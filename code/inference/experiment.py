@@ -10,8 +10,8 @@ from sbi.diagnostics.lc2st import LC2ST
 
 from configs.config import ExperimentConfig
 from utils.env_utils import setup_environment, get_device
-from ..utils.metrics import sliced_wasserstein_prior_vs_dap
-from ..utils.plots import *
+from utils.metrics import sliced_wasserstein_prior_vs_dap
+from utils.plots import *
 from simulation.simulation import (
     init_simulation_from_config,
     make_simulator,
