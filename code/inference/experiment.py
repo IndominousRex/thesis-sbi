@@ -157,6 +157,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
             num_folds=1,
             permutation=True,
             num_trials_null=20,
+            classifier_kwargs={"validation_fraction": 0},
         )
 
         print(f"[LC2ST] Training under H0 for item {i+1}/{NUM_CAL}")
