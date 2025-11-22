@@ -401,7 +401,7 @@ def vehicle_Ex(
 
 
 def vehicle_fy(
-    veh_state,  # [geo_pos(2), yaw, dyaw, veh_vel(2), tire_rate(4)]
+    veh_state,  # [yaw, dyaw, veh_vel(2), tire_rate(4)]
     aux_input,
     p_inf,
     **params,
