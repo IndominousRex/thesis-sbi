@@ -123,37 +123,53 @@ def run_experiment(cfg: ExperimentConfig) -> None:
 
     # --- LC2ST calibration test ---
     NUM_CAL = cfg.num_calibration_items
-    theta_cal = prior.sample((NUM_CAL,)).to(device)
-    x_cal = simulator(theta_cal)  # (NUM_CAL, T_event, D_in)
 
-    # Draw samples (NUM_CAL, K, d)
+    # 1) Sample calibration parameters + generate data
+    theta_cal = prior.sample((NUM_CAL,)).to(device)  # (N, d)
+    x_cal = simulator(theta_cal)  # (N, T_event, D_in)
+    x_cal_flat = x_cal.reshape(NUM_CAL, -1).cpu()  # (N, D)
+
+    # 2) Draw posterior samples (K samples per observation)
+    K = cfg.num_lc2st_samples
     samples = posterior.sample_batched(
-        (cfg.num_lc2st_samples,), x=x_cal.to(device), max_sampling_batch_size=32
-    ).permute(
-        1, 0, 2
-    )  # (N, K, d)
+        (K,), x=x_cal.to(device), max_sampling_batch_size=32
+    )  # (K, N, d) or (N, K, d) depending on shape
 
-    # Reduce to mean across K → shape (N, d)
-    post_samples_cal = samples.mean(dim=1).cpu()
+    # Ensure shape is (N, K, d)
+    if samples.shape[0] == K:
+        samples = samples.permute(1, 0, 2)
 
-    theta_cal_cpu = theta_cal.cpu()
-    x_cal_flat_cpu = x_cal.reshape(NUM_CAL, -1).cpu()
+    # Reduce posterior samples to (N, d) for LC2ST
+    post_samples_mean = samples.mean(dim=1).cpu()  # (N, d)
 
-    lc2st = LC2ST(
-        thetas=theta_cal_cpu,
-        xs=x_cal_flat_cpu,
-        posterior_samples=post_samples_cal,
-        classifier="mlp",
-        num_ensemble=1,
-    )
+    # 3) Run LC2ST *per observation*
+    lc2st_pvals = []
 
-    print("Training LC2ST classifiers under H0 ...")
-    _ = lc2st.train_under_null_hypothesis()
-    print("Training LC2ST on observed data ...")
-    _ = lc2st.train_on_observed_data()
+    for i in range(NUM_CAL):
+        theta_o = post_samples_mean[i]  # (d,)
+        x_o = x_cal_flat[i]  # (D,)
 
-    lc2st_pval = lc2st.compute_p_values()["p_values"]
-    print("LC2ST p-values:", lc2st_pval)
+        lc2st = LC2ST(
+            thetas=theta_cal.cpu(),  # (N, d)
+            xs=x_cal_flat,  # (N, D)
+            posterior_samples=post_samples_mean,  # (N, d)
+            num_ensemble=1,
+            num_folds=1,
+            permutation=True,
+            num_trials_null=20,
+        )
+
+        print(f"[LC2ST] Training under H0 for item {i+1}/{NUM_CAL}")
+        lc2st.train_under_null_hypothesis()
+
+        print(f"[LC2ST] Training on observed data for item {i+1}/{NUM_CAL}")
+        lc2st.train_on_observed_data()
+
+        # p-value for observation i
+        p_val = lc2st.p_value(theta_o.unsqueeze(0), x_o.unsqueeze(0))
+        lc2st_pvals.append(float(p_val))
+
+    print("LC2ST p-values:", lc2st_pvals)
 
     # --- Save everything ---
     # 1) Save config
