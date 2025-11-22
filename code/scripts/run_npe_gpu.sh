@@ -38,7 +38,7 @@ module load Miniforge3
 conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-export JAX_PLATFORM_NAME=gpu
+export JAX_PLATFORM_NAME=cpu
 
 # -------------------
 # RUN THE EXPERIMENT
