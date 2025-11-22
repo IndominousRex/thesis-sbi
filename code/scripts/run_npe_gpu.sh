@@ -32,7 +32,7 @@ echo "[$(date)] Starting array task ${IDX} with params='${PARAMS}' (suffix='${EX
 # -------------------
 # ENV + WORKING DIR
 # -------------------
-cd /bigwork/nhkbarit/thesis-code/thesis/code
+cd /bigwork/nhkbarit/thesis-code/code
 
 module load Miniforge3
 conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
