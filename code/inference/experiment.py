@@ -121,56 +121,43 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     )
     print(f"Sliced Wasserstein distance (prior vs DAP): {swd_val:.4f}")
 
-    # --- LC2ST calibration test ---
-    NUM_CAL = cfg.num_calibration_items
+    # Use LC2ST exactly as in the sbi docs (one posterior sample per calibration x).
+    NUM_LC2ST = cfg.num_lc2st_samples
 
-    # 1) Sample calibration parameters + generate data
-    theta_cal = prior.sample((NUM_CAL,)).to(device)  # (N, d)
+    # 1) Calibration data from prior and simulator
+    theta_cal = prior.sample((NUM_LC2ST,)).to(device)  # (N, d)
     x_cal = simulator(theta_cal)  # (N, T_event, D_in)
-    x_cal_flat = x_cal.reshape(NUM_CAL, -1).cpu()  # (N, D)
+    x_cal_flat = x_cal.reshape(NUM_LC2ST, -1).cpu()  # (N, D)
 
-    # 2) Draw posterior samples (K samples per observation)
-    K = cfg.num_lc2st_samples
-    samples = posterior.sample_batched(
-        (K,), x=x_cal.to(device), max_sampling_batch_size=32
-    )  # (K, N, d) or (N, K, d) depending on shape
+    # 2) One posterior sample for each calibration x (shape: (N, d))
+    post_samples_cal = posterior.sample_batched(
+        (1,),
+        x=x_cal.to(device),
+        max_sampling_batch_size=32,
+    )[
+        0
+    ].cpu()  # (N, d)
 
-    # Ensure shape is (N, K, d)
-    if samples.shape[0] == K:
-        samples = samples.permute(1, 0, 2)
+    # 3) Construct LC2ST object.
+    lc2st = LC2ST(
+        thetas=theta_cal.cpu(),  # (N, d)
+        xs=x_cal_flat,  # (N, D)
+        posterior_samples=post_samples_cal,  # (N, d)
+        classifier="mlp",
+        num_ensemble=1,
+    )
 
-    # Reduce posterior samples to (N, d) for LC2ST
-    post_samples_mean = samples.mean(dim=1).cpu()  # (N, d)
+    print("Training LC2ST classifiers under H0 ...")
+    _ = lc2st.train_under_null_hypothesis()
+    print("Training LC2ST on observed data ...")
+    _ = lc2st.train_on_observed_data()
 
-    # 3) Run LC2ST *per observation*
-    lc2st_pvals = []
+    # 4) Compute a p-value at one representative calibration point.
+    theta_o = post_samples_cal[0:1, :]  # (1, d)
+    x_o = x_cal_flat[0]  # (D,)
 
-    for i in range(NUM_CAL):
-        theta_o = post_samples_mean[i]  # (d,)
-        x_o = x_cal_flat[i]  # (D,)
-
-        lc2st = LC2ST(
-            thetas=theta_cal.cpu(),  # (N, d)
-            xs=x_cal_flat,  # (N, D)
-            posterior_samples=post_samples_mean,  # (N, d)
-            num_ensemble=1,
-            num_folds=1,
-            permutation=True,
-            num_trials_null=20,
-            classifier_kwargs={"validation_fraction": 0},
-        )
-
-        print(f"[LC2ST] Training under H0 for item {i+1}/{NUM_CAL}")
-        lc2st.train_under_null_hypothesis()
-
-        print(f"[LC2ST] Training on observed data for item {i+1}/{NUM_CAL}")
-        lc2st.train_on_observed_data()
-
-        # p-value for observation i
-        p_val = lc2st.p_value(theta_o.unsqueeze(0), x_o.unsqueeze(0))
-        lc2st_pvals.append(float(p_val))
-
-    print("LC2ST p-values:", lc2st_pvals)
+    lc2st_pval = lc2st.p_value(theta_o, x_o)
+    print("LC2ST p-value (first calibration point):", lc2st_pval)
 
     # --- Save everything ---
     # 1) Save config
@@ -188,7 +175,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
         "val_loss": summary.get("validation_loss", []),
         "sbc_check_stats": {k: float(v) for k, v in check_stats.items()},
         "swd_prior_vs_dap": float(swd_val),
-        "lc2st_p_values": np.array(lc2st_pval).tolist(),
+        "lc2st_p_values": float(lc2st_pval),
     }
     with (exp_dir / "metrics.json").open("w") as f:
         json.dump(metrics, f, indent=2)
