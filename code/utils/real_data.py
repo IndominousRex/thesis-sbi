@@ -6,8 +6,8 @@ import jax
 import jax.numpy as jnp
 import torch
 
-from ..configs.config import ExperimentConfig
-from ..simulation.simulation import (
+from configs.config import ExperimentConfig
+from simulation.simulation import (
     controls_to_array,
     rollout_with_states,
     expand_theta_to_full,

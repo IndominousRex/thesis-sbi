@@ -6,7 +6,7 @@ from sbi.neural_nets import posterior_nn
 from sbi import utils as sbi_utils
 from sbi import inference as sbi_inference
 
-from ..configs.config import ExperimentConfig
+from configs.config import ExperimentConfig
 
 
 class BiGRUAttnEncoder(nn.Module):

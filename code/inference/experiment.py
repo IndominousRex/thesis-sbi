@@ -8,16 +8,16 @@ import numpy as np
 from sbi.diagnostics import run_sbc, check_sbc
 from sbi.diagnostics.lc2st import LC2ST
 
-from ..configs.config import ExperimentConfig
-from ..utils.env_utils import setup_environment, get_device
-from ..simulation.simulation import (
+from configs.config import ExperimentConfig
+from utils.env_utils import setup_environment, get_device
+from ..utils.metrics import sliced_wasserstein_prior_vs_dap
+from ..utils.plots import *
+from simulation.simulation import (
     init_simulation_from_config,
     make_simulator,
     generate_dataset,
 )
-from ..models.models import build_prior, build_density_estimator
-from ..utils.metrics import sliced_wasserstein_prior_vs_dap
-from ..utils.plots import *
+from models.models import build_prior, build_density_estimator
 
 
 def make_experiment_dir(cfg: ExperimentConfig) -> Path:
