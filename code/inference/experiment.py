@@ -126,16 +126,15 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     theta_cal = prior.sample((NUM_CAL,)).to(device)
     x_cal = simulator(theta_cal)  # (NUM_CAL, T_event, D_in)
 
-    post_samples_cal = (
-        posterior.sample_batched(
-            (cfg.num_lc2st_samples,),
-            x=x_cal.to(device),
-            max_sampling_batch_size=32,
-        )
-        .permute(1, 0, 2)
-        .reshape(-1, 32)
-        .cpu()
-    )  # (NUM_CAL, K, d)
+    # Draw samples (NUM_CAL, K, d)
+    samples = posterior.sample_batched(
+        (cfg.num_lc2st_samples,), x=x_cal.to(device), max_sampling_batch_size=32
+    ).permute(
+        1, 0, 2
+    )  # (N, K, d)
+
+    # Reduce to mean across K → shape (N, d)
+    post_samples_cal = samples.mean(dim=1).cpu()
 
     theta_cal_cpu = theta_cal.cpu()
     x_cal_flat_cpu = x_cal.reshape(NUM_CAL, -1).cpu()
