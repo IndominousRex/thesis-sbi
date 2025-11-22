@@ -133,6 +133,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
             max_sampling_batch_size=32,
         )
         .permute(1, 0, 2)
+        .reshape(-1, 32)
         .cpu()
     )  # (NUM_CAL, K, d)
 
