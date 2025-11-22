@@ -13,16 +13,22 @@
 #SBATCH --mail-type=END,FAIL
 
 # go back to the folder where you submitted the job from
-cd "../"
+cd /bigwork/nhkbarit/thesis-code
+
+# always stay on main and get the latest code
+git checkout development
+git pull
+
+cd code/
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export JAX_PLATFORM_NAME=cpu
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # load conda
-module load Miniforge3   # adapt if your cluster uses a different module name
+module load Miniforge3   
 
-# activate the env in BIGWORK
+# activating the env in BIGWORK
 conda activate /bigwork/nhkbarit/conda_envs/npe
 
 # running the experiment
