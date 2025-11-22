@@ -32,6 +32,16 @@ def make_experiment_dir(cfg: ExperimentConfig) -> Path:
     return exp_dir
 
 
+def tensor_to_python(x):
+    """Convert PyTorch tensors to Python scalars/lists recursively."""
+    if isinstance(x, torch.Tensor):
+        if x.numel() == 1:
+            return x.item()
+        else:
+            return x.cpu().numpy().tolist()
+    return x
+
+
 def run_experiment(cfg: ExperimentConfig) -> None:
     """
     End-to-end run:
@@ -173,7 +183,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     metrics: Dict[str, Any] = {
         "train_loss": summary.get("training_loss", []),
         "val_loss": summary.get("validation_loss", []),
-        "sbc_check_stats": {k: float(v) for k, v in check_stats.items()},
+        "sbc_check_stats": {k: tensor_to_python(v) for k, v in check_stats.items()},
         "swd_prior_vs_dap": float(swd_val),
         "lc2st_p_values": float(lc2st_pval),
     }
