@@ -403,7 +403,10 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
             L = (yc.shape[1] // cfg.decimate) * cfg.decimate
             yc = yc[:, : L : cfg.decimate, :]
 
-        return torch.from_numpy(np.asarray(yc, np.float32)).to(device)
+        yc_numpy = np.asarray(yc, dtype=np.float32)
+        yc_numpy_copy = yc_numpy.copy()  # to ensure contiguous array
+
+        return torch.from_numpy(yc_numpy_copy).to(device)
 
     return simulator
 
