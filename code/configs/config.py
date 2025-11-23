@@ -43,7 +43,7 @@ class ExperimentConfig:
     # --- Encoder / density estimator ---
     encoder_type: str = "bigru"  # future: "transformer"
     encoder_hidden: int = (
-        128  # TODO: try lower values for transformer (start with double of obs dim)
+        32  # TODO: try lower values for transformer (start with double of obs dim)
     )
     maf_hidden_features: int = 128
     maf_num_transforms: int = 8

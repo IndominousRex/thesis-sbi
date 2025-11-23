@@ -14,14 +14,14 @@ class BiGRUAttnEncoder(nn.Module):
     Your BiGRU + attention encoder, unchanged from the notebook.
     """
 
-    def __init__(self, input_dim: int, hidden: int = 128):
+    def __init__(self, input_dim: int, hidden: int = 64):
         super().__init__()
         self.gru = nn.GRU(
             input_dim,
             hidden,
             num_layers=2,
             batch_first=True,
-            bidirectional=True,
+            bidirectional=False,
             dropout=0.1,
         )
         self.att = nn.Linear(2 * hidden, 1)
