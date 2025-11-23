@@ -1,5 +1,5 @@
 from dataclasses import dataclass, asdict
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Optional, Tuple
 
 
 # Parameter ordering expected by the JAX vehicle model (friction, drag, mass)
@@ -42,7 +42,9 @@ class ExperimentConfig:
 
     # --- Encoder / density estimator ---
     encoder_type: str = "bigru"  # future: "transformer"
-    encoder_hidden: int = 128  # TODO: try lower values (start with double of obs dim)
+    encoder_hidden: int = (
+        128  # TODO: try lower values for transformer (start with double of obs dim)
+    )
     maf_hidden_features: int = 128
     maf_num_transforms: int = 8
 
@@ -59,6 +61,9 @@ class ExperimentConfig:
     num_calibration_items: int = 5
     num_lc2st_samples: int = 1000
     num_swd_projections: int = 1000
+
+    # --- Real data eval ---
+    real_data_csv: Optional[str] = None
 
     # --- Logging / saving ---
     results_root: str = "experiments"

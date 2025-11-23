@@ -193,4 +193,33 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     # 3) Save model weights
     torch.save(density_estimator.state_dict(), exp_dir / "density_estimator.pt")
 
+    # ---------------------------------
+    # After training: run real-data eval
+    # ---------------------------------
+    REAL_DATA_CSV = cfg.real_data_csv
+    if REAL_DATA_CSV is not None:
+        print("\n=== Running real-data evaluation ===")
+
+        import subprocess, sys
+
+        eval_script = (
+            Path(__file__).resolve().parents[2] / "scripts" / "eval_real_data.py"
+        )
+
+        cmd = [
+            sys.executable,
+            str(eval_script),
+            "--exp-dir",
+            str(exp_dir),
+            "--csv",
+            REAL_DATA_CSV,
+            "--device",
+            cfg.device,
+        ]
+
+        print("Executing:", " ".join(cmd))
+        subprocess.run(cmd, check=True)
+
+        print("Real-data evaluation completed.")
+
     print(f"Experiment completed. Results saved in: {exp_dir}")

@@ -64,6 +64,13 @@ def parse_args():
         default=1700.0,
         help="Value of mass to plug in when it is not inferred.",
     )
+    p.add_argument(
+        "--real-data-csv",
+        type=str,
+        default=None,
+        help="Optional path to real-data CSV to evaluate immediately after training.",
+    )
+
     return p.parse_args()
 
 
@@ -86,6 +93,7 @@ def main():
         fixed_mu=args.fixed_mu,
         fixed_cd=args.fixed_cd,
         fixed_m=args.fixed_m,
+        real_data_csv=args.real_data_csv,
     )
 
     run_experiment(cfg)
