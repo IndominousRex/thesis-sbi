@@ -103,6 +103,10 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     density_estimator.to(device).eval()
     posterior = inference.build_posterior(density_estimator)
 
+    # Save pickled posterior for faster loading later
+    with open(exp_dir / "posterior.pkl", "wb") as f:
+        pickle.dump(posterior, f)
+
     # --- SBC ---
     num_sbc = cfg.num_sbc_samples
     num_post = cfg.num_posterior_samples_sbc
@@ -190,13 +194,6 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     }
     with (exp_dir / "metrics.json").open("w") as f:
         json.dump(metrics, f, indent=2)
-
-    # Save a CPU copy of the posterior for portability across devices.
-    posterior_to_save = posterior
-    if hasattr(posterior_to_save, "to"):
-        posterior_to_save = posterior_to_save.to("cpu")
-    with (exp_dir / "posterior.pkl").open("wb") as f:
-        pickle.dump(posterior_to_save, f)
 
     # 3) Save model weights
     torch.save(density_estimator.state_dict(), exp_dir / "density_estimator.pt")

@@ -107,9 +107,7 @@ def main():
             if hasattr(posterior, "to"):
                 posterior = posterior.to(device)
             if posterior is None:
-                print(
-                    f"[eval] Pickled posterior was None, rebuilding from state_dict."
-                )
+                print(f"[eval] Pickled posterior was None, rebuilding from state_dict.")
         except Exception as exc:
             print(f"[eval] Failed to load pickled posterior ({exc}); rebuilding.")
             posterior = None
