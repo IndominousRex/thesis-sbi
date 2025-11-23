@@ -21,7 +21,7 @@ class BiGRUAttnEncoder(nn.Module):
             hidden,
             num_layers=2,
             batch_first=True,
-            bidirectional=False,
+            bidirectional=True,
             dropout=0.1,
         )
         self.att = nn.Linear(2 * hidden, 1)
