@@ -101,7 +101,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     )
 
     density_estimator.to(device).eval()
-    posterior = inference.build_posterior(density_estimator)
+    posterior = inference.build_posterior(density_estimator, sample_with="mcmc")
 
     # Save pickled posterior for faster loading later
     with open(exp_dir / "posterior.pkl", "wb") as f:
@@ -149,6 +149,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
         (1,),
         x=x_cal.to(device),
         max_sampling_batch_size=32,
+        sample_with="mcmc",
     )[
         0
     ].cpu()  # (N, d)
