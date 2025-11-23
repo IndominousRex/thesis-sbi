@@ -100,26 +100,35 @@ def main():
 
     posterior = None
     posterior_path = exp_dir / "posterior.pkl"
+
     if posterior_path.exists():
         try:
             with posterior_path.open("rb") as f:
                 posterior = pickle.load(f)
+
             if hasattr(posterior, "to"):
-                posterior = posterior.to(device)
-            if posterior is None:
-                print(f"[eval] Pickled posterior was None, rebuilding from state_dict.")
+                posterior.to(device)
+
+            print(f"[eval] Loaded pickled posterior from {posterior_path}")
+
         except Exception as exc:
             print(f"[eval] Failed to load pickled posterior ({exc}); rebuilding.")
             posterior = None
 
+    # Fallback: rebuild density estimator, load state_dict, then build posterior
     if posterior is None:
-        state_dict = torch.load(exp_dir / "density_estimator.pt", map_location=device)
-        density_estimator.load_state_dict(state_dict)
-        density_estimator.to(device).eval()
-        posterior = inference.build_posterior(density_estimator)
+        state_dict_path = exp_dir / "density_estimator.pt"
+        assert state_dict_path.exists(), f"Missing {state_dict_path}"
+
+        # Let sbi create a fresh neural posterior with the right architecture
+        density_estimator_net = inference._build_neural_posterior()
+        density_estimator_net.load_state_dict(
+            torch.load(state_dict_path, map_location=device)
+        )
+        density_estimator_net.to(device).eval()
+
+        posterior = inference.build_posterior(density_estimator_net)
         print("[eval] Built posterior from density_estimator.pt")
-    else:
-        print(f"[eval] Loaded pickled posterior from {posterior_path}")
 
     # --- 4) Load real CSV and build window matching training format ---
     df_real = pd.read_csv(args.csv)
