@@ -202,9 +202,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
 
         import subprocess, sys
 
-        eval_script = (
-            Path(__file__).resolve().parents[2] / "scripts" / "eval_real_data.py"
-        )
+        eval_script = Path(__file__).resolve().parents[2] / "code" / "eval_real_data.py"
 
         cmd = [
             sys.executable,
