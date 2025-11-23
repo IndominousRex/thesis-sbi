@@ -149,7 +149,6 @@ def run_experiment(cfg: ExperimentConfig) -> None:
         (1,),
         x=x_cal.to(device),
         max_sampling_batch_size=32,
-        sample_with="mcmc",
     )[
         0
     ].cpu()  # (N, d)
