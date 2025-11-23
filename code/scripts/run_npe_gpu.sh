@@ -29,9 +29,6 @@ EXP_SUFFIX="${EXP_SUFFIX_LIST[$IDX]}"
 
 echo "[$(date)] Starting array task ${IDX} with params='${PARAMS}' (suffix='${EXP_SUFFIX}')"
 
-# -------------------
-# ENV + WORKING DIR
-# -------------------
 cd /bigwork/nhkbarit/thesis-code/code
 
 module load Miniforge3
@@ -47,7 +44,7 @@ export JAX_PLATFORM_NAME=cpu
 srun python main.py \
     --exp-name baseline_bigru_maf_${EXP_SUFFIX} \
     --num-sim 20000 \
-    --device auto \
+    --device cuda \
     --seed 42 \
     --dt 0.01 \
     --T-seg 3000 \
@@ -56,4 +53,5 @@ srun python main.py \
     --lr 1e-3 \
     --batch-train 512 \
     --stop-after-epochs 20 \
-    --params "${PARAMS}"
+    --params "${PARAMS}" \
+    --real-data-csv "../data/measurements/Jeversen_2022_10_12_110132.csv"
