@@ -2,9 +2,9 @@
 
 import argparse
 import json
+import pickle
 from pathlib import Path
 import numpy as np
-
 import torch
 import pandas as pd
 
@@ -98,11 +98,19 @@ def main():
         cfg, input_dim=D_in, prior=prior, device=device
     )
 
-    state_dict = torch.load(exp_dir / "density_estimator.pt", map_location=device)
-    density_estimator.load_state_dict(state_dict)
-    density_estimator.to(device).eval()
-
-    posterior = inference.build_posterior(density_estimator)
+    posterior_path = exp_dir / "posterior.pkl"
+    if posterior_path.exists():
+        with posterior_path.open("rb") as f:
+            posterior = pickle.load(f)
+        if hasattr(posterior, "to"):
+            posterior = posterior.to(device)
+        print(f"[eval] Loaded pickled posterior from {posterior_path}")
+    else:
+        state_dict = torch.load(exp_dir / "density_estimator.pt", map_location=device)
+        density_estimator.load_state_dict(state_dict)
+        density_estimator.to(device).eval()
+        posterior = inference.build_posterior(density_estimator)
+        print("[eval] Built posterior from density_estimator.pt")
 
     # --- 4) Load real CSV and build window matching training format ---
     df_real = pd.read_csv(args.csv)

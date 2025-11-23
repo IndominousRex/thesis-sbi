@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any
+import pickle
 
 import torch
 import numpy as np
@@ -189,6 +190,9 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     }
     with (exp_dir / "metrics.json").open("w") as f:
         json.dump(metrics, f, indent=2)
+
+    with (exp_dir / "posterior.pkl").open("wb") as f:
+        pickle.dump(posterior, f)
 
     # 3) Save model weights
     torch.save(density_estimator.state_dict(), exp_dir / "density_estimator.pt")
