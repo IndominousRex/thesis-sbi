@@ -3,13 +3,13 @@
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:a100m40:4
+#SBATCH --cpus-per-task=8
+#SBATCH --gres=gpu:1
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=04:00:00
 #SBATCH --output=npe_gpu_%A_%a.out
 #SBATCH --error=npe_gpu_%A_%a.err
-#SBATCH --array=0-3
+#SBATCH --array=0-3%1
 
 # -------------
 # PARAMETER SETS
