@@ -9,7 +9,7 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=npe_gpu_%A_%a.out
 #SBATCH --error=npe_gpu_%A_%a.err
-#SBATCH --array=0-3%1
+#SBATCH --array=0-3
 
 # -------------
 # PARAMETER SETS

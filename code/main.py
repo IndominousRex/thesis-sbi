@@ -40,6 +40,7 @@ def parse_args():
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--batch-train", type=int, default=512)
     p.add_argument("--stop-after-epochs", type=int, default=20)
+    p.add_argument("--num-lc2st-samples", type=int, default=1000)
     p.add_argument(
         "--params",
         type=active_param_type,
@@ -93,6 +94,7 @@ def main():
         fixed_mu=args.fixed_mu,
         fixed_cd=args.fixed_cd,
         fixed_m=args.fixed_m,
+        num_lc2st_samples=args.num_lc2st_samples,
         real_data_csv=args.real_data_csv,
     )
 

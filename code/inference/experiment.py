@@ -151,12 +151,17 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     x_cal_flat = x_cal.reshape(NUM_LC2ST, -1).cpu()  # (N, D)
 
     # 2) One posterior sample for each calibration x (shape: (N, d))
-    post_samples_cal = posterior.sample_batched(
-        (1,),
-        x=x_cal.to(device),
-    )[
-        0
-    ].cpu()  # (N, d)
+    #    We do this in a loop to avoid huge batched sampling.
+    post_samples_list = []
+    with torch.no_grad():
+        for i in range(NUM_LC2ST):
+            # x_cal: (N, T_event, D_in)
+            xi = x_cal[i : i + 1].to(device)  # (1, T, D)
+            # For NPE + direct posterior, this is very cheap:
+            samp_i = posterior.sample((1,), x=xi)  # (1, d)
+            post_samples_list.append(samp_i[0].cpu())  # (d,)
+
+    post_samples_cal = torch.stack(post_samples_list, dim=0)  # (N, d)
 
     # 3) Construct LC2ST object.
     lc2st = LC2ST(

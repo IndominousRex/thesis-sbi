@@ -39,6 +39,7 @@ srun python main.py \
     --lr 1e-3 \
     --batch-train 32 \
     --stop-after-epochs 1 \
+    --num-lc2st-samples 100 \
     --params "mu,cd,m" \
     --real-data-csv "../data/measurements/Jeversen_2022_10_12_110132.csv"
 
