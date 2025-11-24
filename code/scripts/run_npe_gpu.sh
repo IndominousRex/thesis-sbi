@@ -50,6 +50,7 @@ srun python main.py \
     --T-seg 3000 \
     --decimate 2 \
     --encoder bigru \
+    --encoder-hidden 32 \
     --lr 1e-3 \
     --batch-train 32 \
     --stop-after-epochs 20 \
