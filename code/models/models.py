@@ -149,12 +149,20 @@ def build_embedding(cfg: ExperimentConfig, input_dim: int, seq_len: int, device)
         # transformer config from cfg
         trans_cfg = dict(
             vit=False,
+            is_causal=False,
             feature_space_dim=cfg.transformer_feature_dim,
             sequence_length=seq_len,
             output_dim=cfg.embedding_output_dim,
-            num_layers=cfg.transformer_layers,
-            num_heads=cfg.transformer_heads,
+            # depth
+            num_layers=cfg.transformer_layers,  # for sbi's own API
+            num_hidden_layers=cfg.transformer_layers,  # for HF-style API
+            # heads:
+            num_heads=cfg.transformer_heads,  # 4 (for some versions)
+            num_attention_heads=cfg.transformer_heads,  # 4 (HF-style)
+            num_key_value_heads=cfg.transformer_heads,  # 4 (HF-style)
+            # per-head dimension
             head_dim=cfg.transformer_head_dim,
+            # model dimension
             d_model=cfg.transformer_feature_dim,
         )
 

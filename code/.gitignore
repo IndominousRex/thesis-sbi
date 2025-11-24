@@ -7,3 +7,5 @@ experiments/results/
 .ipynb_checkpoints/
 *.err
 *.out
+dummy.ipynb
+sbi_logs/
