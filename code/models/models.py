@@ -106,7 +106,7 @@ def build_embedding(cfg: ExperimentConfig, input_dim: int, seq_len: int, device)
             dilation_base=cfg.causalcnn_dilation_base,
             out_channels=cfg.causalcnn_out_channels,
             pool_kernel_size=cfg.causalcnn_pool_kernel,
-            output_dim=cfg.embedding_output_dim,  # must exist in config
+            output_dim=cfg.embedding_output_dim,
         ).to(device)
         return embedding_cnn, cfg.embedding_output_dim
 
@@ -155,7 +155,7 @@ def build_density_estimator(
     """
 
     # We need seq_len for CNN/Transformer embeddings
-    seq_len = cfg.T_event  # assigned from config when building simulation
+    seq_len = cfg.T_seg // cfg.decimate
 
     # Build embedding network
     embedding_net, emb_dim = build_embedding(cfg, input_dim, seq_len, device)
