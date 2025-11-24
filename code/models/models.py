@@ -38,6 +38,46 @@ class BiGRUAttnEncoder(nn.Module):
 
 
 # -----------------------------------------------------------------------------
+# CausalCNN embedding wrapper
+# -----------------------------------------------------------------------------
+class ProjectedCausalCNN(nn.Module):
+    """
+    Wrapper to adapt multivariate time series (B,T,D) to CausalCNNEmbedding,
+    which only supports 1D sequences.
+
+    Steps:
+      - apply a Linear over the feature dimension: (B,T,D) -> (B,T,1)
+      - squeeze to (B,T)
+      - feed into CausalCNNEmbedding configured with input_shape=(T,)
+    """
+
+    def __init__(self, input_dim: int, seq_len: int, cfg: ExperimentConfig):
+        super().__init__()
+
+        # Project D_in -> 1 at each time step
+        self.proj = nn.Linear(input_dim, 1)
+
+        # CausalCNNEmbedding expects 1D input: (T,)
+        self.cnn = embedding_nets.CausalCNNEmbedding(
+            input_shape=(seq_len,),  # NOTE: 1D shape!
+            num_conv_layers=cfg.causalcnn_num_layers,
+            kernel_size=cfg.causalcnn_kernel_size,
+            pool_kernel_size=cfg.causalcnn_pool_kernel,
+            output_dim=cfg.embedding_output_dim,
+        )
+
+    def forward(self, x):
+        # x: (B, T, D_in)
+        if x.ndim != 3:
+            raise ValueError(f"Expected (B,T,D), got {x.shape}")
+
+        B, T, D = x.shape
+        x = self.proj(x).squeeze(-1)  # (B, T, 1) -> (B, T)
+        # CausalCNNEmbedding supports batched (B, T) inputs
+        return self.cnn(x)  # (B, output_dim)
+
+
+# -----------------------------------------------------------------------------
 # Transformer embedding wrapper
 # -----------------------------------------------------------------------------
 class ProjectedTransformer(nn.Module):
@@ -82,7 +122,7 @@ def build_embedding(cfg: ExperimentConfig, input_dim: int, seq_len: int, device)
     Build embedding net: bigru | causalcnn | transformer
     Returns embedding_net, embedding_output_dim
     """
-    etype = cfg.encoder_type.lower()
+    etype = cfg.encoder_type
 
     # === BIGRU ================================================================
     if etype == "bigru":
@@ -93,19 +133,16 @@ def build_embedding(cfg: ExperimentConfig, input_dim: int, seq_len: int, device)
         encoder.gru.flatten_parameters()
         # output_dim = 2 * hidden
         out_dim = 2 * cfg.encoder_hidden
-        return encoder, out_dim
+        return encoder
 
     # === CAUSAL CNN ===========================================================
     elif etype == "causalcnn":
-        # input shape for CNN is (T, input_dim), but wrapped internally
-        embedding_cnn = embedding_nets.CausalCNNEmbedding(
-            input_shape=(seq_len, input_dim),
-            num_conv_layers=cfg.causalcnn_num_layers,
-            kernel_size=cfg.causalcnn_kernel_size,
-            pool_kernel_size=cfg.causalcnn_pool_kernel,
-            output_dim=cfg.embedding_output_dim,
+        embedding_net = ProjectedCausalCNN(
+            input_dim=input_dim,
+            seq_len=seq_len,
+            cfg=cfg,
         ).to(device)
-        return embedding_cnn, cfg.embedding_output_dim
+        return embedding_net
 
     # === TRANSFORMER ==========================================================
     elif etype == "transformer":
@@ -129,7 +166,7 @@ def build_embedding(cfg: ExperimentConfig, input_dim: int, seq_len: int, device)
             d_model=cfg.transformer_feature_dim,
         ).to(device)
 
-        return embedding_net, cfg.embedding_output_dim
+        return embedding_net
 
     else:
         raise NotImplementedError(f"Unknown encoder_type: {cfg.encoder_type}")
@@ -155,7 +192,7 @@ def build_density_estimator(
     seq_len = cfg.T_seg // cfg.decimate
 
     # Build embedding network
-    embedding_net, emb_dim = build_embedding(cfg, input_dim, seq_len, device)
+    embedding_net = build_embedding(cfg, input_dim, seq_len, device)
 
     # Build MAF density estimator
     density_estimator = posterior_nn(
