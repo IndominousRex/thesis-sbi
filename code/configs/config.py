@@ -45,21 +45,18 @@ class ExperimentConfig:
     encoder_hidden: int = 32
 
     # ---- Transformer ----
-    transformer_feature_dim: int = 64
     transformer_layers: int = 2
     transformer_heads: int = 4
     transformer_head_dim: int = 16
+    transformer_feature_dim: int = transformer_heads * transformer_head_dim
 
     # ---- CausalCNN ----
     causalcnn_num_layers: int = 4
-    causalcnn_num_filters: int = 32
     causalcnn_kernel_size: int = 3
-    causalcnn_dilation_base: int = 2
-    causalcnn_out_channels: int = 128
-    causalcnn_pool_kernel: int = 4
+    causalcnn_pool_kernel: int = 64
 
     # ---- common ----
-    embedding_output_dim: int = 128  # used by CNN / Transformer
+    embedding_output_dim: int = 64  # used by CNN / Transformer
 
     maf_hidden_features: int = 128
     maf_num_transforms: int = 8

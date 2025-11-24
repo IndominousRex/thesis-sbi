@@ -13,8 +13,8 @@ def parameter_rmse_distribution(theta_true: torch.Tensor, theta_samples: torch.T
     """
     assert theta_true.ndim == 2
     assert theta_samples.ndim == 3
-    N, K, d = theta_samples.shape
-    assert theta_true.shape == (N, d)
+    K, T, D = theta_samples.shape
+    assert theta_true.shape == (T, D)
 
     theta_true_expanded = theta_true.unsqueeze(1)  # (N, 1, d)
     sq_err = (theta_samples - theta_true_expanded) ** 2  # (N, K, d)

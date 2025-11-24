@@ -101,10 +101,7 @@ def build_embedding(cfg: ExperimentConfig, input_dim: int, seq_len: int, device)
         embedding_cnn = embedding_nets.CausalCNNEmbedding(
             input_shape=(seq_len, input_dim),
             num_conv_layers=cfg.causalcnn_num_layers,
-            num_filters=cfg.causalcnn_num_filters,
             kernel_size=cfg.causalcnn_kernel_size,
-            dilation_base=cfg.causalcnn_dilation_base,
-            out_channels=cfg.causalcnn_out_channels,
             pool_kernel_size=cfg.causalcnn_pool_kernel,
             output_dim=cfg.embedding_output_dim,
         ).to(device)
@@ -115,7 +112,7 @@ def build_embedding(cfg: ExperimentConfig, input_dim: int, seq_len: int, device)
         # transformer config from cfg
         trans_cfg = dict(
             vit=False,
-            feature_space_dim=cfg.transformer_feature_dim,  # = d_model
+            feature_space_dim=cfg.transformer_feature_dim,
             sequence_length=seq_len,
             output_dim=cfg.embedding_output_dim,
             num_layers=cfg.transformer_layers,
