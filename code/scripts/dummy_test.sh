@@ -30,7 +30,7 @@ echo "[Dummy] Running tiny training run..."
 srun python main.py \
     --exp-name dummy_test \
     --num-sim 200 \
-    --device auto \
+    --device cuda \
     --seed 42 \
     --dt 0.01 \
     --T-seg 200 \

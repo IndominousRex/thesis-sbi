@@ -101,7 +101,11 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     )
 
     density_estimator.to(device).eval()
-    posterior = inference.build_posterior(density_estimator, sample_with="mcmc")
+
+    posterior = inference.build_posterior(
+        density_estimator,
+        sample_with="direct",
+    )
 
     # Save pickled posterior for faster loading later
     with open(exp_dir / "posterior.pkl", "wb") as f:
@@ -136,7 +140,9 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     )
     print(f"Sliced Wasserstein distance (prior vs DAP): {swd_val:.4f}")
 
-    # Use LC2ST exactly as in the sbi docs (one posterior sample per calibration x).
+    # ================================
+    # LC2ST – using direct sampling
+    # ================================
     NUM_LC2ST = cfg.num_lc2st_samples
 
     # 1) Calibration data from prior and simulator
@@ -148,7 +154,6 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     post_samples_cal = posterior.sample_batched(
         (1,),
         x=x_cal.to(device),
-        max_sampling_batch_size=32,
     )[
         0
     ].cpu()  # (N, d)
