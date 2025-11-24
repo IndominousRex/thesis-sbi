@@ -36,7 +36,12 @@ def parse_args():
     p.add_argument("--dt", type=float, default=0.01)
     p.add_argument("--T-seg", type=int, default=3000)
     p.add_argument("--decimate", type=int, default=2)
-    p.add_argument("--encoder", type=str, default="bigru")
+    p.add_argument(
+        "--encoder-type",
+        type=str,
+        choices=["bigru", "causalcnn", "transformer"],
+        default="bigru",
+    )
     p.add_argument("--encoder-hidden", type=int, default=32)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--batch-train", type=int, default=512)
@@ -87,7 +92,7 @@ def main():
         T_seg=args.T_seg,
         decimate=args.decimate,
         num_simulations=args.num_sim,
-        encoder_type=args.encoder,
+        encoder_type=args.encoder_type,
         encoder_hidden=args.encoder_hidden,
         learning_rate=args.lr,
         training_batch_size=args.batch_train,

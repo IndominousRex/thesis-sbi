@@ -41,10 +41,26 @@ class ExperimentConfig:
     jit_warmup: bool = True
 
     # --- Encoder / density estimator ---
-    encoder_type: str = "bigru"  # future: "transformer"
-    encoder_hidden: int = (
-        32  # TODO: try lower values for transformer (start with double of obs dim)
-    )
+    encoder_type: str = "bigru"  # bigru | causalcnn | transformer
+    encoder_hidden: int = 32
+
+    # ---- Transformer ----
+    transformer_feature_dim: int = 64
+    transformer_layers: int = 2
+    transformer_heads: int = 4
+    transformer_head_dim: int = 16
+
+    # ---- CausalCNN ----
+    causalcnn_num_layers: int = 4
+    causalcnn_num_filters: int = 32
+    causalcnn_kernel_size: int = 3
+    causalcnn_dilation_base: int = 2
+    causalcnn_out_channels: int = 128
+    causalcnn_pool_kernel: int = 4
+
+    # ---- common ----
+    embedding_output_dim: int = 128  # used by CNN / Transformer
+
     maf_hidden_features: int = 128
     maf_num_transforms: int = 8
 

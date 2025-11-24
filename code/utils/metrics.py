@@ -48,28 +48,6 @@ def posterior_spread_vs_error(
     return mean_post, std_post, abs_error, z_scores
 
 
-def rmse_posterior_predictive(y_real: torch.Tensor, y_samples: torch.Tensor):
-    """
-    RMSE between posterior predictive trajectories and real trajectory.
-    """
-    assert y_real.ndim == 2
-    assert y_samples.ndim == 3
-    K, T, D = y_samples.shape
-    assert y_real.shape == (T, D)
-
-    y_real_expanded = y_real.unsqueeze(0)  # (1, T, D)
-
-    sq_err = (y_samples - y_real_expanded) ** 2
-    mse_per_sample = sq_err.mean(dim=(1, 2))  # (K,)
-    rmse_per_sample = torch.sqrt(mse_per_sample)
-    rmse_overall = rmse_per_sample.mean()
-
-    mse_per_dim = sq_err.mean(dim=(0, 1))  # (D,)
-    rmse_per_dim = torch.sqrt(mse_per_dim)
-
-    return rmse_per_sample, rmse_overall, rmse_per_dim
-
-
 def w2_sequence_vs_real(
     y_real: torch.Tensor,
     y_samples: torch.Tensor,
@@ -176,7 +154,7 @@ def real_data_trajectory_metrics(
     y_ppc_t = torch.from_numpy(y_ppc_np.astype(np.float32))
 
     # 1) RMSE metrics
-    _, rmse_overall, rmse_per_dim_t = rmse_posterior_predictive(y_real_t, y_ppc_t)
+    _, rmse_overall, rmse_per_dim_t = parameter_rmse_distribution(y_real_t, y_ppc_t)
     rmse_per_dim = rmse_per_dim_t.cpu().numpy().tolist()
 
     # 2) W2 metrics
