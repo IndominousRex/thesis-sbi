@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=npe_dummy_archs
-#SBATCH --output=npe_dummy_%A_%a.out
-#SBATCH --error=npe_dummy_%A_%a.err
+#SBATCH --job-name=npe_archs
+#SBATCH --output=npe_archs_%A_%a.out
+#SBATCH --error=npe_archs_%A_%a.err
 #SBATCH --array=0-2              # 0 = bigru, 1 = transformer, 2 = causalcnn
 #SBATCH --time=01:00:00          
 #SBATCH --partition=gpu
@@ -26,23 +26,22 @@ ENCODER="${ARCHS[$SLURM_ARRAY_TASK_ID]}"
 echo "Running dummy test for encoder: $ENCODER"
 
 # -------------------------
-# RUN THE DUMMY EXPERIMENT
+# RUN THE BASELINE EXPERIMENT
 # -------------------------
 srun python main.py \
-    --exp-name dummy_${ENCODER} \
-    --num-sim 200 \
+    --exp-name baseline_${ENCODER} \
+    --num-sim 20000 \
     --device cuda \
     --seed 42 \
     --dt 0.01 \
-    --T-seg 200 \
+    --T-seg 3000 \
     --decimate 2 \
     --encoder-type $ENCODER \
     --encoder-hidden 32 \
     --lr 1e-3 \
-    --batch-train 32 \
-    --stop-after-epochs 1 \
-    --num-lc2st-samples 20 \
+    --batch-train 256 \
+    --stop-after-epochs 20 \
+    --num-lc2st-samples 1000 \
     --params "mu,cd,m" \
     --real-data-csv "../data/measurements/Jeversen_2022_10_12_110132.csv"
 
-echo "Dummy run for $ENCODER completed."
