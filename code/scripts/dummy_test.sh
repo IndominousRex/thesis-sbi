@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:h200:4
 #SBATCH --mem-per-cpu=4G
 #SBATCH --time=02:00:00
 #SBATCH --output=npe_allparams_%j.out
@@ -35,7 +35,7 @@ srun python main.py \
     --dt 0.01 \
     --T-seg 200 \
     --decimate 2 \
-    --encoder bigru \
+    --encoder transformer \
     --lr 1e-3 \
     --batch-train 32 \
     --stop-after-epochs 1 \
