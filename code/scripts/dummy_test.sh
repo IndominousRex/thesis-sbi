@@ -35,7 +35,8 @@ srun python main.py \
     --dt 0.01 \
     --T-seg 200 \
     --decimate 2 \
-    --encoder transformer \
+    --encoder-type transformer \
+    --encoder-hidden 8 \
     --lr 1e-3 \
     --batch-train 32 \
     --stop-after-epochs 1 \
