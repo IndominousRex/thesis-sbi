@@ -5,7 +5,7 @@
 #SBATCH --array=0-2              # 0 = bigru, 1 = transformer, 2 = causalcnn
 #SBATCH --time=01:00:00          
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:1     
+#SBATCH --gres=gpu:h200:4    
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 

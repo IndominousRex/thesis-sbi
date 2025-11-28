@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:h200:4
 #SBATCH --mem-per-cpu=4G
 #SBATCH --time=4:00:00
 #SBATCH --output=npe_allparams_%j.out
@@ -24,17 +24,17 @@ export JAX_PLATFORM_NAME=cpu
 
 # --- run experiment: infer all three parameters ---
 srun python main.py \
-    --exp-name baseline_bigru_maf_all_three \
+    --exp-name baseline_transformer_maf_all_three \
     --num-sim 20000 \
     --device cuda \
     --seed 42 \
     --dt 0.01 \
     --T-seg 3000 \
     --decimate 2 \
-    --encoder bigru \
-    --encoder-hidden 128 \
+    --encoder-type transformer \
+    --encoder-hidden 32 \
     --lr 1e-3 \
-    --batch-train 512 \
+    --batch-train 256 \
     --stop-after-epochs 20 \
     --params "mu,cd,m" \
     --real-data-csv "../data/measurements/Jeversen_2022_10_12_110132.csv"
