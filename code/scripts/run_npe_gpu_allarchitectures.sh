@@ -1,13 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=npe_archs
-#SBATCH --output=npe_archs_%A_%a.out
-#SBATCH --error=npe_archs_%A_%a.err
+#SBATCH --job-name=npe_archs_allparams
 #SBATCH --array=0-2              # 0 = bigru, 1 = transformer, 2 = causalcnn
-#SBATCH --time=01:00:00          
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:h200:4    
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --gres=gpu:h200:4
+#SBATCH --mem-per-cpu=4G
+#SBATCH --time=4:00:00
+#SBATCH --output=npe_archs_allparams_%j.out
+#SBATCH --error=npe_archs_allparams_%j.err
 
 cd /bigwork/nhkbarit/thesis-code/code
 
