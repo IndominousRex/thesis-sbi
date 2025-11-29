@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:h200:4
+#SBATCH --gres=gpu:h200:1
 #SBATCH --mem-per-cpu=4G
 #SBATCH --time=4:00:00
 #SBATCH --output=npe_allparams_%j.out
