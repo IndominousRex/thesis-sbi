@@ -29,7 +29,7 @@ echo "Running dummy test for encoder: $ENCODER"
 # RUN THE BASELINE EXPERIMENT
 # -------------------------
 srun python main.py \
-    --exp-name baseline_${ENCODER} \
+    --exp-name baseline_${ENCODER}_allparams \
     --num-sim 20000 \
     --device cuda \
     --seed 42 \
