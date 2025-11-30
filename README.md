@@ -12,9 +12,16 @@
 ---
 # Protocol
 
-## 19.09.2025
+## 01.12.2025
 
-- asdf
+- Looked at the repo for SLURM and chose to stick to the current workflow
+- Explicitly chosen GPUs for the SLURM scripts and fixed memory issues for Transformer embedding with NPE run
+- Fixing an error with LC2ST and CausalCNN
+- Added LC2ST-NF
+- Fixed PPC plots to use the same initial states to match the observed data
+- Added plots for LC2ST-NF
+- Adding functions from the FNPSE Github repo and fixing the errors (work in progress)
+
 
 
 ## Kick-Off 11.09.2025
