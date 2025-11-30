@@ -72,7 +72,7 @@ class ExperimentConfig:
     num_sbc_samples: int = 200
     num_posterior_samples_sbc: int = 1000
     num_calibration_items: int = 5
-    num_lc2st_samples: int = 1000
+    num_lc2st_samples: int = int(0.1 * num_simulations)
     num_swd_projections: int = 1000
 
     # --- Real data eval ---

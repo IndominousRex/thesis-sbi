@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from sbi.analysis.plot import sbc_rank_plot
+from sbi.analysis.plot import sbc_rank_plot, pp_plot_lc2st
 
 
 def _ensure_dir(path: Path):
@@ -86,6 +86,70 @@ def plot_sbc_rank_hist(
     plt.savefig(out_path, dpi=150)
     plt.close()
     print(f"[plots] Saved SBC rank histogram to {out_path}")
+
+
+# ---------------------------------------------------------------------
+# 2b) LC2ST-NF diagnostics
+# ---------------------------------------------------------------------
+
+
+def plot_lc2st_histogram(
+    T_null: np.ndarray,
+    T_data: float,
+    alpha: float,
+    out_path: Path,
+    *,
+    title: str = "LC2ST-NF statistic",
+    p_value: float = None,
+):
+    """
+    Plot histogram of LC2ST-NF statistics under H0 with observed statistic and CI.
+    """
+    T_null = np.asarray(T_null, dtype=float).ravel()
+    q_low, q_high = np.quantile(T_null, [0.0, 1.0 - alpha])
+
+    _ensure_dir(out_path)
+    plt.figure(figsize=(6, 4))
+    plt.hist(T_null, bins=50, density=True, alpha=0.6, label="Null")
+    plt.axvline(T_data, color="red", label="Observed")
+    plt.axvline(q_low, color="black", linestyle="--", label=f"{int((1-alpha)*100)}% CI")
+    plt.axvline(q_high, color="black", linestyle="--")
+    subtitle = "" if p_value is None else f" (p={p_value:.3f})"
+    plt.title(title + subtitle)
+    plt.xlabel("Test statistic")
+    plt.ylabel("Density")
+    plt.tight_layout()
+    plt.legend()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"[plots] Saved LC2ST-NF histogram to {out_path}")
+
+
+def plot_lc2st_pp_plot(
+    probs_data: np.ndarray,
+    probs_null: np.ndarray,
+    alpha: float,
+    out_path: Path,
+    *,
+    title: str = "LC2ST-NF PP-plot",
+):
+    """
+    Wrapper around sbi's pp_plot_lc2st for convenience.
+    """
+    _ensure_dir(out_path)
+    plt.figure(figsize=(5, 4))
+    pp_plot_lc2st(
+        probs=[np.asarray(probs_data)],
+        probs_null=np.asarray(probs_null),
+        conf_alpha=alpha,
+        labels=["Classifier probs (observed)"],
+        colors=["red"],
+    )
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"[plots] Saved LC2ST-NF PP-plot to {out_path}")
 
 
 # ---------------------------------------------------------------------

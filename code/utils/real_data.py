@@ -137,6 +137,27 @@ def make_controls_from_df(
     }
 
 
+def initial_state_from_obs(y0: np.ndarray) -> jnp.ndarray:
+    """
+    Build an initial simulator state from the first observation sample.
+
+    State layout: [geo_x, geo_y, yaw, dyaw, v_x, v_y, tire_fl, tire_fr, tire_rl, tire_rr].
+    """
+    if y0.shape[0] < 9:
+        raise ValueError(f"Expected at least 9 observation dims, got {y0.shape}")
+
+    geo_pos = (0.0, 0.0)
+    yaw = 0.0  # unknown absolute yaw; keep zero to avoid drift
+    dyaw = float(y0[0])
+    v_x, v_y = float(y0[1]), float(y0[2])
+    tire_fl, tire_fr, tire_rl, tire_rr = [float(val) for val in y0[5:9]]
+
+    return jnp.asarray(
+        [*geo_pos, yaw, dyaw, v_x, v_y, tire_fl, tire_fr, tire_rl, tire_rr],
+        dtype=jnp.float32,
+    )
+
+
 def pick_start_idx_len_safe(
     df: pd.DataFrame,
     T_raw: int,
@@ -195,6 +216,7 @@ def simulate_y_batch_for_thetas(
     controls_dec: Dict[str, jnp.ndarray],
     state_dim: int,
     cfg: ExperimentConfig,
+    state0: Optional[jnp.ndarray] = None,
 ) -> np.ndarray:
     """
     Simulate the observation trajectories y_t for a batch of theta using the
@@ -205,6 +227,7 @@ def simulate_y_batch_for_thetas(
         controls_dec:   dict of decimated controls (length T_event).
         state_dim:      dimension of the state vector (10 in your model).
         cfg:            experiment config with active param selection.
+        state0:         optional initial state; if None, uses zeros (legacy).
 
     Returns:
         y_batch: (K, T_event, OBS_D) numpy array (obs only, no controls).
@@ -213,11 +236,20 @@ def simulate_y_batch_for_thetas(
 
     theta_full = expand_theta_to_full(theta_batch_np, cfg)
     p_batch = jnp_local.asarray(theta_full, dtype=jnp.float32)
-    state0 = jnp_local.zeros(state_dim, jnp.float32)
+
+    if state0 is None:
+        state0_jnp = jnp_local.zeros(state_dim, jnp.float32)
+    else:
+        state0_arr = np.asarray(state0, dtype=np.float32)
+        if state0_arr.shape[0] != state_dim:
+            raise ValueError(
+                f"state0 has shape {state0_arr.shape}, expected ({state_dim},)"
+            )
+        state0_jnp = jnp_local.asarray(state0_arr, dtype=jnp.float32)
 
     def one(p):
         # rollout_with_states returns (state_seq, y_seq); we take y_seq
-        return rollout_with_states(p, controls_dec, state0=state0)[1]
+        return rollout_with_states(p, controls_dec, state0=state0_jnp)[1]
 
     y_batch = jax.jit(jax.vmap(one, in_axes=(0,)))(p_batch)  # (K, T, OBS_D)
     return np.asarray(y_batch, np.float32)
@@ -317,6 +349,9 @@ def posterior_predictive_from_real(
     # Match control rate to model rate
     ctrls_dec = decimate_controls_dict(controls_real, cfg.decimate)
 
+    # Use the first real observation to seed the simulator state, avoiding a start-at-rest bias
+    state0_real = initial_state_from_obs(y_real[0])
+
     # Sample parameters from p(theta | x_real)
     with torch.no_grad():
         thetas = (
@@ -325,7 +360,7 @@ def posterior_predictive_from_real(
 
     # Simulate y for each theta using JAX
     y_ppc = simulate_y_batch_for_thetas(
-        thetas, ctrls_dec, state_dim=cfg.state_dim, cfg=cfg
+        thetas, ctrls_dec, state_dim=cfg.state_dim, cfg=cfg, state0=state0_real
     )
 
     return y_real, y_ppc
