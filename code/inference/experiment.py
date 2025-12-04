@@ -103,8 +103,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     density_estimator.to(device).eval()
 
     posterior = inference.build_posterior(
-        density_estimator,
-        sample_with="direct",
+        density_estimator, sample_with="mcmc", mcmc_method="slice_np_vectorized"
     )
 
     # Save pickled posterior for faster loading later
@@ -153,9 +152,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
 
     # 2) One posterior sample for each calibration x (shape: (N, d))
     with torch.no_grad():
-        post_samples = posterior.sample_batched(
-            (1,), x=x_cal, max_sampling_batch_size=10
-        )[0].cpu()
+        post_samples = posterior.sample_batched((1,), x=x_cal)[0].cpu()
 
     # 3) Flow-space transform helpers
     assert hasattr(density_estimator, "net") and hasattr(
