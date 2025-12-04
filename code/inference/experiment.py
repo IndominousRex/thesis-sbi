@@ -145,14 +145,35 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     NUM_LC2ST = cfg.num_lc2st_samples
     CONF_ALPHA = 0.05
 
+    # Build MCMC posterior for diagnostics
+    posterior_lc2st = inference.build_posterior(
+        density_estimator,
+        sample_with="mcmc",
+        mcmc_method="slice_np_vectorized",
+    )
+
     # 1) Calibration data from prior and simulator
     theta_cal = prior.sample((NUM_LC2ST,)).to(device)  # (N, d)
     x_cal = simulator(theta_cal)  # (N, T_event, D_in)
     x_cal_flat = x_cal.reshape(NUM_LC2ST, -1).cpu()  # (N, D_flat)
 
     # 2) One posterior sample for each calibration x (shape: (N, d))
+    #    Sample one context at a time to avoid batch-size mismatches in MCMC.
+    post_samples_list = []
     with torch.no_grad():
-        post_samples = posterior.sample_batched((1,), x=x_cal)[0].cpu()
+        for i in range(NUM_LC2ST):
+            xb = x_cal[i : i + 1]  # (1, T, D)
+            ps = posterior_lc2st.sample(
+                (1,),
+                x=xb,
+                num_chains=1,
+                init_strategy="proposal",
+                thin=1,
+                show_progress_bars=False,
+            )  # (1, 1, d)
+            post_samples_list.append(ps[0, 0].cpu())  # (d,)
+
+    post_samples = torch.stack(post_samples_list, dim=0)  # (N, d)
 
     # 3) Flow-space transform helpers
     assert hasattr(density_estimator, "net") and hasattr(
