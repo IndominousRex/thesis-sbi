@@ -2,7 +2,7 @@
 #SBATCH --job-name=npe_archs_allparams
 #SBATCH --array=0-2              # 0 = bigru, 1 = transformer, 2 = causalcnn
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:h200:4    
+#SBATCH --gres=gpu:h200:1    
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:h200:1
 #SBATCH --mem-per-cpu=4G
