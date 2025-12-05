@@ -1,5 +1,3 @@
-# scripts/eval_real_data.py
-
 import argparse
 import json
 import pickle

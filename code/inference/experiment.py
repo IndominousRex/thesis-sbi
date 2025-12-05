@@ -103,7 +103,10 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     density_estimator.to(device).eval()
 
     posterior = inference.build_posterior(
-        density_estimator, sample_with="mcmc", mcmc_method="slice_np_vectorized"
+        density_estimator,
+        sample_with="mcmc",
+        mcmc_method="slice_np_vectorized",
+        mcmc_parameters={"num_chains": 1, "thin": 1, "warmup_steps": 20},
     )
 
     # Save pickled posterior for faster loading later
@@ -150,6 +153,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
         density_estimator,
         sample_with="mcmc",
         mcmc_method="slice_np_vectorized",
+        mcmc_parameters={"num_chains": 1, "thin": 1, "warmup_steps": 20},
     )
 
     # 1) Calibration data from prior and simulator
@@ -159,21 +163,18 @@ def run_experiment(cfg: ExperimentConfig) -> None:
 
     # 2) One posterior sample for each calibration x (shape: (N, d))
     #    Sample one context at a time to avoid batch-size mismatches in MCMC.
-    post_samples_list = []
     with torch.no_grad():
-        for i in range(NUM_LC2ST):
-            xb = x_cal[i : i + 1]  # (1, T, D)
-            ps = posterior_lc2st.sample(
-                (1,),
-                x=xb,
+        post_samples = (
+            posterior_lc2st.sample_batched(
+                (1,),  # one sample per x
+                x=x_cal,
                 num_chains=1,
                 init_strategy="proposal",
-                thin=1,
-                show_progress_bars=False,
-            )  # (1, 1, d)
-            post_samples_list.append(ps[0, 0].cpu())  # (d,)
-
-    post_samples = torch.stack(post_samples_list, dim=0)  # (N, d)
+                show_progress_bars=True,
+            )[0]
+            .squeeze(0)
+            .cpu()
+        )
 
     # 3) Flow-space transform helpers
     assert hasattr(density_estimator, "net") and hasattr(

@@ -443,7 +443,6 @@ def generate_dataset(
     )
 
     done = 0
-    t0 = jax.device_get(jax.default_backend())
 
     with torch.inference_mode():
         for i in range(0, N, batch):

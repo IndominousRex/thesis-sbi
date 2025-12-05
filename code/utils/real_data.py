@@ -354,9 +354,19 @@ def posterior_predictive_from_real(
 
     # Sample parameters from p(theta | x_real)
     with torch.no_grad():
-        thetas = (
-            posterior.sample((K_ppc,), x=x_obs_full).cpu().numpy().astype(np.float32)
-        )  # (K_ppc, d_active)
+        samples = posterior.sample(
+            (K_ppc,), x=x_obs_full
+        )  # could be (K, d) or (K, C, d)
+
+    # handle both cases
+    samples = samples.cpu()
+    if samples.ndim == 3:
+        # assume (K, num_chains, d) -> take chain 0
+        samples = samples[:, 0, :]
+    elif samples.ndim != 2:
+        raise ValueError(f"Unexpected posterior sample shape {samples.shape}")
+
+    thetas = samples.numpy().astype(np.float32)  # (K, d_active)
 
     # Simulate y for each theta using JAX
     y_ppc = simulate_y_batch_for_thetas(
