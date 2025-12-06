@@ -21,7 +21,6 @@ from configs.config import ExperimentConfig, PARAMETER_ORDER
 # --- Global-ish holders for config-dependent constants ---
 DT: float = 0.01
 T_SEG: int = 3000
-DECIMATE: int = 2
 STATE_DIM: int = 10
 
 
@@ -60,10 +59,9 @@ def init_simulation_from_config(cfg: ExperimentConfig) -> None:
     """
     Initialize module-level constants from the experiment config.
     """
-    global DT, T_SEG, DECIMATE, STATE_DIM
+    global DT, T_SEG, STATE_DIM
     DT = cfg.dt
     T_SEG = cfg.T_seg
-    DECIMATE = cfg.decimate
     STATE_DIM = cfg.state_dim
 
 
@@ -374,8 +372,7 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
       - samples a fresh control recipe per call,
       - samples initial states,
       - runs the JAX vehicle model,
-      - concatenates controls to observations,
-      - applies decimation.
+      - concatenates controls to observations.
     """
 
     def simulator(theta: torch.Tensor) -> torch.Tensor:
@@ -398,10 +395,6 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
         c = controls_to_array(ctrls)  # (T_seg, 4)
         c_rep = jnp.broadcast_to(c, (B, c.shape[0], c.shape[1]))  # (B, T_seg, 4)
         yc = jnp.concatenate([y_batch, c_rep], axis=-1)  # (B, T_seg, D_in)
-
-        if cfg.decimate > 1:
-            L = (yc.shape[1] // cfg.decimate) * cfg.decimate
-            yc = yc[:, : L : cfg.decimate, :]
 
         yc_numpy = np.asarray(yc, dtype=np.float32)
         yc_numpy_copy = yc_numpy.copy()  # to ensure contiguous array

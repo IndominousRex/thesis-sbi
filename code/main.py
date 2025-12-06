@@ -35,7 +35,6 @@ def parse_args():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--dt", type=float, default=0.01)
     p.add_argument("--T-seg", type=int, default=3000)
-    p.add_argument("--decimate", type=int, default=2)
     p.add_argument(
         "--encoder-type",
         type=str,
@@ -90,7 +89,6 @@ def main():
         device=args.device,
         dt=args.dt,
         T_seg=args.T_seg,
-        decimate=args.decimate,
         num_simulations=args.num_sim,
         encoder_type=args.encoder_type,
         encoder_hidden=args.encoder_hidden,

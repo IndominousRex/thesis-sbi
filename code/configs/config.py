@@ -16,7 +16,6 @@ class ExperimentConfig:
     # --- Simulation settings ---
     dt: float = 0.01
     T_seg: int = 3000
-    decimate: int = 2
     state_dim: int = 10
     obs_dim: int = 9
 

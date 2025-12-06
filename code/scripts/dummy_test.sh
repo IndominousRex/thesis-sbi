@@ -34,7 +34,6 @@ srun python main.py \
     --seed 42 \
     --dt 0.01 \
     --T-seg 200 \
-    --decimate 2 \
     --encoder-type transformer \
     --encoder-hidden 8 \
     --lr 1e-3 \

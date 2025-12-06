@@ -193,27 +193,9 @@ def pick_start_idx_len_safe(
     return N - T_raw
 
 
-def decimate_controls_dict(
-    ctrls: Dict[str, jnp.ndarray],
-    factor: int,
-) -> Dict[str, jnp.ndarray]:
-    """
-    Decimate a control dictionary: keep every 'factor'-th sample along time,
-    truncating to a multiple of 'factor'.
-    """
-    if factor <= 1:
-        return ctrls
-
-    L = int(ctrls["steer_ang"].shape[0]) // factor * factor
-    return {
-        k: jnp.asarray(np.asarray(v)[:L:factor], dtype=jnp.float32)
-        for k, v in ctrls.items()
-    }
-
-
 def simulate_y_batch_for_thetas(
     theta_batch_np: np.ndarray,
-    controls_dec: Dict[str, jnp.ndarray],
+    controls: Dict[str, jnp.ndarray],
     state_dim: int,
     cfg: ExperimentConfig,
     state0: Optional[jnp.ndarray] = None,
@@ -224,7 +206,7 @@ def simulate_y_batch_for_thetas(
 
     Args:
         theta_batch_np: (K, d_active) numpy array of theta samples.
-        controls_dec:   dict of decimated controls (length T_event).
+        controls:       dict of controls (length T_event).
         state_dim:      dimension of the state vector (10 in your model).
         cfg:            experiment config with active param selection.
         state0:         optional initial state; if None, uses zeros (legacy).
@@ -249,7 +231,7 @@ def simulate_y_batch_for_thetas(
 
     def one(p):
         # rollout_with_states returns (state_seq, y_seq); we take y_seq
-        return rollout_with_states(p, controls_dec, state0=state0_jnp)[1]
+        return rollout_with_states(p, controls, state0=state0_jnp)[1]
 
     y_batch = jax.jit(jax.vmap(one, in_axes=(0,)))(p_batch)  # (K, T, OBS_D)
     return np.asarray(y_batch, np.float32)
@@ -272,14 +254,11 @@ def build_real_window_from_csv(
     Construct x_obs_full and controls_real from the real CSV, in the
     *same layout and length* as the training data.
 
-    Training pipeline did:
-      - simulate length T_seg at raw rate
-      - observations y (obs_dim) + controls (4) → concat → (T_seg, D_in)
-      - decimate by cfg.decimate → (T_event, D_in)
-
-    Here we replicate the same steps.
+    Training pipeline simulates length T_seg at the native rate and
+    concatenates observations y (obs_dim) + controls (4) -> (T_seg, D_in).
+    Here we replicate the same steps without any decimation.
     """
-    # Raw length before decimation: should match training T_seg
+    # Raw length: matches training T_seg
     T_raw = cfg.T_seg
     N = len(df_real)
 
@@ -311,11 +290,6 @@ def build_real_window_from_csv(
     # 3) Concat in same order as training: [obs || controls]
     x_concat = np.concatenate([x_obs_raw.numpy(), c_real], axis=-1)  # (T_raw, D_in)
 
-    # 4) Apply the same decimation as used in training
-    if cfg.decimate > 1:
-        L = (x_concat.shape[0] // cfg.decimate) * cfg.decimate
-        x_concat = x_concat[: L : cfg.decimate]
-
     x_obs_full = torch.from_numpy(x_concat.astype(np.float32)).unsqueeze(0).to(device)
     # shape: (1, T_event, D_in)
 
@@ -346,9 +320,6 @@ def posterior_predictive_from_real(
     # Real observations at model rate: first obs_dim dims only
     y_real = x_obs_full[0, :, : cfg.obs_dim].detach().cpu().numpy().astype(np.float32)
 
-    # Match control rate to model rate
-    ctrls_dec = decimate_controls_dict(controls_real, cfg.decimate)
-
     # Use the first real observation to seed the simulator state, avoiding a start-at-rest bias
     state0_real = initial_state_from_obs(y_real[0])
 
@@ -370,7 +341,7 @@ def posterior_predictive_from_real(
 
     # Simulate y for each theta using JAX
     y_ppc = simulate_y_batch_for_thetas(
-        thetas, ctrls_dec, state_dim=cfg.state_dim, cfg=cfg, state0=state0_real
+        thetas, controls_real, state_dim=cfg.state_dim, cfg=cfg, state0=state0_real
     )
 
     return y_real, y_ppc

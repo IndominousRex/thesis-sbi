@@ -24,14 +24,13 @@ export JAX_PLATFORM_NAME=cpu
 
 # --- run experiment: infer all three parameters ---
 srun python main.py \
-    --exp-name baseline_causalcnn_maf_all_three \
+    --exp-name baseline_transformer_maf_all_three \
     --num-sim 20000 \
     --device cuda \
     --seed 42 \
     --dt 0.01 \
     --T-seg 3000 \
-    --decimate 2 \
-    --encoder-type causalcnn \
+    --encoder-type transformer \
     --encoder-hidden 32 \
     --lr 1e-3 \
     --batch-train 256 \

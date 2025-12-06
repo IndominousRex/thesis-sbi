@@ -197,7 +197,7 @@ def build_density_estimator(
     """
 
     # We need seq_len for CNN/Transformer embeddings
-    seq_len = cfg.T_seg // cfg.decimate
+    seq_len = cfg.T_seg
 
     # Build embedding network
     embedding_net = build_embedding(cfg, input_dim, seq_len, device)

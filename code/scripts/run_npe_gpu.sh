@@ -48,8 +48,7 @@ srun python main.py \
     --seed 42 \
     --dt 0.01 \
     --T-seg 3000 \
-    --decimate 2 \
-    --encoder bigru \
+    --encoder-type bigru \
     --encoder-hidden 32 \
     --lr 1e-3 \
     --batch-train 32 \

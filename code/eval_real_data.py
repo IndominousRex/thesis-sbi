@@ -64,6 +64,8 @@ def load_config(exp_dir: Path) -> ExperimentConfig:
         cfg_dict = json.load(f)
     # Config may not have 'device' if you used earlier scripts; set default
     cfg_dict.setdefault("device", "auto")
+    # Backward compatibility: drop decimation if present
+    cfg_dict.pop("decimate", None)
     return ExperimentConfig(**cfg_dict)
 
 
@@ -167,7 +169,7 @@ def main():
         y_real=y_real,
         y_ppc=y_ppc,
         obs_labels=OBS_LABELS,
-        dt=cfg.dt * cfg.decimate,
+        dt=cfg.dt,
         out_path=ppc_path,
         max_trajs=60,
         max_dims=cfg.obs_dim,
@@ -194,10 +196,6 @@ def main():
         vel_body_in_kmh=False,
     )
     real_obs_all = x_obs_all.numpy()
-
-    if cfg.decimate > 1:
-        L_real = (real_obs_all.shape[0] // cfg.decimate) * cfg.decimate
-        real_obs_all = real_obs_all[: L_real : cfg.decimate]
 
     # Custom zoom ranges (same as notebook)
     custom_ranges = {
