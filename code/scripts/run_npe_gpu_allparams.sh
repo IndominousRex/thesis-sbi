@@ -33,7 +33,7 @@ srun python main.py \
     --encoder-type transformer \
     --encoder-hidden 32 \
     --lr 1e-3 \
-    --batch-train 256 \
+    --batch-train 128 \
     --stop-after-epochs 20 \
     --params "mu,cd,m" \
     --real-data-csv "../data/measurements/Jeversen_2022_10_12_110132.csv"
