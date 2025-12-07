@@ -24,8 +24,8 @@ class ExperimentConfig:
     prior_high_mu: float = 1.50
     prior_low_cd: float = 0.05
     prior_high_cd: float = 0.60
-    prior_low_m: float = 1200.0
-    prior_high_m: float = 2200.0
+    prior_low_m: float = 1500.0
+    prior_high_m: float = 2000.0
 
     # --- Which parameters to infer + defaults for fixed ones ---
     # active_parameters controls theta dimensionality (1, 2, or 3 elements)

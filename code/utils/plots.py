@@ -196,6 +196,15 @@ def plot_ppc_trajectories(
         rng = np.random.default_rng(0)
         idxs = rng.choice(K, size=max_trajs, replace=False)
 
+    # Summary stats for clearer visuals
+    p10, p90 = np.percentile(y_ppc, [10, 90], axis=0)
+    median_ppc = np.median(y_ppc, axis=0)
+    # Deliberately separated palette so each element is distinguishable
+    band_color = "#001E00"  # dark green band (10-90%)
+    sample_color = "#6aaed6"  # lighter blue samples
+    median_color = "#d62728"  # red median
+    real_color = "#000000"  # black real
+
     ncols = 3
     nrows = int(np.ceil(max_dims / ncols))
 
@@ -211,21 +220,49 @@ def plot_ppc_trajectories(
 
     for d in range(max_dims):
         ax = axes[d]
-        # PPC trajectories
+        # Uncertainty band from middle 80%
+        band_label = "Simulated 10-90%" if d == 0 else None
+        ax.fill_between(
+            t,
+            p10[:, d],
+            p90[:, d],
+            color=band_color,
+            alpha=0.32,
+            label=band_label,
+        )
+
+        # PPC trajectories (a subset for readability)
+        sample_label = "Simulated samples" if d == 0 else None
         for k in idxs:
             ax.plot(
                 t,
                 y_ppc[k, :, d],
-                alpha=0.08,
-                lw=0.7,
+                color=sample_color,
+                alpha=0.18,
+                lw=1.0,
+                label=sample_label,
             )
+            sample_label = None
+
+        # PPC median
+        median_label = "Simulated median" if d == 0 else None
+        ax.plot(
+            t,
+            median_ppc[:, d],
+            color=median_color,
+            lw=1.5,
+            linestyle="-",
+            label=median_label,
+        )
+
         # Real trajectory
+        real_label = "Real" if d == 0 else None
         ax.plot(
             t,
             y_real[:, d],
-            color="black",
-            lw=1.8,
-            label="real",
+            color=real_color,
+            lw=0.8,
+            label=real_label,
         )
         label = obs_labels[d] if d < len(obs_labels) else f"obs_{d}"
         ax.set_title(label)

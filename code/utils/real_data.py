@@ -14,6 +14,23 @@ from simulation.simulation import (
 )
 
 
+def controls_from_array_np(ctrl_array: np.ndarray) -> Dict[str, jnp.ndarray]:
+    """
+    Convert a (T, 4) control array back into the dict layout the simulator expects.
+    Order matches simulation.controls_to_array: [steer, engine, brake, gear].
+    """
+    if ctrl_array.shape[1] != 4:
+        raise ValueError(
+            f"Expected control array with 4 columns, got {ctrl_array.shape}"
+        )
+    return {
+        "steer_ang": jnp.asarray(ctrl_array[:, 0]),
+        "engine_torque": jnp.asarray(ctrl_array[:, 1]),
+        "break_torque": jnp.asarray(ctrl_array[:, 2]),
+        "gear_transmission": jnp.asarray(ctrl_array[:, 3]),
+    }
+
+
 # Observation labels for real data
 OBS_LABELS = [
     "yaw_rate [rad/s]",
@@ -294,6 +311,36 @@ def build_real_window_from_csv(
     # shape: (1, T_event, D_in)
 
     return x_obs_full, controls_real, start_idx
+
+
+def build_simulated_window_for_eval(
+    cfg: ExperimentConfig,
+    prior,
+    simulator,
+    device: torch.device,
+    *,
+    control_offset_batches: int = 1000,
+) -> Tuple[torch.Tensor, Dict[str, jnp.ndarray]]:
+    """
+    Generate a simulated window (not from training data) to use as a PPC sanity check.
+
+    We offset the simulator's internal batch index to avoid reusing control recipes seen in
+    training and sample a new theta from the prior.
+    """
+    with torch.no_grad():
+        # Nudge internal counter so control recipes differ from training set
+        if hasattr(simulator, "_batch_idx"):
+            simulator._batch_idx = getattr(simulator, "_batch_idx", 0) + max(
+                control_offset_batches, getattr(cfg, "num_simulations", 0)
+            )
+
+        theta_sim = prior.sample((1,)).to(device)
+        x_sim_full = simulator(theta_sim).detach()  # (1, T, D_in)
+
+    ctrl_array = x_sim_full[0, :, cfg.obs_dim :].cpu().numpy()
+    controls_sim = controls_from_array_np(ctrl_array)
+
+    return x_sim_full.to(device), controls_sim
 
 
 def posterior_predictive_from_real(

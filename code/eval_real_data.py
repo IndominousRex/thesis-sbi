@@ -12,6 +12,7 @@ from simulation.simulation import init_simulation_from_config, make_simulator
 from models.models import build_prior, build_density_estimator
 from utils.real_data import (
     build_real_window_from_csv,
+    build_simulated_window_for_eval,
     posterior_predictive_from_real,
     OBS_LABELS,
 )
@@ -174,6 +175,29 @@ def main():
         max_trajs=60,
         max_dims=cfg.obs_dim,
         title="Posterior Predictive Check on Real Drive Segment",
+    )
+
+    # 1b) PPC on a fresh simulated window (held-out controls/theta)
+    x_sim_full, controls_sim = build_simulated_window_for_eval(
+        cfg, prior, simulator, device
+    )
+    y_sim, y_ppc_sim = posterior_predictive_from_real(
+        posterior,
+        x_sim_full,
+        controls_sim,
+        cfg,
+        K_ppc=args.K_ppc,
+    )
+    ppc_sim_path = fig_dir / "ppc_timeseries_simulated.png"
+    plot_ppc_trajectories(
+        y_real=y_sim,
+        y_ppc=y_ppc_sim,
+        obs_labels=OBS_LABELS,
+        dt=cfg.dt,
+        out_path=ppc_sim_path,
+        max_trajs=60,
+        max_dims=cfg.obs_dim,
+        title="Posterior Predictive Check on Simulated Holdout",
     )
 
     # 2) Build "train-like" observations from fresh simulations (for hist diagnostics)
