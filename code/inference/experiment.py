@@ -126,7 +126,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
         posterior=posterior,
         num_posterior_samples=num_post,
         num_workers=8,
-        use_sample_batched=True,
+        use_sample_batched=False,
     )
 
     check_stats = check_sbc(ranks, theta_sbc, dap_samples, num_post)
