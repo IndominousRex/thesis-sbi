@@ -340,27 +340,37 @@ def build_simulated_window_for_eval(
     device: torch.device,
     *,
     control_offset_batches: int = 1000,
-) -> Tuple[torch.Tensor, Dict[str, jnp.ndarray]]:
+) -> Tuple[torch.Tensor, Optional[Dict[str, jnp.ndarray]]]:
     """
     Generate a simulated window (not from training data) to use as a PPC sanity check.
 
-    We offset the simulator's internal batch index to avoid reusing control recipes seen in
-    training and sample a new theta from the prior.
+    We optionally offset the simulator's internal batch index to avoid reusing control
+    recipes seen in training, then sample a new theta from the prior and run the
+    simulator once.
+
+    Returns:
+        x_sim_full:  (1, T, D_in) torch.Tensor with layout [obs || controls],
+        controls_sim: dict of true controls at model rate, matching x_sim_full.shape[1].
     """
     with torch.no_grad():
-        # Nudge internal counter so control recipes differ from training set
+        # Optional: nudge internal counter so control recipes differ from training set
         if hasattr(simulator, "_batch_idx"):
             simulator._batch_idx = getattr(simulator, "_batch_idx", 0) + max(
                 control_offset_batches, getattr(cfg, "num_simulations", 0)
             )
 
         theta_sim = prior.sample((1,)).to(device)
-        x_sim_full = simulator(theta_sim).detach()  # (1, T, D_in)
+        sim_out = simulator(theta_sim)
 
-    ctrl_array = x_sim_full[0, :, cfg.obs_dim :].cpu().numpy()
-    controls_sim = controls_from_array_np(ctrl_array)
+        if isinstance(sim_out, tuple):
+            x_sim_full, controls_sim = sim_out  # x_sim_full: (1, T, D_in)
+        else:
+            # Fallback if simulator still returns only x
+            x_sim_full, controls_sim = sim_out, None
 
-    return x_sim_full.to(device), controls_sim
+        x_sim_full = x_sim_full.detach().to(device)
+
+    return x_sim_full, controls_sim
 
 
 def posterior_predictive_from_real(
@@ -377,8 +387,8 @@ def posterior_predictive_from_real(
         posterior:     trained sbi posterior.
         x_obs_full:    (1, T_event, D_in) torch tensor on 'device'.
                        Layout must be [obs_dim || 4 control channels].
-        controls_real: dict of controls at raw rate (length T_raw), in the same
-                       format as used by the training simulator
+        controls_real: dict of controls at model rate (length T_event),
+                       in the same format as the training simulator
                        (steer_ang, engine_torque, break_torque, gear_transmission).
         cfg:           ExperimentConfig.
         K_ppc:         number of posterior predictive trajectories.
@@ -390,6 +400,7 @@ def posterior_predictive_from_real(
     # 1) Real observations at model rate: first obs_dim dims only
     #    This matches vehicle_fy output ordering:
     #    [yaw_rate, v_body_x, v_body_y, a_body_x, a_body_y, tire_fl, tire_fr, tire_rl, tire_rr]
+
     y_real = (
         x_obs_full[0, :, : cfg.obs_dim].detach().cpu().numpy().astype(np.float32)
     )  # (T_event, obs_dim)
