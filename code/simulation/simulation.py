@@ -85,8 +85,8 @@ def rollout_with_states(p, controls, state0=None):
 
     def body_fn(state, t):
         u_t = {k: v[t] for k, v in controls.items()}
+        y_t = vehicle_fy(state, u_t, p, **default_params)
         state_next = vehicle_RK4x(state, u_t, p, **default_params)
-        y_t = vehicle_fy(state_next, u_t, p, **default_params)
         return state_next, (state_next, y_t)
 
     t_idx = jnp.arange(T_local, dtype=jnp.int32)
@@ -375,7 +375,7 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
       - concatenates controls to observations.
     """
 
-    def simulator(theta: torch.Tensor) -> torch.Tensor:
+    def simulator(theta: torch.Tensor):
         theta_np = theta.detach().cpu().numpy().astype(np.float32)
         B = theta_np.shape[0]
 
@@ -399,7 +399,7 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
         yc_numpy = np.asarray(yc, dtype=np.float32)
         yc_numpy_copy = yc_numpy.copy()  # to ensure contiguous array
 
-        return torch.from_numpy(yc_numpy_copy).to(device)
+        return torch.from_numpy(yc_numpy_copy).to(device), ctrls
 
     return simulator
 
@@ -409,7 +409,7 @@ def generate_dataset(
     prior,
     simulator,
     show_pbar: bool = True,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+):
     """
     Generate (theta, x) pairs for SBI using the provided simulator and prior.
 
@@ -420,7 +420,7 @@ def generate_dataset(
     N = cfg.num_simulations
     batch = cfg.batch_sim
 
-    Theta, X = [], []
+    Theta, X, CTRL = [], [], []
 
     if cfg.jit_warmup:
         if show_pbar:
@@ -441,10 +441,11 @@ def generate_dataset(
         for i in range(0, N, batch):
             b = min(batch, N - i)
             theta_b = prior.sample((b,)).to("cpu")
-            x_b = simulator(theta_b)
+            x_b, ctrls_b = simulator(theta_b)
 
             Theta.append(theta_b)
             X.append(x_b.cpu())
+            CTRL.append(ctrls_b)
 
             done += b
             if pbar is not None:
@@ -455,4 +456,4 @@ def generate_dataset(
     if pbar is not None:
         pbar.close()
 
-    return torch.cat(Theta, 0), torch.cat(X, 0)
+    return torch.cat(Theta, 0), torch.cat(X, 0), CTRL

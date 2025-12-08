@@ -3,7 +3,7 @@ __pycache__/
 *.pkl
 *.pt
 *.npy
-experiments/results/
+experiments/
 .ipynb_checkpoints/
 *.err
 *.out

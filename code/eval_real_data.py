@@ -15,10 +15,10 @@ from utils.real_data import (
     build_simulated_window_for_eval,
     posterior_predictive_from_real,
     OBS_LABELS,
+    prep_x_obs_from_df,
 )
 from utils.metrics import real_data_trajectory_metrics
 from utils.plots import plot_ppc_trajectories, plot_obs_1d_hist_custom
-from utils.real_data import prep_x_obs_from_df
 
 
 def parse_args():
@@ -48,7 +48,10 @@ def parse_args():
         "--start-idx",
         type=int,
         default=None,
-        help="Optional explicit start index in the CSV. If omitted, a low-brake window is chosen automatically.",
+        help=(
+            "Optional explicit start index in the CSV. If omitted, "
+            "a low-brake window is chosen automatically."
+        ),
     )
     p.add_argument(
         "--K-ppc",
@@ -90,7 +93,11 @@ def main():
 
     # Probe to recover T_event and D_in (not strictly needed, but nice sanity check)
     probe_theta = prior.sample((1,)).to(device)
-    probe_x = simulator(probe_theta)
+    probe_out = simulator(probe_theta)
+    if isinstance(probe_out, tuple):
+        probe_x, _ = probe_out
+    else:
+        probe_x = probe_out
     _, T_event, D_in = probe_x.shape
     print(f"[eval] Model expects T_event={T_event}, D_in={D_in}")
 
@@ -122,7 +129,7 @@ def main():
         assert state_dict_path.exists(), f"Missing {state_dict_path}"
 
         # Let sbi create a fresh neural posterior with the right architecture
-        density_estimator_net = inference._build_neural_posterior()
+        density_estimator_net = inference._neural_net
         density_estimator_net.load_state_dict(
             torch.load(state_dict_path, map_location=device)
         )
@@ -201,16 +208,21 @@ def main():
     )
 
     # 2) Build "train-like" observations from fresh simulations (for hist diagnostics)
-    N_hist = min(2000, cfg.num_simulations)  # or any number you like
+    N_hist = min(2000, getattr(cfg, "num_simulations", 2000))
     with torch.no_grad():
         theta_hist = prior.sample((N_hist,)).to(device)
-        x_hist = simulator(theta_hist)  # (N_hist, T_event, D_in)
+        sim_out = simulator(theta_hist)
+        if isinstance(sim_out, tuple):
+            x_hist, _ = sim_out
+        else:
+            x_hist = sim_out
 
     # First obs_dim dims are observations
     train_obs = (
         x_hist[:, :, : cfg.obs_dim].detach().cpu().numpy().reshape(-1, cfg.obs_dim)
     )
 
+    # Real obs over entire CSV
     x_obs_all = prep_x_obs_from_df(
         df_real,
         start_idx=0,
@@ -221,7 +233,7 @@ def main():
     )
     real_obs_all = x_obs_all.numpy()
 
-    # Custom zoom ranges (same as notebook)
+    # Custom zoom ranges
     custom_ranges = {
         "yaw_rate [rad/s]": (-2, 2),
         "v_body_x [m/s]": (5, 25),

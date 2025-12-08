@@ -63,9 +63,14 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     prior = build_prior(cfg, device)
     simulator = make_simulator(cfg, device)
 
+    # --- Wrapper so SBI gets only x, not (x, ctrls) ---
+    def simulator_for_sbi(theta: torch.Tensor):
+        x, _ = simulator(theta)  # discard controls
+        return x
+
     # Probe once for input dim
     probe_theta = prior.sample((1,))  # respects active parameter dimensionality
-    probe_x = simulator(probe_theta)  # (1, T_event, D_in)
+    probe_x = simulator_for_sbi(probe_theta)  # (1, T_event, D_in)
     _, T_event, D_in = probe_x.shape
     print(
         f"Encoder input_dim = {D_in} | T_event = {T_event} | "
@@ -86,7 +91,9 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Generate dataset ---
-    theta_train, x_train = generate_dataset(cfg, prior, simulator, show_pbar=True)
+    theta_train, x_train = generate_dataset(
+        cfg, prior, simulator_for_sbi, show_pbar=True
+    )
     inference.append_simulations(theta_train, x_train)
 
     # --- Train NPE ---
@@ -113,7 +120,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     num_post = cfg.num_posterior_samples_sbc
 
     theta_sbc = prior.sample((num_sbc,))  # (num_sbc, d)
-    x_sbc = simulator(theta_sbc)  # (num_sbc, T_event, D_in)
+    x_sbc = simulator_for_sbi(theta_sbc)  # (num_sbc, T_event, D_in)
 
     ranks, dap_samples = run_sbc(
         thetas=theta_sbc,
@@ -153,7 +160,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
 
     # 1) Calibration data from prior and simulator
     theta_cal = prior.sample((NUM_LC2ST,)).to(device)  # (N, d)
-    x_cal = simulator(theta_cal)  # (N, T_event, D_in)
+    x_cal = simulator_for_sbi(theta_cal)  # (N, T_event, D_in)
     x_cal_flat = x_cal.reshape(NUM_LC2ST, -1).cpu()  # (N, D_flat)
 
     # 2) One posterior sample for each calibration x (shape: (N, d))

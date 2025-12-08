@@ -33,15 +33,15 @@ def controls_from_array_np(ctrl_array: np.ndarray) -> Dict[str, jnp.ndarray]:
 
 # Observation labels for real data
 OBS_LABELS = [
-    "yaw_rate [rad/s]",
-    "v_body_x [m/s]",
-    "v_body_y [m/s]",
-    "a_body_x [m/s²]",
-    "a_body_y [m/s²]",
-    "tire_FL [rad/s]",
-    "tire_FR [rad/s]",
-    "tire_RL [rad/s]",
-    "tire_RR [rad/s]",
+    "yaw_rate",
+    "v_body_x",
+    "v_body_y",
+    "a_body_x",
+    "a_body_y",
+    "tire_rate_fl",
+    "tire_rate_fr",
+    "tire_rate_rl",
+    "tire_rate_rr",
 ]
 
 
@@ -218,39 +218,44 @@ def simulate_y_batch_for_thetas(
     state0: Optional[jnp.ndarray] = None,
 ) -> np.ndarray:
     """
-    Simulate the observation trajectories y_t for a batch of theta using the
-    JAX vehicle model, expanding a partial theta to the full (mu, cd, m).
+    Simulate observation trajectories y_t for a batch of theta using the JAX
+    vehicle model and the standardized vehicle_fy measurement.
 
     Args:
         theta_batch_np: (K, d_active) numpy array of theta samples.
-        controls:       dict of controls (length T_event).
-        state_dim:      dimension of the state vector (10 in your model).
-        cfg:            experiment config with active param selection.
-        state0:         optional initial state; if None, uses zeros (legacy).
+        controls:       dict of controls at *model rate* (length T_event), in the
+                        same format as training:
+                        { "steer_ang", "engine_torque", "break_torque",
+                          "gear_transmission" }.
+        state_dim:      dimension of the state vector (10 in this model).
+        cfg:            ExperimentConfig with active param selection.
+        state0:         optional initial state; if None, uses zeros.
 
     Returns:
-        y_batch: (K, T_event, OBS_D) numpy array (obs only, no controls).
+        y_batch: (K, T_event, obs_dim) numpy array of observations only.
+                 obs_dim must match vehicle_fy output (9).
     """
-    import jax.numpy as jnp_local  # just alias
+    # Expand from active parameters to full parameter vector
+    theta_full = expand_theta_to_full(theta_batch_np, cfg)  # (K, d_full)
+    p_batch = jnp.asarray(theta_full, dtype=jnp.float32)  # (K, d_full)
 
-    theta_full = expand_theta_to_full(theta_batch_np, cfg)
-    p_batch = jnp_local.asarray(theta_full, dtype=jnp.float32)
-
+    # Prepare initial state
     if state0 is None:
-        state0_jnp = jnp_local.zeros(state_dim, jnp.float32)
+        state0_jnp = jnp.zeros(state_dim, jnp.float32)
     else:
         state0_arr = np.asarray(state0, dtype=np.float32)
         if state0_arr.shape[0] != state_dim:
             raise ValueError(
                 f"state0 has shape {state0_arr.shape}, expected ({state_dim},)"
             )
-        state0_jnp = jnp_local.asarray(state0_arr, dtype=jnp.float32)
+        state0_jnp = jnp.asarray(state0_arr, dtype=jnp.float32)
 
+    # Single-trajectory rollout: rollout_with_states returns (state_seq, y_seq)
     def one(p):
-        # rollout_with_states returns (state_seq, y_seq); we take y_seq
-        return rollout_with_states(p, controls, state0=state0_jnp)[1]
+        return rollout_with_states(p, controls, state0=state0_jnp)[1]  # y_seq
 
-    y_batch = jax.jit(jax.vmap(one, in_axes=(0,)))(p_batch)  # (K, T, OBS_D)
+    # Vectorize over theta and JIT-compile
+    y_batch = jax.jit(jax.vmap(one, in_axes=(0,)))(p_batch)  # (K, T_event, obs_dim)
     return np.asarray(y_batch, np.float32)
 
 
@@ -269,13 +274,19 @@ def build_real_window_from_csv(
 ) -> Tuple[torch.Tensor, Dict[str, jnp.ndarray], int]:
     """
     Construct x_obs_full and controls_real from the real CSV, in the
-    *same layout and length* as the training data.
+    *same layout and time resolution* as the training data.
 
-    Training pipeline simulates length T_seg at the native rate and
-    concatenates observations y (obs_dim) + controls (4) -> (T_seg, D_in).
-    Here we replicate the same steps without any decimation.
+    Training pipeline:
+      - simulates length T_seg at native rate,
+      - computes y = vehicle_fy(state_t, u_t, theta),
+      - concatenates [y || controls] -> (T_seg, obs_dim+4),
+
+    This function mirrors that:
+      - builds y_real_raw and controls_real at raw rate,
+      - concatenates [y_raw || controls_raw],
+      - returns (1, T_event, D_in) tensor plus the *raw-rate* controls dict.
     """
-    # Raw length: matches training T_seg
+    # 0) Raw length to extract (before decimation)
     T_raw = cfg.T_seg
     N = len(df_real)
 
@@ -290,7 +301,9 @@ def build_real_window_from_csv(
 
     print(f"[real window] start_idx={start_idx}, rows={T_raw}, total_rows={N}")
 
-    # 1) Observations at raw rate
+    # 1) Observations at raw rate (T_raw, obs_dim)
+    #    Layout matches vehicle_fy: [yaw_rate, v_body_x, v_body_y, a_body_x, a_body_y,
+    #                                tire_fl, tire_fr, tire_rl, tire_rr]
     x_obs_raw = prep_x_obs_from_df(
         df_real,
         start_idx=start_idx,
@@ -298,17 +311,24 @@ def build_real_window_from_csv(
         rate_body_z_in_deg_s=rate_body_z_in_deg_s,
         tire_rates_in_rpm=tire_rates_in_rpm,
         vel_body_in_kmh=vel_body_in_kmh,
-    )  # (T_raw, obs_dim)
+    )  # (T_raw, obs_dim), numpy float32
 
-    # 2) Controls at raw rate
-    controls_real = make_controls_from_df(df_real, start_idx, T_raw, steer_in_deg=True)
-    c_real = np.asarray(controls_to_array(controls_real))  # (T_raw, 4)
+    # 2) Controls at raw rate, in same format as training simulator
+    controls_real = make_controls_from_df(
+        df_real,
+        start_idx=start_idx,
+        T=T_raw,
+        steer_in_deg=True,
+    )
+    c_real = np.asarray(
+        controls_to_array(controls_real), dtype=np.float32
+    )  # (T_raw, 4)
 
-    # 3) Concat in same order as training: [obs || controls]
-    x_concat = np.concatenate([x_obs_raw.numpy(), c_real], axis=-1)  # (T_raw, D_in)
+    # 3) Concatenate in the same order as training: [obs || controls]
+    x_concat = np.concatenate([x_obs_raw, c_real], axis=-1)  # (T_raw, D_in
 
+    # 4) Convert to torch tensor for the model: (1, T_event, D_in)
     x_obs_full = torch.from_numpy(x_concat.astype(np.float32)).unsqueeze(0).to(device)
-    # shape: (1, T_event, D_in)
 
     return x_obs_full, controls_real, start_idx
 
@@ -351,12 +371,15 @@ def posterior_predictive_from_real(
     K_ppc: int = 200,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Posterior predictive simulation for a real CSV window.
+    Posterior predictive simulation for a real (or simulated) window.
 
     Args:
         posterior:     trained sbi posterior.
         x_obs_full:    (1, T_event, D_in) torch tensor on 'device'.
-        controls_real: dict of controls at raw rate (length T_raw).
+                       Layout must be [obs_dim || 4 control channels].
+        controls_real: dict of controls at raw rate (length T_raw), in the same
+                       format as used by the training simulator
+                       (steer_ang, engine_torque, break_torque, gear_transmission).
         cfg:           ExperimentConfig.
         K_ppc:         number of posterior predictive trajectories.
 
@@ -364,31 +387,54 @@ def posterior_predictive_from_real(
         y_real : (T_event, obs_dim) numpy array (real observations).
         y_ppc  : (K_ppc, T_event, obs_dim) numpy array (simulated).
     """
-    # Real observations at model rate: first obs_dim dims only
-    y_real = x_obs_full[0, :, : cfg.obs_dim].detach().cpu().numpy().astype(np.float32)
+    # 1) Real observations at model rate: first obs_dim dims only
+    #    This matches vehicle_fy output ordering:
+    #    [yaw_rate, v_body_x, v_body_y, a_body_x, a_body_y, tire_fl, tire_fr, tire_rl, tire_rr]
+    y_real = (
+        x_obs_full[0, :, : cfg.obs_dim].detach().cpu().numpy().astype(np.float32)
+    )  # (T_event, obs_dim)
 
-    # Use the first real observation to seed the simulator state, avoiding a start-at-rest bias
+    T_event = y_real.shape[0]
+
+    # 2) Match control rate to model rate
+    #    build_real_window_from_csv gives controls at raw rate; if training
+    #    used decimation, we apply the same here.
+    ctrls_model = controls_real
+
+    # Basic sanity: steer_ang length must match T_event (or be safely truncatable)
+    L_ctrl = int(ctrls_model["steer_ang"].shape[0])
+    if L_ctrl != T_event:
+        # Truncate conservatively to min length, to avoid shape errors
+        L_min = min(L_ctrl, T_event)
+        ctrls_model = {k: v[:L_min] for k, v in ctrls_model.items()}
+        y_real = y_real[:L_min]
+        T_event = L_min
+
+    # 3) Use the first real observation to seed the simulator state.
+    #    This maps y0 → full state [geo_x, geo_y, yaw, dyaw, v_x, v_y, tire_fl, tire_fr, tire_rl, tire_rr].
     state0_real = initial_state_from_obs(y_real[0])
 
-    # Sample parameters from p(theta | x_real)
+    # 4) Sample parameters from p(theta | x_real)
     with torch.no_grad():
-        samples = posterior.sample(
-            (K_ppc,), x=x_obs_full
-        )  # could be (K, d) or (K, C, d)
+        samples = posterior.sample((K_ppc,), x=x_obs_full)
+        # samples can be (K, d) or (K, C, d) if using multiple chains
+        samples = samples.cpu()
+        if samples.ndim == 3:
+            # assume shape (K, num_chains, d) -> take chain 0
+            samples = samples[:, 0, :]
+        elif samples.ndim != 2:
+            raise ValueError(f"Unexpected posterior sample shape {samples.shape}")
 
-    # handle both cases
-    samples = samples.cpu()
-    if samples.ndim == 3:
-        # assume (K, num_chains, d) -> take chain 0
-        samples = samples[:, 0, :]
-    elif samples.ndim != 2:
-        raise ValueError(f"Unexpected posterior sample shape {samples.shape}")
+    thetas = samples.numpy().astype(np.float32)  # (K_ppc, d_active)
 
-    thetas = samples.numpy().astype(np.float32)  # (K, d_active)
-
-    # Simulate y for each theta using JAX
+    # 5) Simulate y for each theta using the JAX vehicle model
+    #    This uses rollout_with_states + vehicle_fy under the hood.
     y_ppc = simulate_y_batch_for_thetas(
-        thetas, controls_real, state_dim=cfg.state_dim, cfg=cfg, state0=state0_real
-    )
+        theta_batch_np=thetas,
+        controls=ctrls_model,
+        state_dim=cfg.state_dim,
+        cfg=cfg,
+        state0=state0_real,
+    )  # (K_ppc, T_event, obs_dim)
 
     return y_real, y_ppc

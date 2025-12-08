@@ -174,7 +174,7 @@ def plot_ppc_trajectories(
         y_real:  (T, D) numpy array, real trajectory.
         y_ppc:   (K, T, D) numpy array, K simulated trajectories.
         obs_labels: list of length D with channel names.
-        dt:      time step at model rate (e.g. dt * DECIMATE).
+        dt:      time step at model rate.
         out_path: PNG path to save figure.
         max_trajs: number of PPC trajectories to show (for readability).
         max_dims: if not None, only plot the first `max_dims` observation channels.
