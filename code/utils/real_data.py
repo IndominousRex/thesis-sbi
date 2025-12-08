@@ -432,8 +432,9 @@ def posterior_predictive_from_real(
     with torch.no_grad():
         x_cond = normalizer.normalize_x(x_obs_full, cfg.obs_dim).to(device)
         samples = posterior.sample((K_ppc,), x=x_cond)
+        # Align sample device with normalizer stats
+        samples = samples.to(normalizer.theta_mean.device)
         # samples can be (K, d) or (K, C, d) if using multiple chains
-        samples = samples.cpu()
         if samples.ndim == 3:
             # assume shape (K, num_chains, d) -> take chain 0
             samples = samples[:, 0, :]
@@ -441,7 +442,7 @@ def posterior_predictive_from_real(
             raise ValueError(f"Unexpected posterior sample shape {samples.shape}")
 
     samples_phys = normalizer.unnormalize_theta(samples)
-    thetas = samples_phys.numpy().astype(np.float32)  # (K_ppc, d_active)
+    thetas = samples_phys.cpu().numpy().astype(np.float32)  # (K_ppc, d_active)
 
     # 5) Simulate y for each theta using the JAX vehicle model
     #    This uses rollout_with_states + vehicle_fy under the hood.
