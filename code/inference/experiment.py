@@ -102,12 +102,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
 
     density_estimator.to(device).eval()
 
-    posterior = inference.build_posterior(
-        density_estimator,
-        sample_with="mcmc",
-        mcmc_method="slice_np_vectorized",
-        mcmc_parameters={"num_chains": 1, "thin": 1, "warmup_steps": 20},
-    )
+    posterior = inference.build_posterior(density_estimator)
 
     # Save pickled posterior for faster loading later
     with open(exp_dir / "posterior.pkl", "wb") as f:
