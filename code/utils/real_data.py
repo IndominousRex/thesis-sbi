@@ -12,6 +12,7 @@ from simulation.simulation import (
     rollout_with_states,
     expand_theta_to_full,
 )
+from utils.normalization import Normalizer
 
 
 def controls_from_array_np(ctrl_array: np.ndarray) -> Dict[str, jnp.ndarray]:
@@ -378,6 +379,8 @@ def posterior_predictive_from_real(
     x_obs_full: torch.Tensor,
     controls_real: Dict[str, jnp.ndarray],
     cfg: ExperimentConfig,
+    normalizer: Normalizer,
+    device: torch.device,
     K_ppc: int = 200,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -427,7 +430,8 @@ def posterior_predictive_from_real(
 
     # 4) Sample parameters from p(theta | x_real)
     with torch.no_grad():
-        samples = posterior.sample((K_ppc,), x=x_obs_full)
+        x_cond = normalizer.normalize_x(x_obs_full, cfg.obs_dim).to(device)
+        samples = posterior.sample((K_ppc,), x=x_cond)
         # samples can be (K, d) or (K, C, d) if using multiple chains
         samples = samples.cpu()
         if samples.ndim == 3:
@@ -436,7 +440,8 @@ def posterior_predictive_from_real(
         elif samples.ndim != 2:
             raise ValueError(f"Unexpected posterior sample shape {samples.shape}")
 
-    thetas = samples.numpy().astype(np.float32)  # (K_ppc, d_active)
+    samples_phys = normalizer.unnormalize_theta(samples)
+    thetas = samples_phys.numpy().astype(np.float32)  # (K_ppc, d_active)
 
     # 5) Simulate y for each theta using the JAX vehicle model
     #    This uses rollout_with_states + vehicle_fy under the hood.

@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import pandas as pd
 
+from sbi import utils as sbi_utils
 from configs.config import ExperimentConfig
 from utils.env_utils import setup_environment, get_device
 from simulation.simulation import init_simulation_from_config, make_simulator
@@ -17,6 +18,7 @@ from utils.real_data import (
     OBS_LABELS,
     prep_x_obs_from_df,
 )
+from utils.normalization import load_normalizer
 from utils.metrics import real_data_trajectory_metrics
 from utils.plots import plot_ppc_trajectories, plot_obs_1d_hist_custom
 
@@ -86,13 +88,28 @@ def main():
     cfg.device = args.device if args.device is not None else cfg.device
     device = get_device(cfg.device)
 
-    # --- 2) Init simulation / prior / simulator ---
+    # --- 2) Init simulation / priors / simulator ---
     init_simulation_from_config(cfg)
-    prior = build_prior(cfg, device)
+    prior_phys = build_prior(cfg, device)
     simulator = make_simulator(cfg, device)
 
+    norm_path = exp_dir / "stats_normalization.json"
+    assert norm_path.exists(), f"Missing normalization stats at {norm_path}"
+    normalizer = load_normalizer(norm_path, device=device)
+
+    bounds = cfg.param_bounds()
+    low_list = [bounds[name][0] for name in cfg.active_parameters]
+    high_list = [bounds[name][1] for name in cfg.active_parameters]
+    theta_low_norm = normalizer.normalize_theta(
+        torch.tensor(low_list, dtype=torch.float32, device=device)
+    )
+    theta_high_norm = normalizer.normalize_theta(
+        torch.tensor(high_list, dtype=torch.float32, device=device)
+    )
+    prior_norm = sbi_utils.BoxUniform(low=theta_low_norm, high=theta_high_norm)
+
     # Probe to recover T_event and D_in (not strictly needed, but nice sanity check)
-    probe_theta = prior.sample((1,)).to(device)
+    probe_theta = prior_phys.sample((1,)).to(device)
     probe_out = simulator(probe_theta)
     if isinstance(probe_out, tuple):
         probe_x, _ = probe_out
@@ -103,7 +120,7 @@ def main():
 
     # --- 3) Rebuild density estimator + inference and load trained weights ---
     _, density_estimator, inference = build_density_estimator(
-        cfg, input_dim=D_in, prior=prior, device=device
+        cfg, input_dim=D_in, prior=prior_norm, device=device
     )
 
     posterior = None
@@ -164,6 +181,8 @@ def main():
         x_obs_full,
         controls_real,
         cfg,
+        normalizer=normalizer,
+        device=device,
         K_ppc=args.K_ppc,
     )
 
@@ -179,20 +198,22 @@ def main():
         obs_labels=OBS_LABELS,
         dt=cfg.dt,
         out_path=ppc_path,
-        max_trajs=60,
+        max_trajs=20,
         max_dims=cfg.obs_dim,
         title="Posterior Predictive Check on Real Drive Segment",
     )
 
     # 1b) PPC on a fresh simulated window (held-out controls/theta)
     x_sim_full, controls_sim = build_simulated_window_for_eval(
-        cfg, prior, simulator, device
+        cfg, prior_phys, simulator, device
     )
     y_sim, y_ppc_sim = posterior_predictive_from_real(
         posterior,
         x_sim_full,
         controls_sim,
         cfg,
+        normalizer=normalizer,
+        device=device,
         K_ppc=args.K_ppc,
     )
     ppc_sim_path = fig_dir / "ppc_timeseries_simulated.png"
@@ -202,7 +223,7 @@ def main():
         obs_labels=OBS_LABELS,
         dt=cfg.dt,
         out_path=ppc_sim_path,
-        max_trajs=60,
+        max_trajs=20,
         max_dims=cfg.obs_dim,
         title="Posterior Predictive Check on Simulated Holdout",
     )
@@ -210,7 +231,7 @@ def main():
     # 2) Build "train-like" observations from fresh simulations (for hist diagnostics)
     N_hist = min(2000, getattr(cfg, "num_simulations", 2000))
     with torch.no_grad():
-        theta_hist = prior.sample((N_hist,)).to(device)
+        theta_hist = prior_phys.sample((N_hist,)).to(device)
         sim_out = simulator(theta_hist)
         if isinstance(sim_out, tuple):
             x_hist, _ = sim_out

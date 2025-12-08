@@ -208,8 +208,9 @@ def build_density_estimator(
         embedding_net=embedding_net,
         hidden_features=cfg.maf_hidden_features,
         num_transforms=cfg.maf_num_transforms,
-        z_score_x="independent",
-        z_score_theta="independent",
+        # Manual normalization is handled outside; disable sbi's built-in z-scoring.
+        z_score_x="none",
+        z_score_theta="none",
     )
 
     # NPE inference object

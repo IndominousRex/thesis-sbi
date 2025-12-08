@@ -168,113 +168,101 @@ def plot_ppc_trajectories(
     title: str = "Posterior Predictive Check (time series)",
 ):
     """
-    Plot PPC by overlaying many simulated trajectories and one real trajectory.
+    Plot PPC with:
+      - transparent individual sample trajectories
+      - median of PPC samples
+      - real trajectory (half linewidth)
+      - legend showing #samples
 
     Args:
-        y_real:  (T, D) numpy array, real trajectory.
-        y_ppc:   (K, T, D) numpy array, K simulated trajectories.
-        obs_labels: list of length D with channel names.
-        dt:      time step at model rate.
-        out_path: PNG path to save figure.
-        max_trajs: number of PPC trajectories to show (for readability).
-        max_dims: if not None, only plot the first `max_dims` observation channels.
-        title:   figure title.
+        y_real: (T, D)
+        y_ppc:  (K, T, D)
+        obs_labels: labels for each dim
+        dt: timestep
+        out_path: output file
     """
-    assert y_real.ndim == 2
-    assert y_ppc.ndim == 3
+    assert y_real.ndim == 2, f"Expected (T,D), got {y_real.shape}"
+    assert y_ppc.ndim == 3, f"Expected (K,T,D), got {y_ppc.shape}"
+
     K, T, D = y_ppc.shape
     assert y_real.shape == (T, D)
 
+    # Time axis
+    t = np.arange(T) * dt
+
+    # Limit dims and trajectories
     if max_dims is None:
         max_dims = D
     max_dims = min(max_dims, D)
 
-    t = np.arange(T) * dt
-    if K <= max_trajs:
-        idxs = np.arange(K)
-    else:
-        rng = np.random.default_rng(0)
-        idxs = rng.choice(K, size=max_trajs, replace=False)
+    num_trajs = min(K, max_trajs)
+    idxs = (
+        np.random.choice(K, size=num_trajs, replace=False)
+        if K > num_trajs
+        else np.arange(K)
+    )
 
-    # Summary stats for clearer visuals
-    p10, p90 = np.percentile(y_ppc, [10, 90], axis=0)
-    median_ppc = np.median(y_ppc, axis=0)
-    # Deliberately separated palette so each element is distinguishable
-    band_color = "#001E00"  # dark green band (10-90%)
-    sample_color = "#6aaed6"  # lighter blue samples
-    median_color = "#d62728"  # red median
-    real_color = "#000000"  # black real
+    # Compute median trajectory across PPC samples
+    y_median = np.median(y_ppc, axis=0)  # (T, D)
 
-    ncols = 3
-    nrows = int(np.ceil(max_dims / ncols))
-
-    _ensure_dir(out_path)
+    # Figure
+    nrows = max_dims
     fig, axes = plt.subplots(
         nrows,
-        ncols,
-        figsize=(5 * ncols, 2.5 * nrows),
+        1,
+        figsize=(10, 2.7 * nrows),
         sharex=True,
     )
-    axes = np.array(axes).reshape(-1)
-    fig.suptitle(title, fontsize=14, y=1.02)
+    if nrows == 1:
+        axes = [axes]
+
+    # Enhanced title: show total number of samples
+    title = f"{title}   (PPC samples: {K})"
 
     for d in range(max_dims):
         ax = axes[d]
-        # Uncertainty band from middle 80%
-        band_label = "Simulated 10-90%" if d == 0 else None
-        ax.fill_between(
-            t,
-            p10[:, d],
-            p90[:, d],
-            color=band_color,
-            alpha=0.32,
-            label=band_label,
-        )
 
-        # PPC trajectories (a subset for readability)
-        sample_label = "Simulated samples" if d == 0 else None
+        # Plot transparent PPC sample trajectories
         for k in idxs:
             ax.plot(
                 t,
                 y_ppc[k, :, d],
-                color=sample_color,
-                alpha=0.18,
-                lw=1.0,
-                label=sample_label,
+                alpha=0.06,
+                lw=0.7,
+                color="C0",
             )
-            sample_label = None
 
-        # PPC median
-        median_label = "Simulated median" if d == 0 else None
+        # Median trajectory
         ax.plot(
             t,
-            median_ppc[:, d],
-            color=median_color,
-            lw=1.5,
-            linestyle="-",
-            label=median_label,
+            y_median[:, d],
+            color="C1",
+            lw=2.2,
+            label="PPC median",
         )
 
-        # Real trajectory
-        real_label = "Real" if d == 0 else None
+        # Real trajectory — half thickness from earlier lw=1.8 → lw=0.9
         ax.plot(
             t,
             y_real[:, d],
-            color=real_color,
-            lw=0.8,
-            label=real_label,
+            color="black",
+            lw=0.9,
+            label="Real",
         )
+
         label = obs_labels[d] if d < len(obs_labels) else f"obs_{d}"
-        ax.set_title(label)
-        ax.grid(True, alpha=0.3)
+        ax.set_ylabel(label)
+
         if d == 0:
-            ax.legend(loc="best", fontsize=8)
+            ax.set_title(title, fontsize=12)
+            # Add single legend to first subplot only
+            ax.legend(loc="upper right")
 
-    # Turn off unused axes
-    for ax in axes[max_dims:]:
-        ax.axis("off")
+        if d == max_dims - 1:
+            ax.set_xlabel("time [s]")
 
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.tight_layout()
+    _ensure_dir(out_path)
     plt.savefig(out_path, dpi=150)
     plt.close()
     print(f"[plots] Saved PPC trajectories to {out_path}")
@@ -463,3 +451,70 @@ def plot_obs_1d_hist_custom(
     plt.savefig(out_path, dpi=150)
     plt.close()
     print(f"[plots] Saved obs histograms to {out_path}")
+
+
+def plot_prior_posterior_1d(
+    prior_1d: np.ndarray,
+    post_1d: np.ndarray,
+    theta_ref: Optional[float],
+    param_name: str,
+    out_path: Path,
+    bins: int = 100,
+) -> None:
+    """
+    Plot 1D prior and posterior marginals for a single parameter, with an
+    optional vertical line at a reference value theta_ref.
+
+    Args:
+        prior_1d:  (N_prior,) array of prior samples for this parameter.
+        post_1d:   (N_post,) array of posterior samples for this parameter.
+        theta_ref: scalar reference value (e.g. true θ); if None, no line is drawn.
+        param_name: label for the parameter (e.g. "mu").
+        out_path: output path for the PNG.
+        bins: number of histogram bins.
+    """
+    prior_1d = np.asarray(prior_1d, dtype=np.float32)
+    post_1d = np.asarray(post_1d, dtype=np.float32)
+
+    _ensure_dir(out_path)
+
+    plt.figure(figsize=(7, 4))
+
+    # Prior in the background
+    plt.hist(
+        prior_1d,
+        bins=bins,
+        density=True,
+        histtype="stepfilled",
+        alpha=0.3,
+        label="Prior",
+    )
+
+    # Posterior in the foreground
+    plt.hist(
+        post_1d,
+        bins=bins,
+        density=True,
+        histtype="step",
+        linewidth=2.0,
+        label="Posterior",
+    )
+
+    # Optional vertical reference line
+    if theta_ref is not None:
+        plt.axvline(
+            float(theta_ref),
+            color="black",
+            linestyle="--",
+            linewidth=2.0,
+            label="Reference θ",
+        )
+
+    plt.xlabel(param_name)
+    plt.ylabel("Density")
+    plt.title(f"Prior vs posterior for {param_name}")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"[plots] Saved 1D prior/posterior plot to {out_path}")

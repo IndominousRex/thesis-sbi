@@ -70,6 +70,50 @@ def rmse_posterior_predictive(y_real: torch.Tensor, y_samples: torch.Tensor):
     return rmse_per_sample, rmse_overall, rmse_per_dim
 
 
+def one_step_rmse_observation(
+    y_true_next: torch.Tensor,
+    y_pred_samples: torch.Tensor,
+):
+    """
+    Compute 1-step-ahead RMSE in observation space.
+
+    Args:
+        y_true_next:    (N, D) tensor of true next-step observations.
+                        N = number of synthetic test cases, D = obs_dim.
+        y_pred_samples: (N, K, D) tensor of predicted next-step observations
+                        from the posterior predictive, where
+                        K = number of posterior samples used per case.
+
+    We first average over K to get the mean one-step prediction per case,
+    then compute RMSE over all cases and per dimension.
+
+    Returns:
+        rmse_overall: scalar float (Python) with overall RMSE.
+        rmse_per_dim: 1D numpy array of shape (D,) with per-dim RMSE.
+    """
+    assert y_true_next.ndim == 2, f"y_true_next must be (N,D), got {y_true_next.shape}"
+    assert (
+        y_pred_samples.ndim == 3
+    ), f"y_pred_samples must be (N,K,D), got {y_pred_samples.shape}"
+
+    N, D = y_true_next.shape
+    N2, K, D2 = y_pred_samples.shape
+    assert N == N2 and D == D2, "Shape mismatch between y_true_next and y_pred_samples."
+
+    # Mean prediction over posterior samples K
+    y_pred_mean = y_pred_samples.mean(dim=1)  # (N, D)
+
+    sq_err = (y_pred_mean - y_true_next) ** 2  # (N, D)
+
+    # Overall RMSE
+    rmse_overall = torch.sqrt(sq_err.mean())  # scalar
+
+    # Per-dim RMSE
+    rmse_per_dim = torch.sqrt(sq_err.mean(dim=0))  # (D,)
+
+    return float(rmse_overall), rmse_per_dim.cpu().numpy()
+
+
 def w2_sequence_vs_real(
     y_real: torch.Tensor,
     y_samples: torch.Tensor,
