@@ -30,7 +30,7 @@ srun python main.py \
     --seed 42 \
     --dt 0.01 \
     --T-seg 3000 \
-    --encoder-type bigru \
+    --encoder-type transformer \
     --encoder-hidden 32 \
     --lr 1e-3 \
     --batch-train 256 \
