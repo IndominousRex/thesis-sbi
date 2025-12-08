@@ -91,9 +91,7 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Generate dataset ---
-    theta_train, x_train = generate_dataset(
-        cfg, prior, simulator_for_sbi, show_pbar=True
-    )
+    theta_train, x_train, _ = generate_dataset(cfg, prior, simulator, show_pbar=True)
     inference.append_simulations(theta_train, x_train)
 
     # --- Train NPE ---

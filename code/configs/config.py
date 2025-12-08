@@ -31,8 +31,8 @@ class ExperimentConfig:
     # active_parameters controls theta dimensionality (1, 2, or 3 elements)
     active_parameters: Tuple[str, ...] = PARAMETER_ORDER
     fixed_mu: float = 1.0
-    fixed_cd: float = 0.30
-    fixed_m: float = 1700.0
+    fixed_cd: float = 0.27
+    fixed_m: float = 1720.0
 
     # --- Dataset ---
     num_simulations: int = 2000
