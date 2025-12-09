@@ -25,7 +25,7 @@ export JAX_PLATFORM_NAME=cpu
 # --- run experiment: infer all three parameters ---
 srun python main.py \
     --exp-name baseline_transformer_maf_all_three \
-    --num-sim 10000 \
+    --num-sim 20000 \
     --device cuda \
     --seed 42 \
     --dt 0.01 \

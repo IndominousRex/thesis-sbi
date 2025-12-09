@@ -44,7 +44,7 @@ class ExperimentConfig:
     encoder_hidden: int = 32
 
     # ---- Transformer ----
-    transformer_layers: int = 2
+    transformer_layers: int = 3
     transformer_heads: int = 4
     transformer_head_dim: int = 16
     transformer_feature_dim: int = transformer_heads * transformer_head_dim
