@@ -425,12 +425,12 @@ def run_experiment(cfg: ExperimentConfig) -> None:
     CONF_ALPHA = 0.05
 
     # Build MCMC posterior for diagnostics
-    posterior_lc2st = inference.build_posterior(
-        density_estimator,
-        sample_with="mcmc",
-        mcmc_method="slice_np_vectorized",
-        mcmc_parameters={"num_chains": 1, "thin": 1, "warmup_steps": 20},
-    )
+    # posterior_lc2st = inference.build_posterior(
+    #     density_estimator,
+    #     sample_with="mcmc",
+    #     mcmc_method="slice_np_vectorized",
+    #     mcmc_parameters={"num_chains": 1, "thin": 1, "warmup_steps": 20},
+    # )
 
     # 1) Calibration data from prior and simulator
     theta_cal_norm = prior_norm.sample((NUM_LC2ST,)).to(device)  # (N, d_norm)
@@ -441,18 +441,28 @@ def run_experiment(cfg: ExperimentConfig) -> None:
 
     # 2) One posterior sample for each calibration x (shape: (N, d))
     #    Sample one context at a time to avoid batch-size mismatches in MCMC.
-    with torch.no_grad():
-        post_samples_norm = (
-            posterior_lc2st.sample_batched(
-                (1,),  # one sample per x
-                x=x_cal,
-                num_chains=1,
-                init_strategy="proposal",
-                show_progress_bars=True,
-            )[0]
-            .squeeze(0)
-            .cpu()
-        )
+    # with torch.no_grad():
+    #     post_samples_norm = (
+    #         # posterior_lc2st.sample_batched(
+    #             (1,),  # one sample per x
+    #             x=x_cal,
+    #             num_chains=1,
+    #             init_strategy="proposal",
+    #             show_progress_bars=True,
+    #         )[0]
+    #         .squeeze(0)
+    #         .cpu()
+    #     )with torch.no_grad():
+    # Direct sampling from flow, no MCMC
+    post_samples_norm = (
+        posterior.sample_batched(
+            sample_shape=(1,),
+            x=x_cal,
+            max_sampling_batch_size=64,
+        )[0]
+        .squeeze(0)
+        .cpu()
+    )
 
     # 3) Flow-space transform helpers
     assert hasattr(density_estimator, "net") and hasattr(

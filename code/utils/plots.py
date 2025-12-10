@@ -165,6 +165,7 @@ def plot_ppc_trajectories(
     out_path: Path,
     max_trajs: int = 60,
     max_dims: Optional[int] = None,
+    ncols: int = 3,
     title: str = "Posterior Predictive Check (time series)",
 ):
     """
@@ -206,21 +207,22 @@ def plot_ppc_trajectories(
     y_median = np.median(y_ppc, axis=0)  # (T, D)
 
     # Figure
-    nrows = max_dims
+    ncols = max(1, ncols)
+    nrows = int(np.ceil(max_dims / ncols))
     fig, axes = plt.subplots(
         nrows,
-        1,
-        figsize=(10, 2.7 * nrows),
+        ncols,
+        figsize=(4.5 * ncols, 2.5 * nrows),
         sharex=True,
     )
-    if nrows == 1:
-        axes = [axes]
+    axes = np.array(axes).reshape(-1)
 
     # Enhanced title: show total number of samples
-    title = f"{title}   (PPC samples: {K})"
+    fig.suptitle(f"{title}   (PPC samples: {K})", fontsize=12, y=0.98)
 
     for d in range(max_dims):
         ax = axes[d]
+        row_idx = d // ncols
 
         # Plot transparent PPC sample trajectories
         for k in idxs:
@@ -254,14 +256,16 @@ def plot_ppc_trajectories(
         ax.set_ylabel(label)
 
         if d == 0:
-            ax.set_title(title, fontsize=12)
             # Add single legend to first subplot only
             ax.legend(loc="upper right")
 
-        if d == max_dims - 1:
+        if row_idx == nrows - 1:
             ax.set_xlabel("time [s]")
 
-    plt.tight_layout()
+    for ax in axes[max_dims:]:
+        ax.axis("off")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
     _ensure_dir(out_path)
     plt.savefig(out_path, dpi=150)
     plt.close()
