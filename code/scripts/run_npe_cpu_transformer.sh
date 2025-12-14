@@ -1,6 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=npe_allparams
-#SBATCH --partition=cpu
+#SBATCH --job-name=npe_allparams_cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --mem=256G
