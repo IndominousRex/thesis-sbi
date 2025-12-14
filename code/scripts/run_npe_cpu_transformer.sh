@@ -1,14 +1,13 @@
 #!/bin/bash -l
 #SBATCH --job-name=npe_allparams
-#SBATCH --partition=gpu
+#SBATCH --partition=cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:h200:1
-#SBATCH --mem-per-cpu=4G
-#SBATCH --time=4:00:00
-#SBATCH --output=npe_allparams_%j.out
-#SBATCH --error=npe_allparams_%j.err
+#SBATCH --mem=256G
+#SBATCH --cpus-per-task=16
+#SBATCH --time=12:00:00
+#SBATCH --output=npe_cpu_%j.out
+#SBATCH --error=npe_cpu_%j.err
 
 echo "[$(date)] Starting joint-parameter run (mu, cd, m)"
 
@@ -21,6 +20,8 @@ conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export JAX_PLATFORM_NAME=cpu
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # --- run experiment: infer all three parameters ---
 srun python main.py \
