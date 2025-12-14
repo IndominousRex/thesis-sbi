@@ -1,6 +1,5 @@
 #!/bin/bash -l
 #SBATCH --job-name=npe_allparams_cpu
-#SBATCH --partition=amo
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --mem-per-cpu=64G
