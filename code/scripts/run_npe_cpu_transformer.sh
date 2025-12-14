@@ -4,6 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --mem=1024G
+#SBATCH --cpus-per-task=64
 #SBATCH --time=12:00:00
 #SBATCH --output=npe_cpu_%j.out
 #SBATCH --error=npe_cpu_%j.err
