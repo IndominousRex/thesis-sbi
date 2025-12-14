@@ -3,8 +3,8 @@
 #SBATCH --partition=amo
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --mem-per-cpu=16G
-#SBATCH --cpus-per-task=16
+#SBATCH --mem-per-cpu=64G
+#SBATCH --cpus-per-task=8
 #SBATCH --time=12:00:00
 #SBATCH --output=npe_cpu_%j.out
 #SBATCH --error=npe_cpu_%j.err
