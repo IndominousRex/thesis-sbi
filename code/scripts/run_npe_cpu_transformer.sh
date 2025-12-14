@@ -3,7 +3,7 @@
 #SBATCH --partition=amo
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --mem=1024G
+#SBATCH --mem=512G
 #SBATCH --cpus-per-task=32
 #SBATCH --time=12:00:00
 #SBATCH --output=npe_cpu_%j.out
