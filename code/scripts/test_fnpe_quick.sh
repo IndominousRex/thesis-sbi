@@ -26,8 +26,12 @@ NUM_DIFF_STEPS=50        # Few diffusion steps
 NUM_POST_SAMPLES=50      # Few posterior samples
 SEED=42
 
-# Change to code directory (adjust path as needed)
-cd "$(dirname "$0")/.." || exit 1
+# --- Go to code directory ---
+cd /bigwork/nhkbarit/thesis-code/code
+
+# --- Load environment ---
+module load Miniforge3
+conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 
 echo ""
 echo "[CONFIG] Quick test settings:"
