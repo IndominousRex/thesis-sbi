@@ -21,7 +21,7 @@ echo "======================================================"
 
 # --- Configuration ---
 EXP_NAME="fnpe_vehicle_allparams"
-NUM_SIM=100000          # More data typically helps FNPE
+NUM_SIM=1000          # More data typically helps FNPE
 T_OBS=100               # Trajectory length (markovsbi style, shorter than NPE)
 EPOCHS=25               # Number of training epochs
 STEPS_PER_EPOCH=10000   # Gradient steps per epoch
