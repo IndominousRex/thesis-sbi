@@ -1,4 +1,14 @@
-#!/bin/bash
+#!/bin/bash -l
+#SBATCH --job-name=fnpe_vehicle
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gres=gpu:h200:1
+#SBATCH --mem-per-cpu=4G
+#SBATCH --time=02:00:00
+#SBATCH --output=fnpe_gpu_%j.out
+#SBATCH --error=fnpe_gpu_%j.err
 
 echo "======================================================"
 echo "[$(date)] Quick FNPE Test - Verifying pipeline works"
