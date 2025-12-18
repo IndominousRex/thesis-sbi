@@ -45,7 +45,7 @@ conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 # --- JAX configuration ---
 # Use GPU for JAX operations
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-export JAX_PLATFORM_NAME=gpu
+export JAX_PLATFORM_NAME=cpu
 
 echo ""
 echo "[CONFIG]"
