@@ -7,6 +7,8 @@ framework (Flow-based Neural Posterior Estimation via diffusion).
 
 import json
 import pickle
+import sys
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
@@ -15,6 +17,13 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
+
+
+def log(msg: str):
+    """Print with timestamp and flush immediately."""
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}", flush=True)
+
 
 # MarkovSBI imports
 from markovsbi.tasks import VehicleDynamicsTask
@@ -64,15 +73,24 @@ def train_score_network(
         score_net: Score network function
         losses: List of epoch losses
     """
+    if verbose:
+        log("[TRAIN] Starting score network setup...")
+
     key = jax.random.PRNGKey(seed)
     key, key_init = jax.random.split(key)
 
     d = data["thetas"].shape[1]
 
     # Preconditioning
+    if verbose:
+        log("[TRAIN] Building preconditioning functions...")
     c_in, c_noise, c_out = precondition_functions(sde)
 
     # Build score network
+    if verbose:
+        log(
+            f"[TRAIN] Building score network (hidden={hidden_dim}, layers={num_hidden}, type={model_type})..."
+        )
     init_fn, score_net = build_score_mlp(
         window_size=window_size,
         num_hidden=num_hidden,
@@ -84,19 +102,25 @@ def train_score_network(
     )
 
     # Build batch sampler and loss
+    if verbose:
+        log("[TRAIN] Building batch sampler and loss function...")
     batch_sampler = build_batch_sampler(data)
     loss_fn = build_loss_fn("dsm", score_net, sde, weight_fn, control_variate=True)
 
     # Initialize
+    if verbose:
+        log("[TRAIN] Initializing network parameters...")
     theta_batch, x_batch = batch_sampler(key_init, batch_size)
     params = init_fn(key_init, jnp.ones((batch_size,)), theta_batch, x_batch)
 
     if verbose:
         n_params = sum(p.size for p in jax.tree_util.tree_leaves(params))
-        print(f"[FNPE] Score network: {n_params:,} parameters")
+        log(f"[TRAIN] Score network initialized: {n_params:,} parameters")
 
     # Optimizer
     total_steps = num_epochs * steps_per_epoch
+    if verbose:
+        log(f"[TRAIN] Setting up optimizer (total_steps={total_steps})...")
     schedule = optax.cosine_onecycle_schedule(total_steps, learning_rate)
     optimizer = optax.chain(
         optax.adaptive_grad_clip(10.0),
@@ -112,11 +136,28 @@ def train_score_network(
         params = optax.apply_updates(params, updates)
         return loss, params, opt_state
 
+    # JIT warmup - first call compiles the function
+    if verbose:
+        log("[TRAIN] JIT compiling update function (this may take a while)...")
+
+    key, key_batch, key_loss = jax.random.split(key, 3)
+    theta_batch, x_batch = batch_sampler(key_batch, batch_size)
+    t0 = time.time()
+    loss, params, opt_state = update(params, key_loss, opt_state, theta_batch, x_batch)
+    # Block until computation is done
+    loss_val = float(loss)
+    if verbose:
+        log(
+            f"[TRAIN] JIT compilation done in {time.time() - t0:.1f}s, first loss = {loss_val:.6f}"
+        )
+
     # Training loop
     losses = []
+    train_start = time.time()
     for epoch in range(num_epochs):
+        epoch_start = time.time()
         epoch_loss = 0.0
-        for _ in range(steps_per_epoch):
+        for step in range(steps_per_epoch):
             key, key_batch, key_loss = jax.random.split(key, 3)
             theta_batch, x_batch = batch_sampler(key_batch, batch_size)
             loss, params, opt_state = update(
@@ -124,9 +165,22 @@ def train_score_network(
             )
             epoch_loss += float(loss) / steps_per_epoch
 
+            # Progress update every 1000 steps
+            if verbose and (step + 1) % 1000 == 0:
+                log(
+                    f"[TRAIN] Epoch {epoch+1}/{num_epochs}, Step {step+1}/{steps_per_epoch}"
+                )
+
         losses.append(epoch_loss)
+        epoch_time = time.time() - epoch_start
         if verbose:
-            print(f"[FNPE] Epoch {epoch+1}/{num_epochs}: Loss = {epoch_loss:.6f}")
+            log(
+                f"[TRAIN] Epoch {epoch+1}/{num_epochs}: Loss = {epoch_loss:.6f} ({epoch_time:.1f}s)"
+            )
+
+    if verbose:
+        total_time = time.time() - train_start
+        log(f"[TRAIN] Training complete in {total_time:.1f}s ({total_time/60:.1f} min)")
 
     return params, score_net, losses
 
@@ -168,32 +222,49 @@ def run_fnpe_experiment(
     Returns:
         Dict with experiment results
     """
+    experiment_start = time.time()
     setup_environment(cfg.random_seed)
 
     exp_dir = make_fnpe_experiment_dir(cfg)
     fig_dir = exp_dir / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[FNPE] Experiment dir: {exp_dir}")
-    print(f"[FNPE] Active parameters: {cfg.active_parameters}")
+    log("=" * 60)
+    log("FNPE EXPERIMENT STARTING")
+    log("=" * 60)
+    log(f"Experiment dir: {exp_dir}")
+    log(f"Active parameters: {cfg.active_parameters}")
+    log(f"Config: num_sim={num_simulations}, T_obs={T_obs}, epochs={num_epochs}")
+    log(f"        steps_per_epoch={steps_per_epoch}, batch_size={batch_size}")
+    log(f"        model_type={model_type}, score_fn_type={score_fn_type}")
 
     # 1. Create task
+    log("[STEP 1/6] Creating VehicleDynamicsTask...")
+    t0 = time.time()
     task = VehicleDynamicsTask(cfg=cfg, normalize=True, seed=cfg.random_seed)
     prior = task.get_prior()
+    log(f"[STEP 1/6] Task created in {time.time() - t0:.1f}s")
 
     # 2. Generate data
-    print(f"[FNPE] Generating {num_simulations} training trajectories...")
+    log(f"[STEP 2/6] Generating {num_simulations} training trajectories (T={T_obs})...")
+    t0 = time.time()
     key = jax.random.PRNGKey(cfg.random_seed)
     key, key_data = jax.random.split(key)
     data = task.get_data(key_data, num_simulations, T_obs)
-
-    print(f"[FNPE] Data shapes: thetas={data['thetas'].shape}, xs={data['xs'].shape}")
+    log(f"[STEP 2/6] Data generation done in {time.time() - t0:.1f}s")
+    log(f"           Shapes: thetas={data['thetas'].shape}, xs={data['xs'].shape}")
 
     # 3. Initialize SDE
+    log("[STEP 3/6] Initializing SDE...")
+    t0 = time.time()
     sde, weight_fn = init_sde(data)
+    log(f"[STEP 3/6] SDE initialized in {time.time() - t0:.1f}s")
 
     # 4. Train score network
-    print(f"[FNPE] Training score network ({num_epochs} epochs, model={model_type})...")
+    log(
+        f"[STEP 4/6] Training score network ({num_epochs} epochs, model={model_type})..."
+    )
+    t0 = time.time()
     params, score_net, losses = train_score_network(
         data,
         sde,
@@ -208,8 +279,11 @@ def run_fnpe_experiment(
         learning_rate=learning_rate,
         seed=cfg.random_seed,
     )
+    log(f"[STEP 4/6] Training done in {time.time() - t0:.1f}s")
 
     # 5. Setup sampler
+    log("[STEP 5/6] Setting up sampler...")
+    t0 = time.time()
     prior_norm = task.get_normalized_prior()
 
     if score_fn_type.lower() == "fnpe":
@@ -220,22 +294,40 @@ def run_fnpe_experiment(
     kernel = EulerMaruyama(score_fn)
     time_grid = jnp.linspace(sde.T_min, sde.T_max, num_diffusion_steps)
     sampler = Diffuser(kernel, time_grid, task.input_shape)
+    log(f"[STEP 5/6] Sampler setup done in {time.time() - t0:.1f}s")
 
     # 6. Diagnostic: sample from a test case
-    print("[FNPE] Running diagnostics...")
+    log(
+        f"[STEP 6/6] Running diagnostics ({num_posterior_samples} posterior samples)..."
+    )
+    t0 = time.time()
     key, key_test = jax.random.split(key)
     theta_true_phys = prior.sample(key_test)
+    log(f"           True theta: {theta_true_phys}")
 
     key, key_sim = jax.random.split(key)
     simulator = task.get_simulator()
+    log("           Simulating observed trajectory...")
     x_o_raw = simulator(key_sim, theta_true_phys, T_obs)
     x_o = task.normalize_x(x_o_raw)
+    log(f"           Observed trajectory shape: {x_o.shape}")
 
+    log(
+        f"           Sampling {num_posterior_samples} posterior samples (JIT compiling)..."
+    )
     key, key_sample = jax.random.split(key)
+
+    # Do sampling with progress tracking
+    sample_start = time.time()
     samples_norm = jax.vmap(sampler.sample, in_axes=(0, None))(
         jax.random.split(key_sample, num_posterior_samples), x_o
     )
+    # Block until done
+    samples_norm = jax.block_until_ready(samples_norm)
+    log(f"           Sampling done in {time.time() - sample_start:.1f}s")
+
     samples_phys = jax.vmap(task.unnormalize_theta)(samples_norm)
+    log(f"[STEP 6/6] Diagnostics done in {time.time() - t0:.1f}s")
 
     # Compute simple metrics
     samples_np = np.array(samples_phys)
@@ -289,7 +381,7 @@ def run_fnpe_experiment(
         json.dump(metrics, f, indent=2)
 
     # Generate plots
-    print("[FNPE] Generating plots...")
+    log("[PLOTS] Generating plots...")
     try:
         import matplotlib.pyplot as plt
 
@@ -303,7 +395,7 @@ def run_fnpe_experiment(
         plt.tight_layout()
         plt.savefig(fig_dir / "training_loss.png", dpi=150)
         plt.close()
-        print(f"  Saved: {fig_dir / 'training_loss.png'}")
+        log(f"  Saved: {fig_dir / 'training_loss.png'}")
 
         # 2. Corner plot of posterior samples
         try:
@@ -320,9 +412,9 @@ def run_fnpe_experiment(
             )
             fig.savefig(fig_dir / "corner_plot.png", dpi=150)
             plt.close(fig)
-            print(f"  Saved: {fig_dir / 'corner_plot.png'}")
+            log(f"  Saved: {fig_dir / 'corner_plot.png'}")
         except ImportError:
-            print("  [FNPE] corner package not installed, skipping corner plot")
+            log("  [WARN] corner package not installed, skipping corner plot")
 
         # 3. 1D marginal posteriors
         d = len(cfg.active_parameters)
@@ -351,10 +443,10 @@ def run_fnpe_experiment(
         plt.tight_layout()
         plt.savefig(fig_dir / "marginals.png", dpi=150)
         plt.close()
-        print(f"  Saved: {fig_dir / 'marginals.png'}")
+        log(f"  Saved: {fig_dir / 'marginals.png'}")
 
         # 4. Posterior predictive check (PPC) - simulate from posterior samples
-        print("[FNPE] Running posterior predictive check...")
+        log("[PLOTS] Running posterior predictive check...")
         n_ppc = min(100, num_posterior_samples)
         ppc_thetas = samples_phys[:n_ppc]
 
@@ -420,7 +512,7 @@ def run_fnpe_experiment(
         plt.tight_layout()
         plt.savefig(fig_dir / "ppc_trajectories.png", dpi=150)
         plt.close()
-        print(f"  Saved: {fig_dir / 'ppc_trajectories.png'}")
+        log(f"  Saved: {fig_dir / 'ppc_trajectories.png'}")
 
         # 5. Error summary bar plot
         fig, ax = plt.subplots(figsize=(6, 4))
@@ -443,19 +535,28 @@ def run_fnpe_experiment(
         plt.tight_layout()
         plt.savefig(fig_dir / "error_summary.png", dpi=150)
         plt.close()
-        print(f"  Saved: {fig_dir / 'error_summary.png'}")
+        log(f"  Saved: {fig_dir / 'error_summary.png'}")
 
     except Exception as e:
-        print(f"[FNPE] Error generating plots: {e}")
+        log(f"[ERROR] Error generating plots: {e}")
         import traceback
 
         traceback.print_exc()
 
-    print(f"\n[FNPE] Experiment completed. Results saved to {exp_dir}")
-    print("\n=== Diagnostic Summary ===")
+    # Final summary
+    total_experiment_time = time.time() - experiment_start
+    log("=" * 60)
+    log("EXPERIMENT COMPLETED")
+    log("=" * 60)
+    log(
+        f"Total time: {total_experiment_time:.1f}s ({total_experiment_time/60:.1f} min)"
+    )
+    log(f"Results saved to: {exp_dir}")
+    log("")
+    log("=== Diagnostic Summary ===")
     for i, name in enumerate(cfg.active_parameters):
-        print(
-            f"{name}: true={theta_true_np[i]:.4f}, "
+        log(
+            f"  {name}: true={theta_true_np[i]:.4f}, "
             f"mean={posterior_mean[i]:.4f}, "
             f"std={posterior_std[i]:.4f}, "
             f"error={abs_error[i]:.4f}"
