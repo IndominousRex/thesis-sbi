@@ -36,8 +36,11 @@ echo "  steps_per_epoch=$STEPS_PER_EPOCH, batch_size=$BATCH_SIZE"
 echo "  hidden_dim=$HIDDEN_DIM, num_hidden=$NUM_HIDDEN"
 echo ""
 
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export JAX_PLATFORM_NAME=cpu
+
 # Run the experiment
-python -m inference.fnpe_experiment \
+srun python -m inference.fnpe_experiment \
     --exp-name "fnpe_quick_test" \
     --num-sim ${NUM_SIM} \
     --T-obs ${T_OBS} \
