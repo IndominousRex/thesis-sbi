@@ -13,26 +13,27 @@
 # =============================================================================
 # FNPE (Flow-based Neural Posterior Estimation) Experiment Script
 # Uses the MarkovSBI framework with diffusion-based score matching
+# Params matched to NPE runs for fair comparison
 # =============================================================================
 
 echo "======================================================"
 echo "[$(date)] Starting FNPE Vehicle Dynamics Experiment"
 echo "======================================================"
 
-# --- Configuration ---
+# --- Configuration (matched to NPE where applicable) ---
 EXP_NAME="fnpe_vehicle_allparams"
-NUM_SIM=1000          # More data typically helps FNPE
-T_OBS=100               # Trajectory length (markovsbi style, shorter than NPE)
-EPOCHS=25               # Number of training epochs
-STEPS_PER_EPOCH=10000   # Gradient steps per epoch
-BATCH_SIZE=256          # Training batch size
-HIDDEN_DIM=128          # Score network hidden dim
-NUM_HIDDEN=5            # Score network depth
-MODEL_TYPE="gru"        # Score network observation processing (gru or linear)
-LR=5e-4                 # Learning rate
+NUM_SIM=20000           # Same as NPE (--num-sim 20000)
+T_OBS=3000              # Same as NPE (--T-seg 3000)
+EPOCHS=20               # Similar to NPE (--stop-after-epochs 20)
+STEPS_PER_EPOCH=1000    # Adjusted for reasonable training time
+BATCH_SIZE=32           # Same as NPE (--batch-train 32)
+HIDDEN_DIM=32           # Similar to NPE encoder (--encoder-hidden 32)
+NUM_HIDDEN=3            # Reasonable depth
+MODEL_TYPE="gru"        # Observation encoder type (like NPE's bigru encoder)
+LR=1e-3                 # Same as NPE (--lr 1e-3)
 NUM_DIFF_STEPS=500      # Reverse diffusion steps
 NUM_POST_SAMPLES=1000   # Posterior samples for diagnostics
-SEED=42
+SEED=42                 # Same as NPE (--seed 42)
 PARAMS="mu,cd,m"        # Parameters to infer
 
 # --- Go to code directory ---
