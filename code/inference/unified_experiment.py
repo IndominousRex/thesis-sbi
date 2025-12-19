@@ -352,7 +352,8 @@ def run_one_step_rmse_diagnostic(
             continue
 
         y_next_true = y_seq[1].astype(np.float32)
-        x_cond = normalizer.normalize_x(x_sim[:, :1, :], cfg.obs_dim).to(device)
+        # Use full trajectory for conditioning (posterior expects full T_seg shape)
+        x_cond = normalizer.normalize_x(x_sim, cfg.obs_dim).to(device)
 
         with torch.no_grad():
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)

@@ -303,7 +303,7 @@ def make_shuffled_U(rng, total_T, dt):
 
 
 KMH_TO_MS = 1.0 / 3.6
-INIT_SPEEDS_MS = np.arange(10.0, 110.0, 10.0, dtype=np.float32) * KMH_TO_MS
+INIT_SPEEDS_MS = np.arange(10.0, 130.0, 10.0, dtype=np.float32) * KMH_TO_MS
 
 
 def sample_initial_states(rng: np.random.Generator, B: int) -> jnp.ndarray:
