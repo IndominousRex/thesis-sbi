@@ -21,18 +21,32 @@ from sbi.diagnostics import run_sbc, check_sbc
 
 from configs.config import ExperimentConfig
 from utils.env_utils import setup_environment, get_device
-from utils.metrics import sliced_wasserstein_prior_vs_dap, one_step_rmse_observation
+from utils.metrics import (
+    sliced_wasserstein_prior_vs_dap,
+    one_step_rmse_observation,
+    real_data_trajectory_metrics,
+)
 from utils.normalization import (
     fit_normalizer,
     save_normalizer,
     load_normalizer,
     Normalizer,
 )
-from utils.real_data import initial_state_from_obs, simulate_y_batch_for_thetas
+from utils.real_data import (
+    initial_state_from_obs,
+    simulate_y_batch_for_thetas,
+    build_real_window_from_csv,
+    build_simulated_window_for_eval,
+    posterior_predictive_from_real,
+    OBS_LABELS,
+    prep_x_obs_from_df,
+)
 from utils.plots import (
     plot_prior_posterior_1d,
     plot_sbc_rank_hist,
     plot_training_curves,
+    plot_ppc_trajectories,
+    plot_obs_1d_hist_custom,
 )
 from simulation.simulation import (
     init_simulation_from_config,
@@ -392,6 +406,206 @@ def run_one_step_rmse_diagnostic(
     }
 
 
+def run_real_data_evaluation(
+    cfg: ExperimentConfig,
+    exp_dir: Path,
+    fig_dir: Path,
+    posterior,
+    prior_phys,
+    simulator,
+    normalizer: Normalizer,
+    device: torch.device,
+    T_event: int,
+    K_ppc: int = 300,
+) -> Dict[str, Any]:
+    """
+    Run real data evaluation on a trained posterior.
+
+    Args:
+        cfg: Experiment configuration
+        exp_dir: Experiment directory for saving results
+        fig_dir: Figure directory
+        posterior: Trained posterior
+        prior_phys: Prior in physical units
+        simulator: Simulator function
+        normalizer: Data normalizer
+        device: Torch device
+        T_event: Expected time series length
+        K_ppc: Number of posterior predictive samples
+
+    Returns:
+        Dict with real data metrics
+    """
+    import pandas as pd
+
+    # FNPE uses incompatible data format
+    if cfg.method == "fnpe":
+        print(
+            "[REAL] FNPE uses incompatible data format - skipping real data evaluation"
+        )
+        return {}
+
+    csv_path = Path(cfg.real_data_csv)
+    if not csv_path.exists():
+        print(f"[REAL] CSV not found: {csv_path}")
+        return {}
+
+    print(f"[REAL] Loading real data from {csv_path}")
+    df_real = pd.read_csv(csv_path)
+
+    # Build real window
+    try:
+        x_obs_full, controls_real, start_idx = build_real_window_from_csv(
+            df_real,
+            cfg,
+            device,
+            start_idx=None,
+            prefer_low_brake=True,
+            brake_thresh=5.0,
+            max_viol_frac=0.01,
+            rate_body_z_in_deg_s=True,
+            tire_rates_in_rpm=False,
+            vel_body_in_kmh=False,
+        )
+    except Exception as e:
+        print(f"[REAL] Failed to build real window: {e}")
+        return {}
+
+    # Check time length
+    if x_obs_full.shape[1] != T_event:
+        print(
+            f"[REAL] Window length {x_obs_full.shape[1]} != model T_event={T_event}, skipping"
+        )
+        return {}
+
+    print(f"[REAL] Real data window: shape={x_obs_full.shape}, start_idx={start_idx}")
+
+    # Posterior predictive on real segment
+    y_real, y_ppc = posterior_predictive_from_real(
+        posterior,
+        x_obs_full,
+        controls_real,
+        cfg,
+        normalizer=normalizer,
+        device=device,
+        K_ppc=K_ppc,
+    )
+    print(f"[REAL] PPC shapes: y_real={y_real.shape}, y_ppc={y_ppc.shape}")
+
+    # Plot PPC time-series on real segment
+    if not cfg.no_plots:
+        ppc_path = fig_dir / "ppc_timeseries_real.png"
+        plot_ppc_trajectories(
+            y_real=y_real,
+            y_ppc=y_ppc,
+            obs_labels=OBS_LABELS,
+            dt=cfg.dt,
+            out_path=ppc_path,
+            max_trajs=20,
+            max_dims=cfg.obs_dim,
+            title="Posterior Predictive Check on Real Drive Segment",
+        )
+
+    # PPC on simulated holdout
+    try:
+        x_sim_full, controls_sim = build_simulated_window_for_eval(
+            cfg, prior_phys, simulator, device
+        )
+        y_sim, y_ppc_sim = posterior_predictive_from_real(
+            posterior,
+            x_sim_full,
+            controls_sim,
+            cfg,
+            normalizer=normalizer,
+            device=device,
+            K_ppc=K_ppc,
+        )
+        if not cfg.no_plots:
+            ppc_sim_path = fig_dir / "ppc_timeseries_simulated.png"
+            plot_ppc_trajectories(
+                y_real=y_sim,
+                y_ppc=y_ppc_sim,
+                obs_labels=OBS_LABELS,
+                dt=cfg.dt,
+                out_path=ppc_sim_path,
+                max_trajs=20,
+                max_dims=cfg.obs_dim,
+                title="Posterior Predictive Check on Simulated Holdout",
+            )
+    except Exception as e:
+        print(f"[REAL] Simulated PPC failed: {e}")
+
+    # Train-like observations histogram
+    if not cfg.no_plots:
+        try:
+            N_hist = min(2000, cfg.num_simulations)
+            with torch.no_grad():
+                theta_hist = prior_phys.sample((N_hist,)).to(device)
+                sim_out = simulator(theta_hist)
+                x_hist = sim_out[0] if isinstance(sim_out, tuple) else sim_out
+
+            train_obs = (
+                x_hist[:, :, : cfg.obs_dim]
+                .detach()
+                .cpu()
+                .numpy()
+                .reshape(-1, cfg.obs_dim)
+            )
+
+            x_obs_all = prep_x_obs_from_df(
+                df_real,
+                start_idx=0,
+                T=len(df_real),
+                rate_body_z_in_deg_s=True,
+                tire_rates_in_rpm=False,
+                vel_body_in_kmh=False,
+            )
+            real_obs_all = x_obs_all.numpy()
+
+            custom_ranges = {
+                "yaw_rate [rad/s]": (-2, 2),
+                "v_body_x [m/s]": (5, 25),
+                "v_body_y [m/s]": (-2, 2),
+                "a_body_x [m/s²]": (-6, 6),
+                "a_body_y [m/s²]": (-6, 6),
+                "tire_FL [rad/s]": (0, 90),
+                "tire_FR [rad/s]": (0, 90),
+                "tire_RL [rad/s]": (0, 90),
+                "tire_RR [rad/s]": (0, 90),
+            }
+
+            hist_path = fig_dir / "obs_hist_train_vs_real.png"
+            plot_obs_1d_hist_custom(
+                train_obs=train_obs,
+                real_obs=real_obs_all,
+                obs_labels=OBS_LABELS,
+                custom_ranges=custom_ranges,
+                out_path=hist_path,
+                bins=80,
+            )
+        except Exception as e:
+            print(f"[REAL] Histogram generation failed: {e}")
+
+    # Compute metrics
+    metrics = real_data_trajectory_metrics(y_real, y_ppc, normalize_w2=True)
+
+    print("\n=== Real-data trajectory metrics ===")
+    print(f"Overall RMSE (mixed units): {metrics['rmse_overall']:.4f}")
+    print("Per-dimension RMSEs:")
+    for label, val in zip(OBS_LABELS, metrics["rmse_per_dim"]):
+        print(f"  {label:<20}: {val:.4f}")
+    print(f"W2 (normalized): {metrics['w2']:.4f}")
+    print(f"Mean per-sample W2: {metrics['w2_mean_per_sample']:.4f}")
+
+    # Save metrics
+    real_metrics_path = exp_dir / "real_metrics.json"
+    with real_metrics_path.open("w") as f:
+        json.dump(metrics, f, indent=2)
+    print(f"[REAL] Saved real-data metrics to {real_metrics_path}")
+
+    return metrics
+
+
 # =============================================================================
 # Main Experiment Runner
 # =============================================================================
@@ -602,39 +816,29 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             except Exception as e:
                 print(f"[DIAG] 1-step RMSE failed: {e}")
 
+    # --- Real data eval (inline) ---
+    if cfg.real_data_csv and cfg.do_eval:
+        print("\n[EVAL] Running real-data evaluation (inline)...")
+        real_metrics = run_real_data_evaluation(
+            cfg=cfg,
+            exp_dir=exp_dir,
+            fig_dir=fig_dir,
+            posterior=posterior,
+            prior_phys=prior_phys,
+            simulator=simulator,
+            normalizer=normalizer,
+            device=device,
+            T_event=T_event,
+            K_ppc=300,
+        )
+        if real_metrics:
+            metrics["real_metrics"] = real_metrics
+
     # --- Save config and metrics ---
     cfg.save(str(exp_dir / "config.json"))
 
     with (exp_dir / "metrics.json").open("w") as f:
         json.dump(metrics, f, indent=2, default=tensor_to_python)
-
-    # --- Real data eval ---
-    if cfg.real_data_csv and cfg.do_eval:
-        print("\n[EVAL] Running real-data evaluation...")
-        import subprocess
-        import sys
-        import os
-
-        eval_script = Path(__file__).resolve().parent / "eval_real_data.py"
-        code_dir = Path(__file__).resolve().parent.parent  # code/ directory
-
-        cmd = [
-            sys.executable,
-            str(eval_script),
-            "--exp-dir",
-            str(exp_dir),
-            "--csv",
-            cfg.real_data_csv,
-            "--device",
-            cfg.device,
-        ]
-
-        # Set PYTHONPATH to include code directory for module imports
-        env = os.environ.copy()
-        env["PYTHONPATH"] = str(code_dir) + os.pathsep + env.get("PYTHONPATH", "")
-
-        print("Executing:", " ".join(cmd))
-        subprocess.run(cmd, check=True, env=env, cwd=str(code_dir))
 
     print(f"\n{'='*60}")
     print(f"Experiment completed: {exp_dir}")
