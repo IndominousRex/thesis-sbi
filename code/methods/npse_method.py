@@ -11,10 +11,28 @@ import pickle
 
 import torch
 from sbi.inference import NPSE
-from sbi.neural_nets import posterior_score_nn
 
 from .base import BaseMethod
 from models.models import build_embedding
+
+
+class EmbeddingWrapper(torch.nn.Module):
+    """Wrapper to apply embedding and cache embedded data for NPSE."""
+
+    def __init__(self, embedding_net: torch.nn.Module):
+        super().__init__()
+        self.embedding_net = embedding_net
+        self._output_dim = None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x shape: (batch, seq_len, features) or (batch, seq_len * features)
+        embedded = self.embedding_net(x)
+        self._output_dim = embedded.shape[-1]
+        return embedded
+
+    @property
+    def output_dim(self) -> int:
+        return self._output_dim
 
 
 class NPSEMethod(BaseMethod):
@@ -53,21 +71,15 @@ class NPSEMethod(BaseMethod):
         self._seq_len = seq_len
 
         # Build embedding network (same as NPE)
-        self.embedding_net = build_embedding(self.cfg, input_dim, seq_len, self.device)
+        base_embedding = build_embedding(self.cfg, input_dim, seq_len, self.device)
+        self.embedding_net = EmbeddingWrapper(base_embedding)
 
-        # Build score network with embedding
-        score_net_builder = posterior_score_nn(
-            sde_type=self.sde_type,
-            embedding_net=self.embedding_net,
-            z_score_x="none",  # Manual normalization
-            z_score_theta="none",
-        )
-
-        # NPSE inference object with custom score network
+        # NPSE inference object - pass embedding_net directly
+        # The sbi library will use it to embed x before the score network
         self.inference = NPSE(
             prior=self.prior,
-            score_net=score_net_builder,
             sde_type=self.sde_type,
+            embedding_net=self.embedding_net,
             device=str(self.device),
         )
 
