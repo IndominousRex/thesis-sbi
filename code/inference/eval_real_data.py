@@ -124,10 +124,17 @@ def main():
     cfg_path = exp_dir / "config.json"
     with cfg_path.open("r") as f:
         cfg_raw = json.load(f)
-    method = cfg_raw.get("method", "NPE")  # Default to NPE for backward compatibility
+    method = cfg_raw.get("method", "npe").lower()  # Normalize to lowercase
     sde_type = cfg_raw.get("sde_type", "ve")  # Default SDE type for NPSE
 
     print(f"[eval] Detected method: {method}")
+
+    # FNPE uses its own data format - skip real data eval
+    if method == "fnpe":
+        print(
+            "[eval] FNPE uses incompatible data format - skipping real data evaluation"
+        )
+        return
 
     posterior = None
     posterior_path = exp_dir / "posterior.pkl"
@@ -148,7 +155,7 @@ def main():
 
     # Fallback: rebuild inference, load state_dict, then build posterior
     if posterior is None:
-        if method == "NPSE":
+        if method == "npse":
             # NPSE experiment: load score_estimator.pt
             state_dict_path = exp_dir / "score_estimator.pt"
             assert state_dict_path.exists(), f"Missing {state_dict_path}"
