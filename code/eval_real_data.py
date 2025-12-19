@@ -7,6 +7,7 @@ import torch
 import pandas as pd
 
 from sbi import utils as sbi_utils
+from sbi.inference import NPSE
 from configs.config import ExperimentConfig
 from utils.env_utils import setup_environment, get_device
 from simulation.simulation import init_simulation_from_config, make_simulator
@@ -118,10 +119,15 @@ def main():
     _, T_event, D_in = probe_x.shape
     print(f"[eval] Model expects T_event={T_event}, D_in={D_in}")
 
-    # --- 3) Rebuild density estimator + inference and load trained weights ---
-    _, density_estimator, inference = build_density_estimator(
-        cfg, input_dim=D_in, prior=prior_norm, device=device
-    )
+    # --- 3) Detect method type and rebuild inference + load trained weights ---
+    # Check if this is an NPSE experiment
+    cfg_path = exp_dir / "config.json"
+    with cfg_path.open("r") as f:
+        cfg_raw = json.load(f)
+    method = cfg_raw.get("method", "NPE")  # Default to NPE for backward compatibility
+    sde_type = cfg_raw.get("sde_type", "ve")  # Default SDE type for NPSE
+
+    print(f"[eval] Detected method: {method}")
 
     posterior = None
     posterior_path = exp_dir / "posterior.pkl"
@@ -140,20 +146,52 @@ def main():
             print(f"[eval] Failed to load pickled posterior ({exc}); rebuilding.")
             posterior = None
 
-    # Fallback: rebuild density estimator, load state_dict, then build posterior
+    # Fallback: rebuild inference, load state_dict, then build posterior
     if posterior is None:
-        state_dict_path = exp_dir / "density_estimator.pt"
-        assert state_dict_path.exists(), f"Missing {state_dict_path}"
+        if method == "NPSE":
+            # NPSE experiment: load score_estimator.pt
+            state_dict_path = exp_dir / "score_estimator.pt"
+            assert state_dict_path.exists(), f"Missing {state_dict_path}"
 
-        # Let sbi create a fresh neural posterior with the right architecture
-        density_estimator_net = inference._neural_net
-        density_estimator_net.load_state_dict(
-            torch.load(state_dict_path, map_location=device)
-        )
-        density_estimator_net.to(device).eval()
+            # Build NPSE inference object
+            inference = NPSE(
+                prior=prior_norm,
+                sde_type=sde_type,
+                device=str(device),
+            )
 
-        posterior = inference.build_posterior(density_estimator_net)
-        print("[eval] Built posterior from density_estimator.pt")
+            # Load trained score estimator
+            score_estimator = inference.append_simulations(
+                torch.zeros(1, len(cfg.active_parameters)),  # dummy
+                torch.zeros(1, T_event, D_in),  # dummy
+            )._neural_net
+            score_estimator.load_state_dict(
+                torch.load(state_dict_path, map_location=device)
+            )
+            score_estimator.to(device).eval()
+
+            posterior = inference.build_posterior(score_estimator)
+            print(
+                f"[eval] Built NPSE posterior from score_estimator.pt (sde_type={sde_type})"
+            )
+        else:
+            # NPE experiment: load density_estimator.pt
+            _, density_estimator, inference = build_density_estimator(
+                cfg, input_dim=D_in, prior=prior_norm, device=device
+            )
+
+            state_dict_path = exp_dir / "density_estimator.pt"
+            assert state_dict_path.exists(), f"Missing {state_dict_path}"
+
+            # Let sbi create a fresh neural posterior with the right architecture
+            density_estimator_net = inference._neural_net
+            density_estimator_net.load_state_dict(
+                torch.load(state_dict_path, map_location=device)
+            )
+            density_estimator_net.to(device).eval()
+
+            posterior = inference.build_posterior(density_estimator_net)
+            print("[eval] Built NPE posterior from density_estimator.pt")
 
     # --- 4) Load real CSV and build window matching training format ---
     df_real = pd.read_csv(args.csv)
