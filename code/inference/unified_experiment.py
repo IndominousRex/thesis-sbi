@@ -133,6 +133,7 @@ def run_parameter_posterior_plots(
     num_examples: int = 3,
     num_prior_samples: int = 20000,
     num_posterior_samples: int = 5000,
+    method=None,  # Pass method for FNPE to use its own data generation
 ) -> None:
     """Generate prior vs posterior marginal plots."""
     if cfg.no_plots:
@@ -140,6 +141,52 @@ def run_parameter_posterior_plots(
 
     param_names = list(cfg.active_parameters)
 
+    # For FNPE, use JAX-based prior sampling
+    if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
+        import jax
+        import jax.numpy as jnp
+
+        task = method.task
+        jax_prior = task.get_prior()
+        key = jax.random.PRNGKey(cfg.random_seed + 1000)
+
+        # Sample from JAX prior for reference
+        key, key_prior = jax.random.split(key)
+        prior_pool_jax = jax_prior.sample(key_prior, (num_prior_samples,))
+        prior_pool_np = np.array(prior_pool_jax)
+
+        for ex_idx in range(num_examples):
+            print(f"[DIAG] Posterior plots (FNPE): example {ex_idx+1}/{num_examples}")
+
+            # Sample true theta and simulate
+            key, key_theta, key_sim = jax.random.split(key, 3)
+            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
+            theta_true_np = np.array(theta_true_jax)
+
+            # Generate observation using FNPE's task simulator
+            simulator_fn = task.get_simulator()
+            x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)  # (T, obs_dim)
+
+            # Sample from posterior - pass physical observation (FNPE normalizes internally)
+            theta_post = posterior.sample((num_posterior_samples,), x=x_phys)
+            theta_post_np = np.array(theta_post)
+
+            if theta_post_np.ndim == 3:
+                theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
+
+            for j, pname in enumerate(param_names):
+                out_path = fig_dir / f"prior_posterior_{pname}_ex{ex_idx}.png"
+                plot_prior_posterior_1d(
+                    prior_1d=prior_pool_np[:, j],
+                    post_1d=theta_post_np[:, j],
+                    theta_ref=theta_true_np[j],
+                    param_name=pname,
+                    out_path=out_path,
+                    bins=80,
+                )
+        return
+
+    # Standard path for NPE/NPSE
     with torch.no_grad():
         prior_pool = prior.sample((num_prior_samples,)).to(device)
     prior_pool_np = prior_pool.detach().cpu().numpy()
@@ -509,10 +556,11 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 normalizer,
                 device,
                 num_posterior_samples=5000 if cfg.method == "npe" else 2000,
+                method=method,  # Pass method for FNPE
             )
 
-        # SBC
-        if cfg.run_sbc:
+        # SBC (skip for FNPE - incompatible data format)
+        if cfg.run_sbc and cfg.method != "fnpe":
             print("\n[DIAG] Running SBC...")
             sbc_results = run_sbc_diagnostic(
                 cfg,
@@ -531,9 +579,11 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     cfg, prior_phys, sbc_results["dap_samples_norm"], normalizer
                 )
                 metrics["swd_prior_vs_dap"] = float(swd_val)
+        elif cfg.run_sbc and cfg.method == "fnpe":
+            print("\n[DIAG] Skipping SBC for FNPE (incompatible data format)")
 
-        # 1-step RMSE
-        if cfg.run_one_step_rmse:
+        # 1-step RMSE (skip for FNPE - incompatible data format)
+        if cfg.run_one_step_rmse and cfg.method != "fnpe":
             print("\n[DIAG] Running 1-step RMSE...")
             try:
                 one_step_results = run_one_step_rmse_diagnostic(

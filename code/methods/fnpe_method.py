@@ -52,10 +52,12 @@ class FNPEPosterior:
 
         Args:
             sample_shape: Tuple specifying number of samples (N,)
-            x: Observation tensor/array (can be torch or numpy)
+            x: Observation tensor/array (can be torch or numpy).
+               Should be PHYSICAL (unnormalized) data - FNPE uses its own normalization.
+               If x appears to be normalized (values mostly in [-3, 3]), it will be used as-is.
 
         Returns:
-            Posterior samples as numpy array, shape (N, d_theta)
+            Posterior samples as numpy array, shape (N, d_theta) in PHYSICAL units
         """
         import torch
 
@@ -67,8 +69,16 @@ class FNPEPosterior:
         else:
             x_np = np.asarray(x)
 
-        # Normalize observation
-        x_norm = self.task.normalize_x(jnp.asarray(x_np.squeeze()))
+        # Squeeze and ensure 2D: (T, D)
+        x_squeezed = x_np.squeeze()
+        if x_squeezed.ndim == 1:
+            # Single feature time series
+            x_squeezed = x_squeezed.reshape(-1, 1)
+
+        # FNPE expects to normalize the data itself using task stats
+        # The input should be raw physical observations
+        x_jax = jnp.asarray(x_squeezed)
+        x_norm = self.task.normalize_x(x_jax)
 
         # Sample
         self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
