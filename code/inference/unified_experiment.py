@@ -613,8 +613,11 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         print("\n[EVAL] Running real-data evaluation...")
         import subprocess
         import sys
+        import os
 
         eval_script = Path(__file__).resolve().parent / "eval_real_data.py"
+        code_dir = Path(__file__).resolve().parent.parent  # code/ directory
+
         cmd = [
             sys.executable,
             str(eval_script),
@@ -625,8 +628,13 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             "--device",
             cfg.device,
         ]
+
+        # Set PYTHONPATH to include code directory for module imports
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(code_dir) + os.pathsep + env.get("PYTHONPATH", "")
+
         print("Executing:", " ".join(cmd))
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=env, cwd=str(code_dir))
 
     print(f"\n{'='*60}")
     print(f"Experiment completed: {exp_dir}")
