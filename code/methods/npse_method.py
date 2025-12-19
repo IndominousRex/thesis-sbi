@@ -11,8 +11,10 @@ import pickle
 
 import torch
 from sbi.inference import NPSE
+from sbi.neural_nets import posterior_score_nn
 
 from .base import BaseMethod
+from models.models import build_embedding
 
 
 class NPSEMethod(BaseMethod):
@@ -41,20 +43,33 @@ class NPSEMethod(BaseMethod):
         super().__init__(cfg, prior, device)
         self.sde_type = sde_type
         self.score_estimator = None
+        self.embedding_net = None
         self._training_summary = {}
 
     def build(self, input_dim: int, seq_len: int) -> None:
-        """Build NPSE inference object."""
-        # NPSE handles its own network architecture
-        self.inference = NPSE(
-            prior=self.prior,
-            sde_type=self.sde_type,
-            device=str(self.device),
-        )
-
+        """Build NPSE inference object with embedding network."""
         # Store dimensions for later
         self._input_dim = input_dim
         self._seq_len = seq_len
+
+        # Build embedding network (same as NPE)
+        self.embedding_net = build_embedding(self.cfg, input_dim, seq_len, self.device)
+
+        # Build score network with embedding
+        score_net_builder = posterior_score_nn(
+            sde_type=self.sde_type,
+            embedding_net=self.embedding_net,
+            z_score_x="none",  # Manual normalization
+            z_score_theta="none",
+        )
+
+        # NPSE inference object with custom score network
+        self.inference = NPSE(
+            prior=self.prior,
+            score_net=score_net_builder,
+            sde_type=self.sde_type,
+            device=str(self.device),
+        )
 
     def train(
         self,
