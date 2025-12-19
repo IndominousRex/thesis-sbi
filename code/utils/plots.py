@@ -80,7 +80,12 @@ def plot_sbc_rank_hist(
     """
     _ensure_dir(out_path)
     plt.figure(figsize=(7, 5))
-    sbc_rank_plot(ranks, num_posterior_samples, plot_type="hist", num_bins=None)
+
+    # Calculate num_bins to avoid edge case with few samples
+    num_sbc_samples = ranks.shape[0]
+    num_bins = max(10, num_sbc_samples // 10)  # At least 10 bins
+
+    sbc_rank_plot(ranks, num_posterior_samples, plot_type="hist", num_bins=num_bins)
     plt.title(title)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
