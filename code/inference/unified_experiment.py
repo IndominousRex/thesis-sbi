@@ -480,9 +480,10 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     # --- Build posterior ---
     posterior = method.build_posterior()
 
-    # Save pickled posterior
-    with open(exp_dir / "posterior.pkl", "wb") as f:
-        pickle.dump(posterior, f)
+    # Save pickled posterior (skip for NPSE - it saves inference object instead)
+    if cfg.method != "npse":
+        with open(exp_dir / "posterior.pkl", "wb") as f:
+            pickle.dump(posterior, f)
 
     # --- Training curve plot ---
     if training_summary and not cfg.no_plots:

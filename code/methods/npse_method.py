@@ -128,46 +128,49 @@ class NPSEMethod(BaseMethod):
         return self.posterior
 
     def save(self, exp_dir: Path) -> Path:
-        """Save score estimator weights and pickled posterior."""
-        if self.model is None:
-            raise RuntimeError("No model to save.")
+        """Save inference object (NPSE posteriors can't be pickled directly)."""
+        if self.inference is None:
+            raise RuntimeError("No inference object to save.")
 
         # Save model weights
         model_path = exp_dir / self.model_filename
         torch.save(self.model.state_dict(), model_path)
 
-        # Save pickled posterior
-        if self.posterior is not None:
-            with open(exp_dir / "posterior.pkl", "wb") as f:
-                pickle.dump(self.posterior, f)
+        # Save the inference object (not the posterior - it has unpicklable lambdas)
+        inference_path = exp_dir / "inference.pkl"
+        with open(inference_path, "wb") as f:
+            pickle.dump(self.inference, f)
+        print(f"[NPSE] Saved inference object to {inference_path}")
 
         return model_path
 
     def load(self, exp_dir: Path) -> None:
-        """Load model from disk."""
-        # Try pickled posterior first
-        posterior_path = exp_dir / "posterior.pkl"
-        if posterior_path.exists():
+        """Load inference object from disk and rebuild posterior."""
+        inference_path = exp_dir / "inference.pkl"
+        if inference_path.exists():
             try:
-                with open(posterior_path, "rb") as f:
-                    self.posterior = pickle.load(f)
-                if hasattr(self.posterior, "to"):
-                    self.posterior.to(self.device)
-                print(f"[NPSE] Loaded pickled posterior from {posterior_path}")
+                with open(inference_path, "rb") as f:
+                    self.inference = pickle.load(f)
+                # Move to device if needed
+                if hasattr(self.inference, "_device"):
+                    self.inference._device = str(self.device)
+                # Get the neural net and rebuild posterior
+                self.model = self.inference._neural_net
+                if hasattr(self.model, "to"):
+                    self.model.to(self.device)
+                print(f"[NPSE] Loaded inference from {inference_path}")
                 return
             except Exception as e:
-                print(f"[NPSE] Failed to load pickled posterior: {e}")
+                print(f"[NPSE] Failed to load inference: {e}")
 
         # Fallback: load weights (requires rebuild)
         model_path = exp_dir / self.model_filename
         if not model_path.exists():
             raise FileNotFoundError(f"Model file not found: {model_path}")
 
-        # For NPSE, we need to rebuild the inference and load weights
-        # This is a limitation - better to use pickled posterior
         raise NotImplementedError(
             "NPSE weight-only loading not fully supported. "
-            "Please ensure posterior.pkl is saved during training."
+            "Please ensure inference.pkl is saved during training."
         )
 
     @property
