@@ -710,6 +710,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "batch_size": cfg.training_batch_size,
                 "num_diffusion_steps": cfg.fnpe_num_diffusion_steps,
                 "score_fn_type": cfg.fnpe_score_fn_type,
+                "stop_after_epochs": cfg.stop_after_epochs,
+                "validation_fraction": cfg.validation_fraction,
             }
         )
 

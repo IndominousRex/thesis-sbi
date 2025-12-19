@@ -119,6 +119,8 @@ class FNPEMethod(BaseMethod):
         batch_size: int = 256,
         num_diffusion_steps: int = 500,
         score_fn_type: str = "fnpe",
+        stop_after_epochs: int = 20,
+        validation_fraction: float = 0.1,
     ):
         # Note: FNPE doesn't use torch prior/device directly
         super().__init__(cfg, prior, device)
@@ -132,6 +134,8 @@ class FNPEMethod(BaseMethod):
         self.batch_size = batch_size
         self.num_diffusion_steps = num_diffusion_steps
         self.score_fn_type = score_fn_type
+        self.stop_after_epochs = stop_after_epochs
+        self.validation_fraction = validation_fraction
 
         # Will be set during build/train
         self.task = None
@@ -194,7 +198,9 @@ class FNPEMethod(BaseMethod):
         self.sde, self.weight_fn = init_sde(data)
 
         # Train score network
-        print(f"[FNPE] Training score network ({self.num_epochs} epochs)...")
+        print(
+            f"[FNPE] Training score network (max {self.num_epochs} epochs, early stop after {self.stop_after_epochs})..."
+        )
         train_start = time.time()
 
         self.params, self.score_net, losses = self._train_score_network(data, t_obs)
@@ -208,9 +214,14 @@ class FNPEMethod(BaseMethod):
         # Store model reference
         self.model = self.params
 
+        # losses is now a dict with 'train' and 'val' keys
         self._training_summary = {
-            "train_loss": losses,
-            "final_loss": losses[-1] if losses else None,
+            "train_loss": losses.get("train", []),
+            "val_loss": losses.get("val", []),
+            "final_train_loss": losses["train"][-1] if losses.get("train") else None,
+            "final_val_loss": losses["val"][-1] if losses.get("val") else None,
+            "best_val_loss": min(losses["val"]) if losses.get("val") else None,
+            "epochs_trained": len(losses.get("train", [])),
             "train_time_s": train_time,
             "num_simulations": num_sim,
             "T_obs": t_obs,
@@ -219,9 +230,30 @@ class FNPEMethod(BaseMethod):
         return self._training_summary
 
     def _train_score_network(self, data: Dict, window_size: int):
-        """Internal method to train score network."""
+        """Internal method to train score network with early stopping."""
         key = self._key
-        key, key_init = jax.random.split(key)
+        key, key_init, key_split = jax.random.split(key, 3)
+
+        # Split data into train/val for early stopping
+        n_total = data["thetas"].shape[0]
+        n_val = int(n_total * self.validation_fraction)
+        n_train = n_total - n_val
+
+        # Shuffle and split
+        perm = jax.random.permutation(key_split, n_total)
+        train_idx = perm[:n_train]
+        val_idx = perm[n_train:]
+
+        train_data = {
+            "thetas": data["thetas"][train_idx],
+            "xs": data["xs"][train_idx],
+        }
+        val_data = {
+            "thetas": data["thetas"][val_idx],
+            "xs": data["xs"][val_idx],
+        }
+
+        print(f"[FNPE] Train/Val split: {n_train}/{n_val} samples")
 
         d = data["thetas"].shape[1]
 
@@ -239,22 +271,25 @@ class FNPEMethod(BaseMethod):
             c_out=c_out,
         )
 
-        # Build batch sampler and loss
-        batch_sampler = build_batch_sampler(data)
+        # Build batch samplers for train and val
+        train_batch_sampler = build_batch_sampler(train_data)
+        val_batch_sampler = build_batch_sampler(val_data)
         loss_fn = build_loss_fn(
             "dsm", score_net, self.sde, self.weight_fn, control_variate=True
         )
 
         # Initialize
-        theta_batch, x_batch = batch_sampler(key_init, self.batch_size)
+        theta_batch, x_batch = train_batch_sampler(key_init, self.batch_size)
         params = init_fn(key_init, jnp.ones((self.batch_size,)), theta_batch, x_batch)
 
         n_params = sum(p.size for p in jax.tree_util.tree_leaves(params))
         print(f"[FNPE] Score network: {n_params:,} parameters")
 
-        # Optimizer
-        total_steps = self.num_epochs * self.steps_per_epoch
-        schedule = optax.cosine_onecycle_schedule(total_steps, self.cfg.learning_rate)
+        # Optimizer - use max possible steps, early stopping will terminate early
+        max_total_steps = self.num_epochs * self.steps_per_epoch
+        schedule = optax.cosine_onecycle_schedule(
+            max_total_steps, self.cfg.learning_rate
+        )
         optimizer = optax.chain(
             optax.adaptive_grad_clip(10.0),
             optax.adamw(schedule),
@@ -269,32 +304,83 @@ class FNPEMethod(BaseMethod):
             params = optax.apply_updates(params, updates)
             return loss, params, opt_state
 
+        # JIT eval (no gradient)
+        @jax.jit
+        def eval_loss(params, rng, theta_batch, x_batch):
+            return loss_fn(params, rng, theta_batch, x_batch)
+
         # JIT warmup
         print("[FNPE] JIT compiling...")
         key, key_batch, key_loss = jax.random.split(key, 3)
-        theta_batch, x_batch = batch_sampler(key_batch, self.batch_size)
+        theta_batch, x_batch = train_batch_sampler(key_batch, self.batch_size)
         loss, params, opt_state = update(
             params, key_loss, opt_state, theta_batch, x_batch
         )
         _ = float(loss)  # Block until done
 
-        # Training loop
-        losses = []
+        # Early stopping state
+        best_val_loss = float("inf")
+        best_params = params
+        epochs_without_improvement = 0
+
+        # Number of batches to use for validation loss estimation
+        val_batches = min(100, max(10, n_val // self.batch_size))
+
+        # Training loop with early stopping
+        train_losses = []
+        val_losses = []
+
         for epoch in range(self.num_epochs):
-            epoch_loss = 0.0
+            # Training
+            epoch_train_loss = 0.0
             for step in range(self.steps_per_epoch):
                 key, key_batch, key_loss = jax.random.split(key, 3)
-                theta_batch, x_batch = batch_sampler(key_batch, self.batch_size)
+                theta_batch, x_batch = train_batch_sampler(key_batch, self.batch_size)
                 loss, params, opt_state = update(
                     params, key_loss, opt_state, theta_batch, x_batch
                 )
-                epoch_loss += float(loss) / self.steps_per_epoch
+                epoch_train_loss += float(loss) / self.steps_per_epoch
 
-            losses.append(epoch_loss)
-            print(f"[FNPE] Epoch {epoch+1}/{self.num_epochs}: Loss = {epoch_loss:.6f}")
+            train_losses.append(epoch_train_loss)
+
+            # Validation
+            epoch_val_loss = 0.0
+            for _ in range(val_batches):
+                key, key_batch, key_loss = jax.random.split(key, 3)
+                theta_batch, x_batch = val_batch_sampler(key_batch, self.batch_size)
+                val_loss = eval_loss(params, key_loss, theta_batch, x_batch)
+                epoch_val_loss += float(val_loss) / val_batches
+
+            val_losses.append(epoch_val_loss)
+
+            # Early stopping check
+            if epoch_val_loss < best_val_loss:
+                best_val_loss = epoch_val_loss
+                best_params = params
+                epochs_without_improvement = 0
+                marker = "*"  # Best so far
+            else:
+                epochs_without_improvement += 1
+                marker = ""
+
+            print(
+                f"[FNPE] Epoch {epoch+1}/{self.num_epochs}: "
+                f"Train={epoch_train_loss:.6f}, Val={epoch_val_loss:.6f} "
+                f"(best={best_val_loss:.6f}, patience={self.stop_after_epochs - epochs_without_improvement}) {marker}"
+            )
+
+            # Check early stopping
+            if epochs_without_improvement >= self.stop_after_epochs:
+                print(
+                    f"[FNPE] Early stopping at epoch {epoch+1}. "
+                    f"Best val loss: {best_val_loss:.6f}"
+                )
+                break
 
         self._key = key
-        return params, score_net, losses
+
+        # Return best params
+        return best_params, score_net, {"train": train_losses, "val": val_losses}
 
     def _setup_sampler(self):
         """Set up the diffusion sampler."""
