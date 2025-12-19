@@ -32,8 +32,11 @@ conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export JAX_PLATFORM_NAME=cpu
 
+# Real data path
+REAL_DATA_CSV="../data/measurements/Jeversen_2022_10_12_110132.csv"
+
 # Common parameters for fair comparison
-COMMON_ARGS="--num-sim 100 --T-seg 300 --num-epochs 2 --stop-after-epochs 2 --num-sbc-samples 10 --no-swd --no-one-step --device cuda"
+COMMON_ARGS="--num-sim 100 --T-seg 300 --num-epochs 2 --stop-after-epochs 2 --num-sbc-samples 10 --no-swd --no-one-step --device cuda --real-data-csv $REAL_DATA_CSV"
 
 echo ""
 echo ">>> [1/3] Testing NPE..."
