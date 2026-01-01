@@ -17,11 +17,11 @@ class Normalizer:
     """
 
     obs_mean: torch.Tensor  # (obs_dim,)
-    obs_std: torch.Tensor   # (obs_dim,)
+    obs_std: torch.Tensor  # (obs_dim,)
     ctrl_mean: torch.Tensor  # (4,)
-    ctrl_std: torch.Tensor   # (4,)
+    ctrl_std: torch.Tensor  # (4,)
     theta_mean: torch.Tensor  # (d_theta,)
-    theta_std: torch.Tensor   # (d_theta,)
+    theta_std: torch.Tensor  # (d_theta,)
     eps: float = 1e-8
 
     def to(self, device: torch.device) -> "Normalizer":
@@ -72,20 +72,26 @@ class Normalizer:
         }
 
     @staticmethod
-    def from_json(data: Dict[str, Any], device: torch.device | None = None) -> "Normalizer":
+    def from_json(
+        data: Dict[str, Any], device: torch.device | None = None
+    ) -> "Normalizer":
         dev = device if device is not None else "cpu"
         return Normalizer(
             obs_mean=torch.tensor(data["obs_mean"], dtype=torch.float32, device=dev),
             obs_std=torch.tensor(data["obs_std"], dtype=torch.float32, device=dev),
             ctrl_mean=torch.tensor(data["ctrl_mean"], dtype=torch.float32, device=dev),
             ctrl_std=torch.tensor(data["ctrl_std"], dtype=torch.float32, device=dev),
-            theta_mean=torch.tensor(data["theta_mean"], dtype=torch.float32, device=dev),
+            theta_mean=torch.tensor(
+                data["theta_mean"], dtype=torch.float32, device=dev
+            ),
             theta_std=torch.tensor(data["theta_std"], dtype=torch.float32, device=dev),
             eps=float(data.get("eps", 1e-8)),
         )
 
 
-def fit_normalizer(theta_phys: torch.Tensor, x_phys: torch.Tensor, obs_dim: int, eps: float = 1e-8) -> Normalizer:
+def fit_normalizer(
+    theta_phys: torch.Tensor, x_phys: torch.Tensor, obs_dim: int, eps: float = 1e-8
+) -> Normalizer:
     """
     Fit mean/std from simulated training data in physical units.
 
@@ -124,6 +130,8 @@ def fit_normalizer(theta_phys: torch.Tensor, x_phys: torch.Tensor, obs_dim: int,
 
 def save_normalizer(normalizer: Normalizer, path: Path) -> None:
     path = Path(path)
+    # Ensure parent directory exists
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as f:
         json.dump(normalizer.to_jsonable(), f, indent=2)
 

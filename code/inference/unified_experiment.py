@@ -664,38 +664,60 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     fig_dir = exp_dir / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
     print(f"[SETUP] Experiment dir: {exp_dir}")
+    print(f"[SETUP] Directory exists: {exp_dir.exists()}")
 
-    # --- Get or generate dataset ---
-    theta_train_phys, x_train_phys, _ = get_or_generate_dataset(
-        cfg, prior_phys, simulator, device
-    )
+    # --- Get or generate dataset (skip for FNPE - it generates its own) ---
+    if cfg.method == "fnpe":
+        print(
+            "[DATA] Skipping dataset generation for FNPE (it generates its own data)",
+            flush=True,
+        )
+        # For FNPE, we still need normalization stats, but we'll get them from the task
+        # Create dummy tensors just to set up the normalizer structure
+        theta_train_phys = None
+        x_train_phys = None
+        normalizer = None
+        theta_train = None
+        x_train = None
+    else:
+        theta_train_phys, x_train_phys, _ = get_or_generate_dataset(
+            cfg, prior_phys, simulator, device
+        )
 
-    # --- Fit normalization ---
-    normalizer_cpu = fit_normalizer(theta_train_phys, x_train_phys, cfg.obs_dim)
-    norm_path = exp_dir / "stats_normalization.json"
-    save_normalizer(normalizer_cpu, norm_path)
-    print(f"[NORM] Saved stats to {norm_path}")
+        # --- Fit normalization ---
+        normalizer_cpu = fit_normalizer(theta_train_phys, x_train_phys, cfg.obs_dim)
+        norm_path = exp_dir / "stats_normalization.json"
+        print(
+            f"[NORM] Saving to {norm_path}, parent exists: {norm_path.parent.exists()}"
+        )
+        save_normalizer(normalizer_cpu, norm_path)
+        print(f"[NORM] Saved stats to {norm_path}")
 
-    normalizer = normalizer_cpu.to(device)
+        normalizer = normalizer_cpu.to(device)
 
-    # --- Normalize data ---
-    theta_train = normalizer_cpu.normalize_theta(theta_train_phys)
-    x_train = normalizer_cpu.normalize_x(x_train_phys, cfg.obs_dim)
+        # --- Normalize data ---
+        theta_train = normalizer_cpu.normalize_theta(theta_train_phys)
+        x_train = normalizer_cpu.normalize_x(x_train_phys, cfg.obs_dim)
 
-    # --- Build normalized prior ---
+    # --- Build normalized prior (skip for FNPE - uses its own task-based prior) ---
     bounds = cfg.param_bounds()
     low_list = [bounds[name][0] for name in cfg.active_parameters]
     high_list = [bounds[name][1] for name in cfg.active_parameters]
-    theta_low_norm = normalizer.normalize_theta(
-        torch.tensor(low_list, dtype=torch.float32, device=device)
-    )
-    theta_high_norm = normalizer.normalize_theta(
-        torch.tensor(high_list, dtype=torch.float32, device=device)
-    )
-    prior_norm = sbi_utils.BoxUniform(low=theta_low_norm, high=theta_high_norm)
+
+    if cfg.method == "fnpe":
+        # FNPE uses physical prior directly via its task
+        prior_norm = prior_phys
+    else:
+        theta_low_norm = normalizer.normalize_theta(
+            torch.tensor(low_list, dtype=torch.float32, device=device)
+        )
+        theta_high_norm = normalizer.normalize_theta(
+            torch.tensor(high_list, dtype=torch.float32, device=device)
+        )
+        prior_norm = sbi_utils.BoxUniform(low=theta_low_norm, high=theta_high_norm)
 
     # --- Build method ---
-    print(f"\n[METHOD] Building {cfg.method.upper()}...")
+    print(f"\n[METHOD] Building {cfg.method.upper()}...", flush=True)
 
     method_kwargs = {}
     if cfg.method == "npse":
@@ -722,7 +744,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     # --- Train ---
     training_summary = {}
     if cfg.do_train:
-        print(f"\n[TRAIN] Training {cfg.method.upper()}...")
+        print(f"\n[TRAIN] Training {cfg.method.upper()}...", flush=True)
         setup_environment(cfg.train_seed)  # Use train seed
 
         if cfg.method == "fnpe":
@@ -735,10 +757,10 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
         # Save model
         model_path = method.save(exp_dir)
-        print(f"[TRAIN] Saved model to {model_path}")
+        print(f"[TRAIN] Saved model to {model_path}", flush=True)
 
     elif cfg.checkpoint:
-        print(f"\n[LOAD] Loading checkpoint from {cfg.checkpoint}")
+        print(f"\n[LOAD] Loading checkpoint from {cfg.checkpoint}", flush=True)
         method.load(Path(cfg.checkpoint))
 
     # --- Build posterior ---

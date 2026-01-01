@@ -5,6 +5,7 @@ Uses the MarkovSBI framework with JAX for score-based posterior estimation
 with factorized/autoregressive score functions.
 """
 
+import sys
 import time
 import pickle
 from pathlib import Path
@@ -15,6 +16,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
+from tqdm import tqdm
 
 from .base import BaseMethod
 
@@ -183,23 +185,28 @@ class FNPEMethod(BaseMethod):
         num_sim = num_simulations or self.cfg.num_simulations
         t_obs = T_obs or self._seq_len
 
-        print(f"[FNPE] Generating {num_sim} training trajectories (T={t_obs})...")
+        print(
+            f"[FNPE] Generating {num_sim} training trajectories (T={t_obs})...",
+            flush=True,
+        )
 
         # Generate data
         self._key, key_data = jax.random.split(self._key)
         data = self.task.get_data(key_data, num_sim, t_obs)
 
         print(
-            f"[FNPE] Data shapes: thetas={data['thetas'].shape}, xs={data['xs'].shape}"
+            f"[FNPE] Data shapes: thetas={data['thetas'].shape}, xs={data['xs'].shape}",
+            flush=True,
         )
 
         # Initialize SDE
-        print("[FNPE] Initializing SDE...")
+        print("[FNPE] Initializing SDE...", flush=True)
         self.sde, self.weight_fn = init_sde(data)
 
         # Train score network
         print(
-            f"[FNPE] Training score network (max {self.num_epochs} epochs, early stop after {self.stop_after_epochs})..."
+            f"[FNPE] Training score network (max {self.num_epochs} epochs, early stop after {self.stop_after_epochs})...",
+            flush=True,
         )
         train_start = time.time()
 
@@ -253,7 +260,7 @@ class FNPEMethod(BaseMethod):
             "xs": data["xs"][val_idx],
         }
 
-        print(f"[FNPE] Train/Val split: {n_train}/{n_val} samples")
+        print(f"[FNPE] Train/Val split: {n_train}/{n_val} samples", flush=True)
 
         d = data["thetas"].shape[1]
 
@@ -283,7 +290,7 @@ class FNPEMethod(BaseMethod):
         params = init_fn(key_init, jnp.ones((self.batch_size,)), theta_batch, x_batch)
 
         n_params = sum(p.size for p in jax.tree_util.tree_leaves(params))
-        print(f"[FNPE] Score network: {n_params:,} parameters")
+        print(f"[FNPE] Score network: {n_params:,} parameters", flush=True)
 
         # Optimizer - use max possible steps, early stopping will terminate early
         max_total_steps = self.num_epochs * self.steps_per_epoch
@@ -310,13 +317,14 @@ class FNPEMethod(BaseMethod):
             return loss_fn(params, rng, theta_batch, x_batch)
 
         # JIT warmup
-        print("[FNPE] JIT compiling...")
+        print("[FNPE] JIT compiling...", flush=True)
         key, key_batch, key_loss = jax.random.split(key, 3)
         theta_batch, x_batch = train_batch_sampler(key_batch, self.batch_size)
         loss, params, opt_state = update(
             params, key_loss, opt_state, theta_batch, x_batch
         )
         _ = float(loss)  # Block until done
+        print("[FNPE] JIT compilation complete.", flush=True)
 
         # Early stopping state
         best_val_loss = float("inf")
@@ -330,16 +338,30 @@ class FNPEMethod(BaseMethod):
         train_losses = []
         val_losses = []
 
+        print(
+            f"[FNPE] Starting training: {self.num_epochs} epochs, {self.steps_per_epoch} steps/epoch",
+            flush=True,
+        )
+
         for epoch in range(self.num_epochs):
-            # Training
+            # Training with progress bar
             epoch_train_loss = 0.0
-            for step in range(self.steps_per_epoch):
+            pbar = tqdm(
+                range(self.steps_per_epoch),
+                desc=f"Epoch {epoch+1}/{self.num_epochs}",
+                leave=False,
+                file=sys.stderr,
+            )
+            for step in pbar:
                 key, key_batch, key_loss = jax.random.split(key, 3)
                 theta_batch, x_batch = train_batch_sampler(key_batch, self.batch_size)
                 loss, params, opt_state = update(
                     params, key_loss, opt_state, theta_batch, x_batch
                 )
                 epoch_train_loss += float(loss) / self.steps_per_epoch
+                if step % 100 == 0:
+                    pbar.set_postfix({"loss": f"{float(loss):.4f}"})
+            pbar.close()
 
             train_losses.append(epoch_train_loss)
 
@@ -366,14 +388,16 @@ class FNPEMethod(BaseMethod):
             print(
                 f"[FNPE] Epoch {epoch+1}/{self.num_epochs}: "
                 f"Train={epoch_train_loss:.6f}, Val={epoch_val_loss:.6f} "
-                f"(best={best_val_loss:.6f}, patience={self.stop_after_epochs - epochs_without_improvement}) {marker}"
+                f"(best={best_val_loss:.6f}, patience={self.stop_after_epochs - epochs_without_improvement}) {marker}",
+                flush=True,
             )
 
             # Check early stopping
             if epochs_without_improvement >= self.stop_after_epochs:
                 print(
                     f"[FNPE] Early stopping at epoch {epoch+1}. "
-                    f"Best val loss: {best_val_loss:.6f}"
+                    f"Best val loss: {best_val_loss:.6f}",
+                    flush=True,
                 )
                 break
 
