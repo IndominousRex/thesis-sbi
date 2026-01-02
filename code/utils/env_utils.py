@@ -13,7 +13,7 @@ def setup_environment(seed: int = 42) -> None:
     """
     # JAX & HPC-related env vars
     os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-    os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
+    os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")  # Force JAX to use CPU
     os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("SLURM_CPUS_PER_TASK", "4"))
 
     # PyTorch numeric behaviour

@@ -158,6 +158,11 @@ class FNPEMethod(BaseMethod):
         self._input_dim = input_dim
         self._seq_len = seq_len
 
+        # Report JAX device
+        devices = jax.devices()
+        print(f"[FNPE] JAX devices: {devices}", flush=True)
+        print(f"[FNPE] Default backend: {jax.default_backend()}", flush=True)
+
         # Create task (this includes the simulator and normalization)
         self.task = VehicleDynamicsTask(
             cfg=self.cfg,
@@ -331,8 +336,8 @@ class FNPEMethod(BaseMethod):
         best_params = params
         epochs_without_improvement = 0
 
-        # Number of batches to use for validation loss estimation
-        val_batches = min(100, max(10, n_val // self.batch_size))
+        # Number of batches to use for validation loss estimation (reduced for speed)
+        val_batches = min(20, max(5, n_val // self.batch_size))
 
         # Training loop with early stopping
         train_losses = []
@@ -344,8 +349,8 @@ class FNPEMethod(BaseMethod):
         )
 
         for epoch in range(self.num_epochs):
-            # Training with progress bar
-            epoch_train_loss = 0.0
+            # Training - accumulate losses without blocking
+            epoch_losses = []
             pbar = tqdm(
                 range(self.steps_per_epoch),
                 desc=f"Epoch {epoch+1}/{self.num_epochs}",
@@ -358,20 +363,31 @@ class FNPEMethod(BaseMethod):
                 loss, params, opt_state = update(
                     params, key_loss, opt_state, theta_batch, x_batch
                 )
-                epoch_train_loss += float(loss) / self.steps_per_epoch
-                if step % 100 == 0:
-                    pbar.set_postfix({"loss": f"{float(loss):.4f}"})
+                epoch_losses.append(loss)
+                # Only sync every 100 steps for progress display
+                if step % 100 == 99:
+                    # Block and compute mean of last 100 losses
+                    recent_losses = jnp.stack(epoch_losses[-100:])
+                    mean_loss = float(jnp.mean(recent_losses))
+                    pbar.set_postfix({"loss": f"{mean_loss:.4f}"})
             pbar.close()
 
+            # Compute epoch mean (single sync point)
+            all_losses = jnp.stack(epoch_losses)
+            epoch_train_loss = float(jnp.mean(all_losses))
             train_losses.append(epoch_train_loss)
 
-            # Validation
-            epoch_val_loss = 0.0
+            # Validation - accumulate without blocking
+            val_losses_batch = []
             for _ in range(val_batches):
                 key, key_batch, key_loss = jax.random.split(key, 3)
                 theta_batch, x_batch = val_batch_sampler(key_batch, self.batch_size)
                 val_loss = eval_loss(params, key_loss, theta_batch, x_batch)
-                epoch_val_loss += float(val_loss) / val_batches
+                val_losses_batch.append(val_loss)
+
+            # Single sync point for validation
+            val_losses_stacked = jnp.stack(val_losses_batch)
+            epoch_val_loss = float(jnp.mean(val_losses_stacked))
 
             val_losses.append(epoch_val_loss)
 

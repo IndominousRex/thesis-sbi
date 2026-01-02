@@ -183,7 +183,7 @@ def parse_args():
         choices=["gru", "linear"],
         default="gru",
     )
-    fnpe.add_argument("--fnpe-steps-per-epoch", type=int, default=10000)
+    fnpe.add_argument("--fnpe-steps-per-epoch", type=int, default=1000)
     fnpe.add_argument("--fnpe-diffusion-steps", type=int, default=500)
     fnpe.add_argument(
         "--fnpe-score-fn",

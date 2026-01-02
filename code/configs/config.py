@@ -98,7 +98,9 @@ class ExperimentConfig:
     fnpe_hidden_dim: int = 128
     fnpe_num_hidden: int = 5
     fnpe_model_type: str = "gru"  # gru | linear
-    fnpe_steps_per_epoch: int = 10000
+    fnpe_steps_per_epoch: int = (
+        1000  # Reduced from 10k - long sequences need fewer steps
+    )
     fnpe_num_diffusion_steps: int = 500
     fnpe_score_fn_type: str = "fnpe"  # fnpe | uncorrected
 
