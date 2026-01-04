@@ -254,7 +254,8 @@ class FNPEMethod(BaseMethod):
             "epochs_trained": len(losses.get("train", [])),
             "train_time_s": train_time,
             "num_simulations": num_sim,
-            "T_obs": t_obs,
+            "T_train": t_train,  # Training window size
+            "T_obs_full": self._t_obs_full,  # Full observation length for inference
         }
 
         return self._training_summary
