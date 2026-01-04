@@ -112,8 +112,8 @@ class ExperimentConfig:
     # --- Training ---
     learning_rate: float = 1e-3
     training_batch_size: int = 512
-    validation_fraction: float = 0.10
-    stop_after_epochs: int = 20
+    validation_fraction: float = 0.15  # 15% for stable validation metrics
+    stop_after_epochs: int = 30  # Increased patience for noisy val loss
     clip_max_norm: float = 5.0
     num_epochs: int = 20  # For methods that use explicit epochs
 

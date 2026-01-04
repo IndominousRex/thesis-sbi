@@ -149,7 +149,12 @@ def parse_args():
     training = p.add_argument_group("Training settings")
     training.add_argument("--lr", type=float, default=1e-3)
     training.add_argument("--batch-size", type=int, default=512)
-    training.add_argument("--stop-after-epochs", type=int, default=20)
+    training.add_argument(
+        "--stop-after-epochs",
+        type=int,
+        default=30,
+        help="Patience for early stopping (default 30 for noisy val loss)",
+    )
     training.add_argument("--num-epochs", type=int, default=20)
 
     # ==========================================================================

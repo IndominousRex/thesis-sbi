@@ -396,8 +396,17 @@ class FNPEMethod(BaseMethod):
         best_params = params
         epochs_without_improvement = 0
 
-        # Number of batches to use for validation loss estimation (reduced for speed)
-        val_batches = min(20, max(5, n_val // self.batch_size))
+        # Use exponential moving average for validation loss to reduce noise
+        val_loss_ema = None
+        val_loss_ema_alpha = 0.3  # Weight for new value (0.3 = smooth, responsive)
+
+        # Evaluate on ALL validation data for stable metrics
+        # Calculate number of full batches we can make from validation set
+        n_val_batches = n_val // self.batch_size
+        print(
+            f"[FNPE] Validation: {n_val_batches} batches of {self.batch_size} samples",
+            flush=True,
+        )
 
         # Training loop with early stopping
         train_losses = []
@@ -437,23 +446,36 @@ class FNPEMethod(BaseMethod):
             epoch_train_loss = float(jnp.mean(all_losses))
             train_losses.append(epoch_train_loss)
 
-            # Validation - accumulate without blocking
+            # Validation - evaluate on ALL validation batches for stable metrics
             val_losses_batch = []
-            for _ in range(val_batches):
-                key, key_batch, key_loss = jax.random.split(key, 3)
-                theta_batch, x_batch = val_batch_sampler(key_batch, self.batch_size)
+            for batch_idx in range(n_val_batches):
+                key, key_loss = jax.random.split(key)
+                # Use deterministic batch selection for reproducibility
+                start_idx = batch_idx * self.batch_size
+                end_idx = start_idx + self.batch_size
+                theta_batch = val_data["thetas"][start_idx:end_idx]
+                x_batch = val_data["xs"][start_idx:end_idx]
                 val_loss = eval_loss(params, key_loss, theta_batch, x_batch)
                 val_losses_batch.append(val_loss)
 
             # Single sync point for validation
             val_losses_stacked = jnp.stack(val_losses_batch)
-            epoch_val_loss = float(jnp.mean(val_losses_stacked))
+            epoch_val_loss_raw = float(jnp.mean(val_losses_stacked))
 
-            val_losses.append(epoch_val_loss)
+            # Apply exponential moving average for smoother early stopping
+            if val_loss_ema is None:
+                val_loss_ema = epoch_val_loss_raw
+            else:
+                val_loss_ema = (
+                    val_loss_ema_alpha * epoch_val_loss_raw
+                    + (1 - val_loss_ema_alpha) * val_loss_ema
+                )
 
-            # Early stopping check
-            if epoch_val_loss < best_val_loss:
-                best_val_loss = epoch_val_loss
+            val_losses.append(epoch_val_loss_raw)
+
+            # Early stopping based on EMA of validation loss
+            if val_loss_ema < best_val_loss:
+                best_val_loss = val_loss_ema
                 best_params = params
                 epochs_without_improvement = 0
                 marker = "*"  # Best so far
@@ -463,7 +485,7 @@ class FNPEMethod(BaseMethod):
 
             print(
                 f"[FNPE] Epoch {epoch+1}/{self.num_epochs}: "
-                f"Train={epoch_train_loss:.6f}, Val={epoch_val_loss:.6f} "
+                f"Train={epoch_train_loss:.6f}, Val={epoch_val_loss_raw:.6f} (EMA={val_loss_ema:.6f}) "
                 f"(best={best_val_loss:.6f}, patience={self.stop_after_epochs - epochs_without_improvement}) {marker}",
                 flush=True,
             )
