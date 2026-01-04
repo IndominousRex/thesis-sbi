@@ -43,10 +43,12 @@ class FNPEPosterior:
         sampler: Diffuser,
         task: VehicleDynamicsTask,
         key: jax.random.PRNGKey,
+        max_obs_len: int = 200,
     ):
         self.sampler = sampler
         self.task = task
         self.key = key
+        self.max_obs_len = max_obs_len
 
     def sample(self, sample_shape: tuple, x: Any, **kwargs) -> np.ndarray:
         """
@@ -56,7 +58,6 @@ class FNPEPosterior:
             sample_shape: Tuple specifying number of samples (N,)
             x: Observation tensor/array (can be torch or numpy).
                Should be PHYSICAL (unnormalized) data - FNPE uses its own normalization.
-               If x appears to be normalized (values mostly in [-3, 3]), it will be used as-is.
 
         Returns:
             Posterior samples as numpy array, shape (N, d_theta) in PHYSICAL units
@@ -77,10 +78,37 @@ class FNPEPosterior:
             # Single feature time series
             x_squeezed = x_squeezed.reshape(-1, 1)
 
+        # Truncate observation if too long to avoid numerical issues
+        # The score accumulation (1-N)*prior_score + sum(scores) becomes unstable for large N
+        if x_squeezed.shape[0] > self.max_obs_len:
+            print(
+                f"[FNPE] Truncating observation from {x_squeezed.shape[0]} to {self.max_obs_len} timesteps",
+                flush=True,
+            )
+            x_squeezed = x_squeezed[: self.max_obs_len]
+
         # FNPE expects to normalize the data itself using task stats
-        # The input should be raw physical observations
         x_jax = jnp.asarray(x_squeezed)
+
+        # Check for NaN in input
+        if jnp.any(jnp.isnan(x_jax)):
+            print(
+                f"[FNPE WARNING] NaN detected in input observation! shape={x_jax.shape}",
+                flush=True,
+            )
+
         x_norm = self.task.normalize_x(x_jax)
+
+        # Check for NaN after normalization
+        if jnp.any(jnp.isnan(x_norm)):
+            print(
+                f"[FNPE WARNING] NaN after normalization! x_norm shape={x_norm.shape}",
+                flush=True,
+            )
+            print(
+                f"[FNPE] obs_mean={self.task._obs_mean}, obs_std={self.task._obs_std}",
+                flush=True,
+            )
 
         # Sample
         self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
@@ -90,6 +118,14 @@ class FNPEPosterior:
             sample_keys, x_norm
         )
         samples_norm = jax.block_until_ready(samples_norm)
+
+        # Check for NaN in samples
+        nan_count = jnp.sum(jnp.isnan(samples_norm))
+        if nan_count > 0:
+            print(
+                f"[FNPE WARNING] {nan_count} NaN values in samples! shape={samples_norm.shape}",
+                flush=True,
+            )
 
         # Unnormalize
         samples_phys = jax.vmap(self.task.unnormalize_theta)(samples_norm)
@@ -124,6 +160,7 @@ class FNPEMethod(BaseMethod):
         score_fn_type: str = "fnpe",
         stop_after_epochs: int = 20,
         validation_fraction: float = 0.1,
+        max_obs_len: int = 200,  # Max observation length at inference
     ):
         # Note: FNPE doesn't use torch prior/device directly
         super().__init__(cfg, prior, device)
@@ -140,6 +177,7 @@ class FNPEMethod(BaseMethod):
         self.score_fn_type = score_fn_type
         self.stop_after_epochs = stop_after_epochs
         self.validation_fraction = validation_fraction
+        self.max_obs_len = max_obs_len
 
         # Will be set during build/train
         self.task = None
@@ -464,7 +502,9 @@ class FNPEMethod(BaseMethod):
             raise RuntimeError("Model not trained. Call train() first.")
 
         self._key, key_posterior = jax.random.split(self._key)
-        self.posterior = FNPEPosterior(self.sampler, self.task, key_posterior)
+        self.posterior = FNPEPosterior(
+            self.sampler, self.task, key_posterior, max_obs_len=self.max_obs_len
+        )
         return self.posterior
 
     def save(self, exp_dir: Path) -> Path:

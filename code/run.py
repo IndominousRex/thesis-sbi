@@ -189,6 +189,12 @@ def parse_args():
         default=2,
         help="Markov window size (keep small, e.g. 2-10)",
     )
+    fnpe.add_argument(
+        "--fnpe-max-obs-len",
+        type=int,
+        default=200,
+        help="Max observation length for inference (truncate to prevent NaN)",
+    )
     fnpe.add_argument("--fnpe-steps-per-epoch", type=int, default=10000)
     fnpe.add_argument("--fnpe-diffusion-steps", type=int, default=500)
     fnpe.add_argument(
@@ -280,6 +286,7 @@ def main():
         fnpe_num_hidden=args.fnpe_num_hidden,
         fnpe_model_type=args.fnpe_model_type,
         fnpe_window_size=args.fnpe_window_size,
+        fnpe_max_obs_len=args.fnpe_max_obs_len,
         fnpe_steps_per_epoch=args.fnpe_steps_per_epoch,
         fnpe_num_diffusion_steps=args.fnpe_diffusion_steps,
         fnpe_score_fn_type=args.fnpe_score_fn,

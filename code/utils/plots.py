@@ -485,13 +485,29 @@ def plot_prior_posterior_1d(
     prior_1d = np.asarray(prior_1d, dtype=np.float32)
     post_1d = np.asarray(post_1d, dtype=np.float32)
 
+    # Filter out NaN values
+    prior_valid = prior_1d[~np.isnan(prior_1d)]
+    post_valid = post_1d[~np.isnan(post_1d)]
+
+    if len(post_valid) == 0:
+        print(
+            f"[plots] WARNING: All posterior samples are NaN for {param_name}, skipping plot"
+        )
+        return
+
+    nan_count = len(post_1d) - len(post_valid)
+    if nan_count > 0:
+        print(
+            f"[plots] WARNING: {nan_count}/{len(post_1d)} NaN values in posterior for {param_name}"
+        )
+
     _ensure_dir(out_path)
 
     plt.figure(figsize=(7, 4))
 
     # Prior in the background
     plt.hist(
-        prior_1d,
+        prior_valid,
         bins=bins,
         density=True,
         histtype="stepfilled",
@@ -501,12 +517,12 @@ def plot_prior_posterior_1d(
 
     # Posterior in the foreground
     plt.hist(
-        post_1d,
+        post_valid,
         bins=bins,
         density=True,
         histtype="step",
         linewidth=2.0,
-        label="Posterior",
+        label=f"Posterior ({len(post_valid)} samples)",
     )
 
     # Optional vertical reference line

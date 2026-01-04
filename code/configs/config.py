@@ -102,6 +102,9 @@ class ExperimentConfig:
     fnpe_steps_per_epoch: int = 10000  # Steps per epoch (like Lotka-Volterra example)
     fnpe_num_diffusion_steps: int = 500
     fnpe_score_fn_type: str = "fnpe"  # fnpe | uncorrected
+    fnpe_max_obs_len: int = (
+        200  # Max observation length at inference (truncate longer sequences)
+    )
 
     # --- Training ---
     learning_rate: float = 1e-3

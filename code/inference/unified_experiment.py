@@ -176,14 +176,27 @@ def run_parameter_posterior_plots(
             key, key_theta, key_sim = jax.random.split(key, 3)
             theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
             theta_true_np = np.array(theta_true_jax)
+            print(f"[DIAG] True theta: {theta_true_np}", flush=True)
 
             # Generate observation using FNPE's task simulator
             simulator_fn = task.get_simulator()
             x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)  # (T, obs_dim)
+            print(
+                f"[DIAG] x_phys shape: {x_phys.shape}, has NaN: {np.any(np.isnan(x_phys))}",
+                flush=True,
+            )
 
             # Sample from posterior - pass physical observation (FNPE normalizes internally)
+            print(
+                f"[DIAG] Sampling {num_posterior_samples} posterior samples...",
+                flush=True,
+            )
             theta_post = posterior.sample((num_posterior_samples,), x=x_phys)
             theta_post_np = np.array(theta_post)
+            print(
+                f"[DIAG] theta_post shape: {theta_post_np.shape}, NaN count: {np.sum(np.isnan(theta_post_np))}",
+                flush=True,
+            )
 
             if theta_post_np.ndim == 3:
                 theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
@@ -736,6 +749,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "score_fn_type": cfg.fnpe_score_fn_type,
                 "stop_after_epochs": cfg.stop_after_epochs,
                 "validation_fraction": cfg.validation_fraction,
+                "max_obs_len": cfg.fnpe_max_obs_len,  # Truncate observations for inference
             }
         )
 
