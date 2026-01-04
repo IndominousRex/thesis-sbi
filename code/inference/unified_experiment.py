@@ -749,14 +749,17 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "score_fn_type": cfg.fnpe_score_fn_type,
                 "stop_after_epochs": cfg.stop_after_epochs,
                 "validation_fraction": cfg.validation_fraction,
-                "max_obs_len": cfg.fnpe_max_obs_len,  # Truncate observations for inference
+                "max_obs_len": cfg.fnpe_max_obs_len,
+                "normalize_score_by_windows": cfg.fnpe_normalize_score,
             }
         )
-        # Note: window_size=2, max_obs_len=11 gives N=10 windows like Lotka-Volterra
         num_windows = cfg.fnpe_max_obs_len - cfg.fnpe_window_size + 1
+        norm_mode = (
+            "normalized (mean)" if cfg.fnpe_normalize_score else "original (sum)"
+        )
         print(
             f"[FNPE] window_size={cfg.fnpe_window_size}, max_obs_len={cfg.fnpe_max_obs_len} "
-            f"(N={num_windows} windows at inference)",
+            f"(N={num_windows} windows, score={norm_mode})",
             flush=True,
         )
 

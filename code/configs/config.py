@@ -102,10 +102,12 @@ class ExperimentConfig:
     fnpe_steps_per_epoch: int = 10000  # Steps per epoch (like Lotka-Volterra example)
     fnpe_num_diffusion_steps: int = 500
     fnpe_score_fn_type: str = "fnpe"  # fnpe | uncorrected
-    # Max observation length at inference - CRITICAL: Keep small!
-    # With window_size=2, T=11 gives N=10 windows (like Lotka-Volterra eval)
-    # Too many windows causes (1-N)*prior_score to dominate and produce NaN
-    fnpe_max_obs_len: int = 11
+    # Max observation length at inference
+    # With normalize_score_by_windows=True, can use longer sequences (100-500)
+    # Without normalization, keep small (11) to avoid (1-N)*prior_score dominating
+    fnpe_max_obs_len: int = 100
+    # Use mean instead of sum over windows for numerical stability
+    fnpe_normalize_score: bool = True
 
     # --- Training ---
     learning_rate: float = 1e-3

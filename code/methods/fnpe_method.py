@@ -161,7 +161,8 @@ class FNPEMethod(BaseMethod):
         score_fn_type: str = "fnpe",
         stop_after_epochs: int = 20,
         validation_fraction: float = 0.1,
-        max_obs_len: int = 200,  # Max observation length at inference
+        max_obs_len: int = 100,  # Max observation length at inference
+        normalize_score_by_windows: bool = True,  # Use mean instead of sum for stability
     ):
         # Note: FNPE doesn't use torch prior/device directly
         super().__init__(cfg, prior, device)
@@ -178,6 +179,7 @@ class FNPEMethod(BaseMethod):
         self.score_fn_type = score_fn_type
         self.stop_after_epochs = stop_after_epochs
         self.validation_fraction = validation_fraction
+        self.normalize_score_by_windows = normalize_score_by_windows
         self.max_obs_len = max_obs_len
 
         # Will be set during build/train
@@ -485,7 +487,13 @@ class FNPEMethod(BaseMethod):
         prior_norm = self.task.get_normalized_prior()
 
         if self.score_fn_type.lower() == "fnpe":
-            score_fn = FNPEScoreFn(self.score_net, self.params, self.sde, prior_norm)
+            score_fn = FNPEScoreFn(
+                self.score_net,
+                self.params,
+                self.sde,
+                prior_norm,
+                normalize_by_windows=self.normalize_score_by_windows,
+            )
         else:
             score_fn = UncorrectedScoreFn(
                 self.score_net, self.params, self.sde, prior_norm
