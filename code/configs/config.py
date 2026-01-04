@@ -110,12 +110,14 @@ class ExperimentConfig:
     fnpe_normalize_score: bool = True
 
     # --- Training ---
-    learning_rate: float = 1e-3
-    training_batch_size: int = 512
+    learning_rate: float = 5e-4  # Lower LR for complex data (MarkovSBI large uses 5e-4)
+    training_batch_size: int = 1024  # Larger batch for stability
     validation_fraction: float = 0.15  # 15% for stable validation metrics
-    stop_after_epochs: int = 30  # Increased patience for noisy val loss
-    clip_max_norm: float = 5.0
-    num_epochs: int = 20  # For methods that use explicit epochs
+    stop_after_epochs: int = 50  # High patience, let LR schedule do its work
+    clip_max_norm: float = (
+        20.0  # Higher clip for complex data (MarkovSBI large uses 20)
+    )
+    num_epochs: int = 200  # More epochs for complex data (MarkovSBI large uses 100)
 
     # --- SBC / diagnostics ---
     num_sbc_samples: int = 200

@@ -363,7 +363,10 @@ class FNPEMethod(BaseMethod):
             max_total_steps, self.cfg.learning_rate
         )
         optimizer = optax.chain(
-            optax.adaptive_grad_clip(10.0),
+            optax.adaptive_grad_clip(self.cfg.clip_max_norm),
+            optax.ema(
+                0.01
+            ),  # EMA on weights for smoother training (like MarkovSBI notebook)
             optax.adamw(schedule),
         )
         opt_state = optimizer.init(params)
