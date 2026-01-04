@@ -752,6 +752,13 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "max_obs_len": cfg.fnpe_max_obs_len,  # Truncate observations for inference
             }
         )
+        # Note: window_size=2, max_obs_len=11 gives N=10 windows like Lotka-Volterra
+        num_windows = cfg.fnpe_max_obs_len - cfg.fnpe_window_size + 1
+        print(
+            f"[FNPE] window_size={cfg.fnpe_window_size}, max_obs_len={cfg.fnpe_max_obs_len} "
+            f"(N={num_windows} windows at inference)",
+            flush=True,
+        )
 
     method = build_method(cfg.method, cfg, prior_norm, device, **method_kwargs)
     method.build(input_dim=D_in, seq_len=T_event)

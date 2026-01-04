@@ -192,8 +192,8 @@ def parse_args():
     fnpe.add_argument(
         "--fnpe-max-obs-len",
         type=int,
-        default=200,
-        help="Max observation length for inference (truncate to prevent NaN)",
+        default=11,
+        help="Max observation length for inference. CRITICAL: keep small! T=11 with window_size=2 gives N=10 windows like Lotka-Volterra. Too many windows cause NaN.",
     )
     fnpe.add_argument("--fnpe-steps-per-epoch", type=int, default=10000)
     fnpe.add_argument("--fnpe-diffusion-steps", type=int, default=500)

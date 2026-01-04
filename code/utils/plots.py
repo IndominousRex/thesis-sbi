@@ -30,12 +30,17 @@ def plot_training_curves(
 
     Args:
         summary: dict from inference.summary containing at least
-                 'training_loss' and 'validation_loss'.
+                 'training_loss'/'train_loss' and 'validation_loss'/'val_loss'.
         out_path: where to save the PNG (e.g. exp_dir/'figures/train_loss.png').
         title: plot title.
     """
-    train_loss = np.asarray(summary.get("training_loss", []), dtype=float)
-    val_loss = np.asarray(summary.get("validation_loss", []), dtype=float)
+    # Support both naming conventions (sbi uses training_loss, FNPE uses train_loss)
+    train_loss = np.asarray(
+        summary.get("training_loss", summary.get("train_loss", [])), dtype=float
+    )
+    val_loss = np.asarray(
+        summary.get("validation_loss", summary.get("val_loss", [])), dtype=float
+    )
 
     if train_loss.size == 0:
         print("[plot_training_curves] No training_loss found in summary; skipping.")

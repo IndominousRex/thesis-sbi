@@ -78,11 +78,14 @@ class FNPEPosterior:
             # Single feature time series
             x_squeezed = x_squeezed.reshape(-1, 1)
 
-        # Truncate observation if too long to avoid numerical issues
-        # The score accumulation (1-N)*prior_score + sum(scores) becomes unstable for large N
+        # Truncate observation - CRITICAL for numerical stability!
+        # The FNPE score accumulation (1-N)*prior_score + sum(scores) becomes
+        # unstable when N (number of windows) is large.
+        # With window_size=2 and T=11, we get N=10 like Lotka-Volterra eval.
         if x_squeezed.shape[0] > self.max_obs_len:
             print(
-                f"[FNPE] Truncating observation from {x_squeezed.shape[0]} to {self.max_obs_len} timesteps",
+                f"[FNPE] Truncating observation from {x_squeezed.shape[0]} to {self.max_obs_len} timesteps "
+                f"(N={self.max_obs_len - 1} windows)",
                 flush=True,
             )
             x_squeezed = x_squeezed[: self.max_obs_len]
@@ -105,10 +108,8 @@ class FNPEPosterior:
                 f"[FNPE WARNING] NaN after normalization! x_norm shape={x_norm.shape}",
                 flush=True,
             )
-            print(
-                f"[FNPE] obs_mean={self.task._obs_mean}, obs_std={self.task._obs_std}",
-                flush=True,
-            )
+            print(f"[FNPE DEBUG] obs_mean: {self.task._obs_mean}", flush=True)
+            print(f"[FNPE DEBUG] obs_std: {self.task._obs_std}", flush=True)
 
         # Sample
         self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
@@ -120,10 +121,10 @@ class FNPEPosterior:
         samples_norm = jax.block_until_ready(samples_norm)
 
         # Check for NaN in samples
-        nan_count = jnp.sum(jnp.isnan(samples_norm))
+        nan_count = int(jnp.sum(jnp.isnan(samples_norm)))
         if nan_count > 0:
             print(
-                f"[FNPE WARNING] {nan_count} NaN values in samples! shape={samples_norm.shape}",
+                f"[FNPE WARNING] {nan_count} NaN values in normalized samples! shape={samples_norm.shape}",
                 flush=True,
             )
 
