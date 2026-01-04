@@ -185,21 +185,34 @@ class FNPEMethod(BaseMethod):
         Note: FNPE generates its own training data via the task.
         The theta_train/x_train arguments are ignored for consistency
         with the base interface.
+
+        IMPORTANT: Training data is generated with T=window_size (e.g., T=2),
+        following the Markov assumption. At inference, longer sequences are
+        handled via score factorization.
         """
         if self.task is None:
             raise RuntimeError("Method not built. Call build() first.")
 
         num_sim = num_simulations or self.cfg.num_simulations
-        t_obs = T_obs or self._seq_len
+        # Store full observation length for inference
+        self._t_obs_full = T_obs or self._seq_len
+
+        # For TRAINING, use window_size as T (like Lotka-Volterra: T=2)
+        # This is the Markov assumption - we only need short windows for training
+        t_train = self.window_size
 
         print(
-            f"[FNPE] Generating {num_sim} training trajectories (T={t_obs})...",
+            f"[FNPE] Generating {num_sim} training samples (T={t_train}, window_size={self.window_size})...",
+            flush=True,
+        )
+        print(
+            f"[FNPE] (Full observation length T_obs={self._t_obs_full} will be used at inference)",
             flush=True,
         )
 
-        # Generate data
+        # Generate data with T = window_size (NOT full sequence length!)
         self._key, key_data = jax.random.split(self._key)
-        data = self.task.get_data(key_data, num_sim, t_obs)
+        data = self.task.get_data(key_data, num_sim, t_train)
 
         print(
             f"[FNPE] Data shapes: thetas={data['thetas'].shape}, xs={data['xs'].shape}",
@@ -212,12 +225,12 @@ class FNPEMethod(BaseMethod):
 
         # Train score network
         print(
-            f"[FNPE] Training score network (window_size={self.window_size}, max {self.num_epochs} epochs, early stop after {self.stop_after_epochs})...",
+            f"[FNPE] Training score network (max {self.num_epochs} epochs, early stop after {self.stop_after_epochs})...",
             flush=True,
         )
         train_start = time.time()
 
-        # Use small Markov window, NOT full sequence length!
+        # Pass window_size for network construction
         self.params, self.score_net, losses = self._train_score_network(
             data, self.window_size
         )
