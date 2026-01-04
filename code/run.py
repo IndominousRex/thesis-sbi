@@ -183,7 +183,13 @@ def parse_args():
         choices=["gru", "linear"],
         default="gru",
     )
-    fnpe.add_argument("--fnpe-steps-per-epoch", type=int, default=1000)
+    fnpe.add_argument(
+        "--fnpe-window-size",
+        type=int,
+        default=2,
+        help="Markov window size (keep small, e.g. 2-10)",
+    )
+    fnpe.add_argument("--fnpe-steps-per-epoch", type=int, default=10000)
     fnpe.add_argument("--fnpe-diffusion-steps", type=int, default=500)
     fnpe.add_argument(
         "--fnpe-score-fn",
@@ -273,6 +279,7 @@ def main():
         fnpe_hidden_dim=args.fnpe_hidden_dim,
         fnpe_num_hidden=args.fnpe_num_hidden,
         fnpe_model_type=args.fnpe_model_type,
+        fnpe_window_size=args.fnpe_window_size,
         fnpe_steps_per_epoch=args.fnpe_steps_per_epoch,
         fnpe_num_diffusion_steps=args.fnpe_diffusion_steps,
         fnpe_score_fn_type=args.fnpe_score_fn,

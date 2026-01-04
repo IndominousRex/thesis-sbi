@@ -728,6 +728,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "hidden_dim": cfg.fnpe_hidden_dim,
                 "num_hidden": cfg.fnpe_num_hidden,
                 "model_type": cfg.fnpe_model_type,
+                "window_size": cfg.fnpe_window_size,  # CRITICAL: small Markov window
                 "num_epochs": cfg.num_epochs,
                 "steps_per_epoch": cfg.fnpe_steps_per_epoch,
                 "batch_size": cfg.training_batch_size,

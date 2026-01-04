@@ -116,6 +116,7 @@ class FNPEMethod(BaseMethod):
         hidden_dim: int = 128,
         num_hidden: int = 5,
         model_type: str = "gru",
+        window_size: int = 2,  # Markov window size - CRITICAL for performance
         num_epochs: int = 20,
         steps_per_epoch: int = 10000,
         batch_size: int = 256,
@@ -131,6 +132,7 @@ class FNPEMethod(BaseMethod):
         self.hidden_dim = hidden_dim
         self.num_hidden = num_hidden
         self.model_type = model_type
+        self.window_size = window_size  # Small window, NOT full sequence!
         self.num_epochs = num_epochs
         self.steps_per_epoch = steps_per_epoch
         self.batch_size = batch_size
@@ -210,12 +212,15 @@ class FNPEMethod(BaseMethod):
 
         # Train score network
         print(
-            f"[FNPE] Training score network (max {self.num_epochs} epochs, early stop after {self.stop_after_epochs})...",
+            f"[FNPE] Training score network (window_size={self.window_size}, max {self.num_epochs} epochs, early stop after {self.stop_after_epochs})...",
             flush=True,
         )
         train_start = time.time()
 
-        self.params, self.score_net, losses = self._train_score_network(data, t_obs)
+        # Use small Markov window, NOT full sequence length!
+        self.params, self.score_net, losses = self._train_score_network(
+            data, self.window_size
+        )
 
         train_time = time.time() - train_start
 
