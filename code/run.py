@@ -238,8 +238,8 @@ def parse_args():
     real.add_argument(
         "--real-data-csv",
         type=str,
-        default=None,
-        help="Path to real-data CSV for evaluation",
+        default="../data/measurements/Jeversen_2022_10_12_110132.csv",
+        help="Path to real-data CSV for evaluation (set to empty string to disable)",
     )
 
     # ==========================================================================

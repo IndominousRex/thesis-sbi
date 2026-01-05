@@ -134,7 +134,8 @@ class ExperimentConfig:
     run_posterior_plots: bool = True
 
     # --- Real data eval ---
-    real_data_csv: Optional[str] = None
+    # Default path to real measurement data for evaluation
+    real_data_csv: Optional[str] = "../data/measurements/Jeversen_2022_10_12_110132.csv"
 
     # --- Logging / saving ---
     results_root: str = "experiments"

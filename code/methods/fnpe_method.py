@@ -35,7 +35,8 @@ class FNPEPosterior:
     Wrapper to provide a consistent sampling interface for FNPE.
 
     Adapts the JAX-based FNPE sampler to the torch-like posterior interface
-    used by NPE/NPSE.
+    used by NPE/NPSE. Returns torch tensors in NORMALIZED space by default,
+    allowing seamless integration with existing NPE/NPSE evaluation pipelines.
     """
 
     def __init__(
@@ -44,29 +45,47 @@ class FNPEPosterior:
         task: VehicleDynamicsTask,
         key: jax.random.PRNGKey,
         max_obs_len: int = 200,
+        normalizer=None,  # External normalizer for interface compatibility
+        obs_dim: int = 9,  # Number of observation channels (without controls)
     ):
         self.sampler = sampler
         self.task = task
         self.key = key
         self.max_obs_len = max_obs_len
+        self.normalizer = normalizer  # Used to match NPE/NPSE interface
+        self.obs_dim = obs_dim  # FNPE uses obs only, no controls
 
-    def sample(self, sample_shape: tuple, x: Any, **kwargs) -> np.ndarray:
+    def sample(
+        self,
+        sample_shape: tuple,
+        x,
+        return_physical: bool = False,
+        **kwargs,
+    ):
         """
         Sample from the posterior.
+
+        By default, this method matches NPE/NPSE interface:
+        - Expects NORMALIZED observations (from normalizer.normalize_x)
+        - Returns NORMALIZED samples as torch.Tensor
 
         Args:
             sample_shape: Tuple specifying number of samples (N,)
             x: Observation tensor/array (can be torch or numpy).
-               Should be PHYSICAL (unnormalized) data - FNPE uses its own normalization.
+               Default: Expects NORMALIZED data (same as NPE/NPSE).
+               If return_physical=True: Can be either normalized or physical.
+            return_physical: If True, returns physical units as numpy (legacy mode).
+                           If False (default), returns normalized torch tensor (NPE-compatible).
 
         Returns:
-            Posterior samples as numpy array, shape (N, d_theta) in PHYSICAL units
+            If return_physical=True: numpy array, shape (N, d_theta) in PHYSICAL units
+            If return_physical=False: torch.Tensor, shape (N, d_theta) in NORMALIZED units
         """
         import torch
 
         num_samples = sample_shape[0]
 
-        # Convert observation to JAX array
+        # Convert observation to numpy
         if isinstance(x, torch.Tensor):
             x_np = x.detach().cpu().numpy()
         else:
@@ -78,10 +97,37 @@ class FNPEPosterior:
             # Single feature time series
             x_squeezed = x_squeezed.reshape(-1, 1)
 
+        # If we have an external normalizer, input is NORMALIZED - unnormalize first
+        # This makes FNPE accept the same input as NPE/NPSE
+        if self.normalizer is not None and not return_physical:
+            # Input is [obs_norm || ctrl_norm] - FNPE only needs obs part
+            # First unnormalize to physical, then extract obs only
+            x_tensor = torch.tensor(x_squeezed, dtype=torch.float32)
+            # normalizer.unnormalize_x expects shape (batch, T, D)
+            if x_tensor.ndim == 2:
+                x_tensor = x_tensor.unsqueeze(0)  # (1, T, D)
+
+            # Move normalizer stats to CPU for this operation (result goes to JAX anyway)
+            obs_std_cpu = self.normalizer.obs_std.cpu()
+            obs_mean_cpu = self.normalizer.obs_mean.cpu()
+
+            # Extract obs part only (first obs_dim channels)
+            # If input has controls, strip them since FNPE doesn't use them
+            if x_tensor.shape[-1] > self.obs_dim:
+                # Input is [obs || ctrl] - extract obs and unnormalize separately
+                obs_norm = x_tensor[..., : self.obs_dim].cpu()
+                obs_phys = obs_norm * (obs_std_cpu + self.normalizer.eps) + obs_mean_cpu
+                x_squeezed = obs_phys.squeeze(0).numpy()  # (T, obs_dim)
+            else:
+                # Input is obs only - unnormalize
+                obs_phys = (
+                    x_tensor.cpu() * (obs_std_cpu + self.normalizer.eps) + obs_mean_cpu
+                )
+                x_squeezed = obs_phys.squeeze(0).numpy()
+
         # Truncate observation - CRITICAL for numerical stability!
         # The FNPE score accumulation (1-N)*prior_score + sum(scores) becomes
         # unstable when N (number of windows) is large.
-        # With window_size=2 and T=11, we get N=10 like Lotka-Volterra eval.
         if x_squeezed.shape[0] > self.max_obs_len:
             print(
                 f"[FNPE] Truncating observation from {x_squeezed.shape[0]} to {self.max_obs_len} timesteps "
@@ -90,7 +136,7 @@ class FNPEPosterior:
             )
             x_squeezed = x_squeezed[: self.max_obs_len]
 
-        # FNPE expects to normalize the data itself using task stats
+        # FNPE expects PHYSICAL data and normalizes it using its own task stats
         x_jax = jnp.asarray(x_squeezed)
 
         # Check for NaN in input
@@ -100,6 +146,7 @@ class FNPEPosterior:
                 flush=True,
             )
 
+        # FNPE internal normalization (using task's own stats)
         x_norm = self.task.normalize_x(x_jax)
 
         # Check for NaN after normalization
@@ -111,27 +158,45 @@ class FNPEPosterior:
             print(f"[FNPE DEBUG] obs_mean: {self.task._obs_mean}", flush=True)
             print(f"[FNPE DEBUG] obs_std: {self.task._obs_std}", flush=True)
 
-        # Sample
+        # Sample from diffusion
         self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
         sample_keys = jnp.stack(sample_keys)
 
-        samples_norm = jax.vmap(self.sampler.sample, in_axes=(0, None))(
+        samples_norm_jax = jax.vmap(self.sampler.sample, in_axes=(0, None))(
             sample_keys, x_norm
         )
-        samples_norm = jax.block_until_ready(samples_norm)
+        samples_norm_jax = jax.block_until_ready(samples_norm_jax)
 
         # Check for NaN in samples
-        nan_count = int(jnp.sum(jnp.isnan(samples_norm)))
+        nan_count = int(jnp.sum(jnp.isnan(samples_norm_jax)))
         if nan_count > 0:
             print(
-                f"[FNPE WARNING] {nan_count} NaN values in normalized samples! shape={samples_norm.shape}",
+                f"[FNPE WARNING] {nan_count} NaN values in normalized samples! shape={samples_norm_jax.shape}",
                 flush=True,
             )
 
-        # Unnormalize
-        samples_phys = jax.vmap(self.task.unnormalize_theta)(samples_norm)
+        # Unnormalize using FNPE's task stats -> physical units
+        samples_phys = jax.vmap(self.task.unnormalize_theta)(samples_norm_jax)
+        samples_phys_np = np.array(samples_phys)
 
-        return np.array(samples_phys)
+        if return_physical:
+            # Legacy mode: return physical numpy array
+            return samples_phys_np
+
+        # Default mode: Convert to normalized torch tensor (same as NPE/NPSE output)
+        if self.normalizer is not None:
+            # Normalize on CPU, then move to same device as normalizer
+            samples_phys_torch = torch.tensor(samples_phys_np, dtype=torch.float32)
+            theta_mean_cpu = self.normalizer.theta_mean.cpu()
+            theta_std_cpu = self.normalizer.theta_std.cpu()
+            samples_norm_torch = (samples_phys_torch - theta_mean_cpu) / (
+                theta_std_cpu + self.normalizer.eps
+            )
+            # Move to same device as normalizer
+            return samples_norm_torch.to(self.normalizer.theta_mean.device)
+        else:
+            # No normalizer provided - return physical as torch (fallback)
+            return torch.tensor(samples_phys_np, dtype=torch.float32)
 
 
 class FNPEMethod(BaseMethod):
@@ -517,14 +582,25 @@ class FNPEMethod(BaseMethod):
         )
         self.sampler = Diffuser(kernel, time_grid, self.task.input_shape)
 
-    def build_posterior(self) -> FNPEPosterior:
-        """Build posterior wrapper for sampling."""
+    def build_posterior(self, normalizer=None) -> FNPEPosterior:
+        """Build posterior wrapper for sampling.
+
+        Args:
+            normalizer: Optional external normalizer for NPE-compatible interface.
+                       If provided, posterior.sample() will accept normalized inputs
+                       and return normalized torch tensors (same interface as NPE/NPSE).
+        """
         if self.sampler is None:
             raise RuntimeError("Model not trained. Call train() first.")
 
         self._key, key_posterior = jax.random.split(self._key)
         self.posterior = FNPEPosterior(
-            self.sampler, self.task, key_posterior, max_obs_len=self.max_obs_len
+            self.sampler,
+            self.task,
+            key_posterior,
+            max_obs_len=self.max_obs_len,
+            normalizer=normalizer,
+            obs_dim=self.cfg.obs_dim,  # Pass obs_dim from config
         )
         return self.posterior
 

@@ -54,6 +54,22 @@ class Normalizer:
 
         return torch.cat([obs_n, ctrl_n], dim=-1)
 
+    def unnormalize_x(self, x_norm: torch.Tensor, obs_dim: int) -> torch.Tensor:
+        """
+        Unnormalize concatenated [obs || controls] tensor back to physical units.
+
+        Args:
+            x_norm: (N, T, D_in) tensor in normalized units.
+            obs_dim: number of observation channels (front slice of D_in).
+        """
+        obs_n = x_norm[..., :obs_dim]
+        ctrl_n = x_norm[..., obs_dim:]
+
+        obs = obs_n * (self.obs_std + self.eps) + self.obs_mean
+        ctrls = ctrl_n * (self.ctrl_std + self.eps) + self.ctrl_mean
+
+        return torch.cat([obs, ctrls], dim=-1)
+
     def normalize_theta(self, theta_phys: torch.Tensor) -> torch.Tensor:
         return (theta_phys - self.theta_mean) / (self.theta_std + self.eps)
 

@@ -155,7 +155,7 @@ def run_parameter_posterior_plots(
 
     param_names = list(cfg.active_parameters)
 
-    # For FNPE, use JAX-based prior sampling
+    # For FNPE, use JAX-based prior sampling and simulator but unified posterior interface
     if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
         import jax
         import jax.numpy as jnp
@@ -164,7 +164,7 @@ def run_parameter_posterior_plots(
         jax_prior = task.get_prior()
         key = jax.random.PRNGKey(cfg.random_seed + 1000)
 
-        # Sample from JAX prior for reference
+        # Sample from JAX prior for reference (physical units)
         key, key_prior = jax.random.split(key)
         prior_pool_jax = jax_prior.sample(key_prior, (num_prior_samples,))
         prior_pool_np = np.array(prior_pool_jax)
@@ -172,13 +172,13 @@ def run_parameter_posterior_plots(
         for ex_idx in range(num_examples):
             print(f"[DIAG] Posterior plots (FNPE): example {ex_idx+1}/{num_examples}")
 
-            # Sample true theta and simulate
+            # Sample true theta and simulate (physical units)
             key, key_theta, key_sim = jax.random.split(key, 3)
             theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
             theta_true_np = np.array(theta_true_jax)
             print(f"[DIAG] True theta: {theta_true_np}", flush=True)
 
-            # Generate observation using FNPE's task simulator
+            # Generate observation using FNPE's task simulator (physical units)
             simulator_fn = task.get_simulator()
             x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)  # (T, obs_dim)
             print(
@@ -186,13 +186,28 @@ def run_parameter_posterior_plots(
                 flush=True,
             )
 
-            # Sample from posterior - pass physical observation (FNPE normalizes internally)
+            # Normalize observation for unified posterior interface
+            # FNPE data is obs-only, so we normalize obs directly (no controls)
+            x_phys_torch = torch.tensor(np.array(x_phys), dtype=torch.float32).to(
+                device
+            )
+            if x_phys_torch.ndim == 2:
+                x_phys_torch = x_phys_torch.unsqueeze(0)  # (1, T, obs_dim)
+            # Normalize obs only (FNPE doesn't use controls)
+            x_norm = (x_phys_torch - normalizer.obs_mean) / (
+                normalizer.obs_std + normalizer.eps
+            )
+
+            # Sample from posterior (unified interface: normalized in, normalized out)
             print(
                 f"[DIAG] Sampling {num_posterior_samples} posterior samples...",
                 flush=True,
             )
-            theta_post = posterior.sample((num_posterior_samples,), x=x_phys)
-            theta_post_np = np.array(theta_post)
+            theta_post_norm = posterior.sample((num_posterior_samples,), x=x_norm)
+
+            # Unnormalize to physical units for plotting
+            theta_post_phys = normalizer.unnormalize_theta(theta_post_norm)
+            theta_post_np = theta_post_phys.detach().cpu().numpy()
             print(
                 f"[DIAG] theta_post shape: {theta_post_np.shape}, NaN count: {np.sum(np.isnan(theta_post_np))}",
                 flush=True,
@@ -285,8 +300,8 @@ def run_sbc_diagnostic(
         xs=x_sbc_norm,
         posterior=posterior,
         num_posterior_samples=num_post,
-        num_workers=4,
-        use_sample_batched=False,
+        num_workers=1,  # Use 1 worker to avoid multiprocessing issues with JAX
+        use_batched_sampling=False,  # FNPE doesn't support batched sampling
     )
 
     check_stats = check_sbc(ranks, theta_sbc_norm, dap_samples_norm, num_post)
@@ -451,13 +466,6 @@ def run_real_data_evaluation(
         Dict with real data metrics
     """
     import pandas as pd
-
-    # FNPE uses incompatible data format
-    if cfg.method == "fnpe":
-        print(
-            "[REAL] FNPE uses incompatible data format - skipping real data evaluation"
-        )
-        return {}
 
     csv_path = Path(cfg.real_data_csv)
     if not csv_path.exists():
@@ -777,6 +785,34 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             training_summary = method.train(
                 num_simulations=cfg.num_simulations, T_obs=T_event
             )
+            # After training, create normalizer from FNPE's task stats for unified interface
+            norm_stats = method.task.get_normalization_stats()
+            from utils.normalization import Normalizer
+
+            # FNPE task has obs_mean/std but no control stats - create dummy controls
+            # since FNPE handles obs without controls
+            obs_dim = cfg.obs_dim
+            normalizer = Normalizer(
+                obs_mean=torch.tensor(
+                    np.array(norm_stats["obs_mean"]), dtype=torch.float32
+                ),
+                obs_std=torch.tensor(
+                    np.array(norm_stats["obs_std"]), dtype=torch.float32
+                ),
+                ctrl_mean=torch.zeros(
+                    4, dtype=torch.float32
+                ),  # Dummy - FNPE doesn't use controls
+                ctrl_std=torch.ones(4, dtype=torch.float32),
+                theta_mean=torch.tensor(
+                    np.array(norm_stats["theta_mean"]), dtype=torch.float32
+                ),
+                theta_std=torch.tensor(
+                    np.array(norm_stats["theta_std"]), dtype=torch.float32
+                ),
+            ).to(device)
+            # Save normalizer for consistency
+            save_normalizer(normalizer, exp_dir / "stats_normalization.json")
+            print(f"[NORM] Created normalizer from FNPE task stats")
         else:
             training_summary = method.train(theta_train, x_train)
 
@@ -787,9 +823,39 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     elif cfg.checkpoint:
         print(f"\n[LOAD] Loading checkpoint from {cfg.checkpoint}", flush=True)
         method.load(Path(cfg.checkpoint))
+        # For FNPE checkpoint, also load/create normalizer
+        if cfg.method == "fnpe":
+            norm_path = Path(cfg.checkpoint).parent / "stats_normalization.json"
+            if norm_path.exists():
+                normalizer = load_normalizer(norm_path).to(device)
+                print(f"[NORM] Loaded normalizer from {norm_path}")
+            else:
+                # Create from task stats
+                norm_stats = method.task.get_normalization_stats()
+                normalizer = Normalizer(
+                    obs_mean=torch.tensor(
+                        np.array(norm_stats["obs_mean"]), dtype=torch.float32
+                    ),
+                    obs_std=torch.tensor(
+                        np.array(norm_stats["obs_std"]), dtype=torch.float32
+                    ),
+                    ctrl_mean=torch.zeros(4, dtype=torch.float32),
+                    ctrl_std=torch.ones(4, dtype=torch.float32),
+                    theta_mean=torch.tensor(
+                        np.array(norm_stats["theta_mean"]), dtype=torch.float32
+                    ),
+                    theta_std=torch.tensor(
+                        np.array(norm_stats["theta_std"]), dtype=torch.float32
+                    ),
+                ).to(device)
+                print(f"[NORM] Created normalizer from FNPE task stats")
 
     # --- Build posterior ---
-    posterior = method.build_posterior()
+    # For FNPE, pass the normalizer so it can match NPE/NPSE interface
+    if cfg.method == "fnpe":
+        posterior = method.build_posterior(normalizer=normalizer)
+    else:
+        posterior = method.build_posterior()
 
     # Save pickled posterior (skip for NPSE/FNPE - they have unpicklable JAX/torch lambdas)
     if cfg.method == "npe":
@@ -823,8 +889,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 method=method,  # Pass method for FNPE
             )
 
-        # SBC (skip for FNPE - incompatible data format)
-        if cfg.run_sbc and cfg.method != "fnpe":
+        # SBC
+        if cfg.run_sbc:
             print("\n[DIAG] Running SBC...")
             sbc_results = run_sbc_diagnostic(
                 cfg,
@@ -843,11 +909,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     cfg, prior_phys, sbc_results["dap_samples_norm"], normalizer
                 )
                 metrics["swd_prior_vs_dap"] = float(swd_val)
-        elif cfg.run_sbc and cfg.method == "fnpe":
-            print("\n[DIAG] Skipping SBC for FNPE (incompatible data format)")
 
-        # 1-step RMSE (skip for FNPE - incompatible data format)
-        if cfg.run_one_step_rmse and cfg.method != "fnpe":
+        # 1-step RMSE
+        if cfg.run_one_step_rmse:
             print("\n[DIAG] Running 1-step RMSE...")
             try:
                 one_step_results = run_one_step_rmse_diagnostic(
