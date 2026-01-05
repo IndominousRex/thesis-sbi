@@ -37,6 +37,9 @@ class FNPEPosterior:
     Adapts the JAX-based FNPE sampler to the torch-like posterior interface
     used by NPE/NPSE. Returns torch tensors in NORMALIZED space by default,
     allowing seamless integration with existing NPE/NPSE evaluation pipelines.
+
+    Note: This class no longer truncates observations. Full sequences are used
+    for inference, relying on normalize_by_windows=True for numerical stability.
     """
 
     def __init__(
@@ -44,14 +47,12 @@ class FNPEPosterior:
         sampler: Diffuser,
         task: VehicleDynamicsTask,
         key: jax.random.PRNGKey,
-        max_obs_len: int = 200,
         normalizer=None,  # External normalizer for interface compatibility
         obs_dim: int = 9,  # Number of observation channels (without controls)
     ):
         self.sampler = sampler
         self.task = task
         self.key = key
-        self.max_obs_len = max_obs_len
         self.normalizer = normalizer  # Used to match NPE/NPSE interface
         self.obs_dim = obs_dim  # FNPE uses obs only, no controls
 
@@ -125,16 +126,9 @@ class FNPEPosterior:
                 )
                 x_squeezed = obs_phys.squeeze(0).numpy()
 
-        # Truncate observation - CRITICAL for numerical stability!
-        # The FNPE score accumulation (1-N)*prior_score + sum(scores) becomes
-        # unstable when N (number of windows) is large.
-        if x_squeezed.shape[0] > self.max_obs_len:
-            print(
-                f"[FNPE] Truncating observation from {x_squeezed.shape[0]} to {self.max_obs_len} timesteps "
-                f"(N={self.max_obs_len - 1} windows)",
-                flush=True,
-            )
-            x_squeezed = x_squeezed[: self.max_obs_len]
+        # Note: We no longer truncate observations - using full sequence length
+        # The normalize_by_windows=True setting should handle numerical stability
+        # by using mean instead of sum in the score accumulation formula
 
         # FNPE expects PHYSICAL data and normalizes it using its own task stats
         x_jax = jnp.asarray(x_squeezed)
@@ -226,7 +220,7 @@ class FNPEMethod(BaseMethod):
         score_fn_type: str = "fnpe",
         stop_after_epochs: int = 20,
         validation_fraction: float = 0.1,
-        max_obs_len: int = 100,  # Max observation length at inference
+        max_obs_len: int = 100,  # DEPRECATED: No longer used (no truncation)
         normalize_score_by_windows: bool = True,  # Use mean instead of sum for stability
     ):
         # Note: FNPE doesn't use torch prior/device directly
@@ -245,6 +239,7 @@ class FNPEMethod(BaseMethod):
         self.stop_after_epochs = stop_after_epochs
         self.validation_fraction = validation_fraction
         self.normalize_score_by_windows = normalize_score_by_windows
+        # max_obs_len kept for backward compatibility but no longer used (no truncation)
         self.max_obs_len = max_obs_len
 
         # Will be set during build/train
@@ -598,7 +593,6 @@ class FNPEMethod(BaseMethod):
             self.sampler,
             self.task,
             key_posterior,
-            max_obs_len=self.max_obs_len,
             normalizer=normalizer,
             obs_dim=self.cfg.obs_dim,  # Pass obs_dim from config
         )
