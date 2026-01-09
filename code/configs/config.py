@@ -101,7 +101,9 @@ class ExperimentConfig:
     fnpe_window_size: int = 2  # Markov window size (CRITICAL: keep small, e.g. 2-10)
     fnpe_steps_per_epoch: int = 10000  # Steps per epoch (like Lotka-Volterra example)
     fnpe_num_diffusion_steps: int = 500
-    fnpe_score_fn_type: str = "fnpe"  # fnpe | uncorrected | gauss_corrected
+    fnpe_score_fn_type: str = (
+        "gauss_corrected"  # gauss_corrected (PAPER DEFAULT) | fnpe | uncorrected
+    )
     # Max observation length at inference
     # With normalize_score_by_windows=True, can use longer sequences (100-500)
     # Without normalization, keep small (11) to avoid (1-N)*prior_score dominating
