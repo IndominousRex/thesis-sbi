@@ -49,9 +49,9 @@ echo ""
 srun python run.py --method npse --exp-name test_npse --sde-type ve $COMMON_ARGS
 
 echo ""
-echo ">>> [3/3] Testing FNPE..."
+echo ">>> [3/3] Testing FNPE (with proposal-based training)..."
 echo ""
-srun python run.py --method fnpe --exp-name test_fnpe --fnpe-steps-per-epoch 100 $COMMON_ARGS
+srun python run.py --method fnpe --exp-name test_fnpe --fnpe-proposal-type pred --fnpe-steps-per-epoch 100 $COMMON_ARGS
 
 echo ""
 echo "=================================================="

@@ -7,8 +7,14 @@
 # Usage examples:
 #   sbatch run_experiment.sh npe baseline
 #   sbatch run_experiment.sh npse baseline --sde-type ve
-#   sbatch run_experiment.sh fnpe baseline --fnpe-model-type gru
+#   sbatch run_experiment.sh fnpe baseline --fnpe-proposal-type pred
+#   sbatch run_experiment.sh fnpe old_impl --fnpe-proposal-type trajectory
 #   sbatch --array=0-2 run_experiment.sh sweep_methods  # Run all methods
+#
+# FNPE Proposal Types:
+#   pred       - (DEFAULT) Correct implementation per FNPE paper
+#   trajectory - Old implementation for comparison/ablation
+#   naive      - Simple expanded prior (for testing)
 # ==============================================================================
 
 #SBATCH --job-name=sbi_experiment

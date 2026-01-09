@@ -25,7 +25,11 @@ from markovsbi.tasks import VehicleDynamicsTask
 from markovsbi.utils.sde_utils import init_sde
 from markovsbi.models.simple_scoremlp import build_score_mlp, precondition_functions
 from markovsbi.models.train_utils import build_batch_sampler, build_loss_fn
-from markovsbi.sampling.score_fn import FNPEScoreFn, UncorrectedScoreFn
+from markovsbi.sampling.score_fn import (
+    FNPEScoreFn,
+    UncorrectedScoreFn,
+    GaussCorrectedScoreFn,
+)
 from markovsbi.sampling.sample import Diffuser
 from markovsbi.sampling.kernels import EulerMaruyama
 
@@ -222,6 +226,7 @@ class FNPEMethod(BaseMethod):
         validation_fraction: float = 0.1,
         max_obs_len: int = 100,  # DEPRECATED: No longer used (no truncation)
         normalize_score_by_windows: bool = True,  # Use mean instead of sum for stability
+        proposal_type: str = "pred",  # "pred" (correct), "naive", or "trajectory" (old/wrong)
     ):
         # Note: FNPE doesn't use torch prior/device directly
         super().__init__(cfg, prior, device)
@@ -241,6 +246,11 @@ class FNPEMethod(BaseMethod):
         self.normalize_score_by_windows = normalize_score_by_windows
         # max_obs_len kept for backward compatibility but no longer used (no truncation)
         self.max_obs_len = max_obs_len
+        # Proposal type for training data generation
+        # "pred" = correct FNPE (proposal from pilot sims)
+        # "naive" = sample from initial state distribution
+        # "trajectory" = OLD incorrect implementation (divide trajectories into pairs)
+        self.proposal_type = proposal_type
 
         # Will be set during build/train
         self.task = None
@@ -311,9 +321,41 @@ class FNPEMethod(BaseMethod):
             flush=True,
         )
 
-        # Generate data with T = window_size (NOT full sequence length!)
+        # Select proposal type for data generation
+        if self.proposal_type == "trajectory":
+            print(
+                f"[FNPE] Using 'trajectory' proposal (OLD implementation - divides trajectories into pairs)",
+                flush=True,
+            )
+            print(
+                f"[FNPE] WARNING: This is NOT per FNPE paper! Use proposal_type='pred' for correct implementation.",
+                flush=True,
+            )
+            # For trajectory mode, we need longer T to get enough pairs
+            t_train_actual = max(t_train, 10)  # At least 10 timesteps to get pairs
+        else:
+            print(
+                f"[FNPE] Using '{self.proposal_type}' proposal (covering full state space)",
+                flush=True,
+            )
+            t_train_actual = t_train
+
+        # Generate data with T = window_size using selected PROPOSAL method
         self._key, key_data = jax.random.split(self._key)
-        data = self.task.get_data(key_data, num_sim, t_train)
+
+        # Configure proposal parameters (only used for "pred" mode)
+        num_pilot_sims = min(100, num_sim // 100)  # Use 1% of training size for pilots
+        num_pilot_sims = max(20, num_pilot_sims)  # At least 20 pilots
+        T_pilot = min(500, self._t_obs_full)  # Use observation length or 500
+
+        data = self.task.get_data(
+            key_data,
+            num_sim,
+            t_train_actual,
+            proposal=self.proposal_type,  # Use configured proposal type
+            num_pilot_sims=num_pilot_sims,
+            T_pilot=T_pilot,
+        )
 
         print(
             f"[FNPE] Data shapes: thetas={data['thetas'].shape}, xs={data['xs'].shape}",
@@ -559,6 +601,8 @@ class FNPEMethod(BaseMethod):
         prior_norm = self.task.get_normalized_prior()
 
         if self.score_fn_type.lower() == "fnpe":
+            # Basic FNPE score: (1-N)*prior + sum(local_scores)
+            # With normalize_by_windows=True: prior + mean(local_scores) (more stable)
             score_fn = FNPEScoreFn(
                 self.score_net,
                 self.params,
@@ -566,7 +610,17 @@ class FNPEMethod(BaseMethod):
                 prior_norm,
                 normalize_by_windows=self.normalize_score_by_windows,
             )
+        elif self.score_fn_type.lower() == "gauss_corrected":
+            # Gaussian-corrected FNPE score (more accurate at a > 0)
+            # Uses covariance weighting as described in paper Section 6.2
+            score_fn = GaussCorrectedScoreFn(
+                self.score_net,
+                self.params,
+                self.sde,
+                prior_norm,
+            )
         else:
+            # Uncorrected: uses marginal prior score
             score_fn = UncorrectedScoreFn(
                 self.score_net, self.params, self.sde, prior_norm
             )

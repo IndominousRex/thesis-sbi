@@ -73,14 +73,15 @@ srun python run.py \
     ${EXTRA_ARGS}
 
 # ==============================================================================
-# Step 3: Run FNPE with same dataset
+# Step 3: Run FNPE with correct proposal-based training
 # ==============================================================================
 echo ""
-echo ">>> Running FNPE (reusing cached dataset)..."
+echo ">>> Running FNPE with proposal-based training (correct implementation)..."
 echo ""
 srun python run.py \
     --method fnpe \
     --exp-name "${EXP_NAME}_fnpe" \
+    --fnpe-proposal-type pred \
     --reuse-dataset \
     --device cuda \
     ${EXTRA_ARGS}

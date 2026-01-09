@@ -216,8 +216,15 @@ def parse_args():
     fnpe.add_argument(
         "--fnpe-score-fn",
         type=str,
-        choices=["fnpe", "uncorrected"],
+        choices=["fnpe", "uncorrected", "gauss_corrected"],
         default="fnpe",
+    )
+    fnpe.add_argument(
+        "--fnpe-proposal-type",
+        type=str,
+        choices=["pred", "naive", "trajectory"],
+        default="pred",
+        help="Proposal type for FNPE training: 'pred' (correct, default), 'naive', or 'trajectory' (old)",
     )
 
     # ==========================================================================
@@ -307,6 +314,7 @@ def main():
         fnpe_steps_per_epoch=args.fnpe_steps_per_epoch,
         fnpe_num_diffusion_steps=args.fnpe_diffusion_steps,
         fnpe_score_fn_type=args.fnpe_score_fn,
+        fnpe_proposal_type=args.fnpe_proposal_type,  # "pred" (correct), "naive", "trajectory" (old)
         # Diagnostics
         num_sbc_samples=args.num_sbc_samples,
         num_lc2st_samples=args.num_lc2st_samples,

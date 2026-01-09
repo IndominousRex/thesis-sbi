@@ -759,15 +759,25 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "validation_fraction": cfg.validation_fraction,
                 "max_obs_len": cfg.fnpe_max_obs_len,
                 "normalize_score_by_windows": cfg.fnpe_normalize_score,
+                "proposal_type": cfg.fnpe_proposal_type,  # "pred" (correct), "naive", or "trajectory" (old)
             }
         )
         num_windows = cfg.fnpe_max_obs_len - cfg.fnpe_window_size + 1
         norm_mode = (
             "normalized (mean)" if cfg.fnpe_normalize_score else "original (sum)"
         )
+        proposal_desc = {
+            "pred": "proposal from pilot sims (CORRECT)",
+            "naive": "initial state distribution only",
+            "trajectory": "trajectory pairs (OLD/INCORRECT)",
+        }.get(cfg.fnpe_proposal_type, cfg.fnpe_proposal_type)
         print(
             f"[FNPE] window_size={cfg.fnpe_window_size}, max_obs_len={cfg.fnpe_max_obs_len} "
             f"(N={num_windows} windows, score={norm_mode})",
+            flush=True,
+        )
+        print(
+            f"[FNPE] proposal_type='{cfg.fnpe_proposal_type}' - {proposal_desc}",
             flush=True,
         )
 
