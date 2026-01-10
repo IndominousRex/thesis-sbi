@@ -9,3 +9,4 @@ experiments/
 *.out
 dummy.ipynb
 sbi_logs/
+notebooks/data_distribution_analysis.ipynb

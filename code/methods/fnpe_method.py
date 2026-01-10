@@ -156,6 +156,23 @@ class FNPEPosterior:
             print(f"[FNPE DEBUG] obs_mean: {self.task._obs_mean}", flush=True)
             print(f"[FNPE DEBUG] obs_std: {self.task._obs_std}", flush=True)
 
+        # Check if score function requires hyperparameter estimation (e.g., GaussCorrectedScoreFn)
+        # This is VERY slow - should use fnpe score_fn_type instead for speed
+        score_fn = self.sampler.kernel.score_fn
+        if hasattr(score_fn, 'requires_hyperparameters') and score_fn.requires_hyperparameters:
+            print(
+                f"[FNPE WARNING] Score function requires hyperparameter estimation - this is SLOW!",
+                flush=True,
+            )
+            print(
+                f"[FNPE WARNING] Consider using --fnpe-score-fn fnpe for much faster sampling.",
+                flush=True,
+            )
+            self.key, key_hyper = jax.random.split(self.key)
+            score_fn.estimate_hyperparameters(
+                x_norm, self.sampler.theta_shape, key_hyper
+            )
+
         # Sample from diffusion
         self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
         sample_keys = jnp.stack(sample_keys)
