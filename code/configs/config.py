@@ -107,11 +107,8 @@ class ExperimentConfig:
     # - "uncorrected": Uses marginal prior score
     fnpe_score_fn_type: str = "fnpe"
     # Max observation length at inference
-    # With normalize_score_by_windows=True, can use longer sequences (100-500)
-    # Without normalization, keep small (11) to avoid (1-N)*prior_score dominating
-    fnpe_max_obs_len: int = 100
-    # Use mean instead of sum over windows for numerical stability
-    fnpe_normalize_score: bool = True
+    # Keep reasonably small to avoid (1-N)*prior_score dominating with large N
+    fnpe_max_obs_len: int = 50
     # Proposal type for training data generation:
     # - "pred" (DEFAULT, CORRECT): Sample states from pilot simulation pool
     # - "naive": Sample from initial state distribution only

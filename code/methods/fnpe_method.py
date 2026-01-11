@@ -42,8 +42,7 @@ class FNPEPosterior:
     used by NPE/NPSE. Returns torch tensors in NORMALIZED space by default,
     allowing seamless integration with existing NPE/NPSE evaluation pipelines.
 
-    Note: This class no longer truncates observations. Full sequences are used
-    for inference, relying on normalize_by_windows=True for numerical stability.
+    Uses the original FNPE score formula: (1-N)*prior_score + sum(likelihood_scores)
     """
 
     def __init__(
@@ -130,10 +129,6 @@ class FNPEPosterior:
                 )
                 x_squeezed = obs_phys.squeeze(0).numpy()
 
-        # Note: We no longer truncate observations - using full sequence length
-        # The normalize_by_windows=True setting should handle numerical stability
-        # by using mean instead of sum in the score accumulation formula
-
         # FNPE expects PHYSICAL data and normalizes it using its own task stats
         x_jax = jnp.asarray(x_squeezed)
 
@@ -159,7 +154,10 @@ class FNPEPosterior:
         # Check if score function requires hyperparameter estimation (e.g., GaussCorrectedScoreFn)
         # This is VERY slow - should use fnpe score_fn_type instead for speed
         score_fn = self.sampler.kernel.score_fn
-        if hasattr(score_fn, 'requires_hyperparameters') and score_fn.requires_hyperparameters:
+        if (
+            hasattr(score_fn, "requires_hyperparameters")
+            and score_fn.requires_hyperparameters
+        ):
             print(
                 f"[FNPE WARNING] Score function requires hyperparameter estimation - this is SLOW!",
                 flush=True,
@@ -213,6 +211,98 @@ class FNPEPosterior:
             # No normalizer provided - return physical as torch (fallback)
             return torch.tensor(samples_phys_np, dtype=torch.float32)
 
+    def sample_with_traces(
+        self,
+        sample_shape: tuple,
+        x,
+        return_physical: bool = True,
+        **kwargs,
+    ):
+        """
+        Sample from the posterior and return full diffusion traces.
+
+        This method is useful for visualizing and diagnosing the diffusion
+        sampling process. It returns the parameter values at each diffusion
+        step, not just the final samples.
+
+        Args:
+            sample_shape: Tuple specifying number of samples (N,)
+            x: Observation tensor/array.
+            return_physical: If True, returns physical units (default for traces).
+
+        Returns:
+            traces: numpy array, shape (N, num_diffusion_steps, d_theta)
+                    in PHYSICAL units. Each trace[i] shows how sample i
+                    evolved during the reverse diffusion process.
+        """
+        import torch
+
+        num_samples = sample_shape[0]
+
+        # Convert observation to numpy (same preprocessing as sample())
+        if isinstance(x, torch.Tensor):
+            x_np = x.detach().cpu().numpy()
+        else:
+            x_np = np.asarray(x)
+
+        x_squeezed = x_np.squeeze()
+        if x_squeezed.ndim == 1:
+            x_squeezed = x_squeezed.reshape(-1, 1)
+
+        # Unnormalize if needed (same as sample())
+        if self.normalizer is not None and not return_physical:
+            x_tensor = torch.tensor(x_squeezed, dtype=torch.float32)
+            if x_tensor.ndim == 2:
+                x_tensor = x_tensor.unsqueeze(0)
+
+            obs_std_cpu = self.normalizer.obs_std.cpu()
+            obs_mean_cpu = self.normalizer.obs_mean.cpu()
+
+            if x_tensor.shape[-1] > self.obs_dim:
+                obs_norm = x_tensor[..., : self.obs_dim].cpu()
+                obs_phys = obs_norm * (obs_std_cpu + self.normalizer.eps) + obs_mean_cpu
+                x_squeezed = obs_phys.squeeze(0).numpy()
+            else:
+                obs_phys = (
+                    x_tensor.cpu() * (obs_std_cpu + self.normalizer.eps) + obs_mean_cpu
+                )
+                x_squeezed = obs_phys.squeeze(0).numpy()
+
+        # FNPE internal normalization
+        x_jax = jnp.asarray(x_squeezed)
+        x_norm = self.task.normalize_x(x_jax)
+
+        # Check if score function requires hyperparameter estimation
+        score_fn = self.sampler.kernel.score_fn
+        if (
+            hasattr(score_fn, "requires_hyperparameters")
+            and score_fn.requires_hyperparameters
+        ):
+            self.key, key_hyper = jax.random.split(self.key)
+            score_fn.estimate_hyperparameters(
+                x_norm, self.sampler.theta_shape, key_hyper
+            )
+
+        # Sample with traces using sampler.simulate (returns full trajectory)
+        self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
+        sample_keys = jnp.stack(sample_keys)
+
+        # sampler.simulate returns the full diffusion trajectory
+        traces_norm_jax = jax.vmap(self.sampler.simulate, in_axes=(0, None))(
+            sample_keys, x_norm
+        )
+        traces_norm_jax = jax.block_until_ready(traces_norm_jax)
+
+        # traces_norm_jax shape: (num_samples, num_steps, d_theta)
+        # Unnormalize each step to physical units
+        def unnorm_trace(trace):
+            return jax.vmap(self.task.unnormalize_theta)(trace)
+
+        traces_phys = jax.vmap(unnorm_trace)(traces_norm_jax)
+        traces_phys_np = np.array(traces_phys)
+
+        return traces_phys_np
+
 
 class FNPEMethod(BaseMethod):
     """
@@ -241,8 +331,7 @@ class FNPEMethod(BaseMethod):
         score_fn_type: str = "fnpe",
         stop_after_epochs: int = 20,
         validation_fraction: float = 0.1,
-        max_obs_len: int = 100,  # DEPRECATED: No longer used (no truncation)
-        normalize_score_by_windows: bool = True,  # Use mean instead of sum for stability
+        max_obs_len: int = 50,  # Max observation windows at inference
         proposal_type: str = "pred",  # "pred" (correct), "naive", or "trajectory" (old/wrong)
     ):
         # Note: FNPE doesn't use torch prior/device directly
@@ -260,8 +349,6 @@ class FNPEMethod(BaseMethod):
         self.score_fn_type = score_fn_type
         self.stop_after_epochs = stop_after_epochs
         self.validation_fraction = validation_fraction
-        self.normalize_score_by_windows = normalize_score_by_windows
-        # max_obs_len kept for backward compatibility but no longer used (no truncation)
         self.max_obs_len = max_obs_len
         # Proposal type for training data generation
         # "pred" = correct FNPE (proposal from pilot sims)
@@ -566,19 +653,27 @@ class FNPEMethod(BaseMethod):
 
             # Validation - evaluate on ALL validation batches for stable metrics
             val_losses_batch = []
-            for batch_idx in range(n_val_batches):
+            if n_val_batches > 0:
+                for batch_idx in range(n_val_batches):
+                    key, key_loss = jax.random.split(key)
+                    # Use deterministic batch selection for reproducibility
+                    start_idx = batch_idx * self.batch_size
+                    end_idx = start_idx + self.batch_size
+                    theta_batch = val_data["thetas"][start_idx:end_idx]
+                    x_batch = val_data["xs"][start_idx:end_idx]
+                    val_loss = eval_loss(params, key_loss, theta_batch, x_batch)
+                    val_losses_batch.append(val_loss)
+                # Single sync point for validation
+                val_losses_stacked = jnp.stack(val_losses_batch)
+                epoch_val_loss = float(jnp.mean(val_losses_stacked))
+            else:
+                # Not enough validation samples for full batch - use all val data
                 key, key_loss = jax.random.split(key)
-                # Use deterministic batch selection for reproducibility
-                start_idx = batch_idx * self.batch_size
-                end_idx = start_idx + self.batch_size
-                theta_batch = val_data["thetas"][start_idx:end_idx]
-                x_batch = val_data["xs"][start_idx:end_idx]
-                val_loss = eval_loss(params, key_loss, theta_batch, x_batch)
-                val_losses_batch.append(val_loss)
-
-            # Single sync point for validation
-            val_losses_stacked = jnp.stack(val_losses_batch)
-            epoch_val_loss = float(jnp.mean(val_losses_stacked))
+                theta_batch = val_data["thetas"]
+                x_batch = val_data["xs"]
+                epoch_val_loss = float(
+                    eval_loss(params, key_loss, theta_batch, x_batch)
+                )
 
             val_losses.append(epoch_val_loss)
 
@@ -619,13 +714,11 @@ class FNPEMethod(BaseMethod):
 
         if self.score_fn_type.lower() == "fnpe":
             # Basic FNPE score: (1-N)*prior + sum(local_scores)
-            # With normalize_by_windows=True: prior + mean(local_scores) (more stable)
             score_fn = FNPEScoreFn(
                 self.score_net,
                 self.params,
                 self.sde,
                 prior_norm,
-                normalize_by_windows=self.normalize_score_by_windows,
             )
         elif self.score_fn_type.lower() == "gauss_corrected":
             # Gaussian-corrected FNPE score (more accurate at a > 0)

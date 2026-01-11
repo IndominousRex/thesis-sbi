@@ -1,13 +1,14 @@
 # sbi_vehicle/plots.py
 
 from pathlib import Path
-from typing import Sequence, Dict, Optional
+from typing import Sequence, Dict, Optional, List, Union
 
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
 from sbi.analysis.plot import sbc_rank_plot, pp_plot_lc2st
+from sbi.analysis import pairplot as sbi_pairplot
 
 
 def _ensure_dir(path: Path):
@@ -548,3 +549,277 @@ def plot_prior_posterior_1d(
     plt.savefig(out_path, dpi=150)
     plt.close()
     print(f"[plots] Saved 1D prior/posterior plot to {out_path}")
+
+
+# ---------------------------------------------------------------------
+# 7) Pairplot visualization (from markovsbi notebooks)
+# ---------------------------------------------------------------------
+
+
+def plot_pairplot(
+    samples: Union[np.ndarray, torch.Tensor],
+    out_path: Path,
+    *,
+    samples_reference: Optional[Union[np.ndarray, torch.Tensor]] = None,
+    theta_true: Optional[Union[np.ndarray, torch.Tensor]] = None,
+    param_names: Optional[List[str]] = None,
+    limits: Optional[List[tuple]] = None,
+    title: str = "Posterior Pairplot",
+    figsize: tuple = (10, 10),
+    offdiag: str = "scatter",  # "scatter" or "contour"
+):
+    """
+    Plot pairwise marginal distributions using sbi's pairplot.
+
+    Similar to markovsbi notebooks, this shows 2D joint distributions
+    for all pairs of parameters.
+
+    Args:
+        samples: (N, d) array of posterior samples.
+        out_path: where to save the PNG.
+        samples_reference: optional (N, d) reference samples (e.g., from true posterior).
+        theta_true: optional (d,) true parameter values to mark.
+        param_names: list of parameter names for axis labels.
+        limits: list of (low, high) tuples for each dimension.
+        title: plot title.
+        figsize: figure size.
+        offdiag: "scatter" or "contour" for off-diagonal plots.
+    """
+    _ensure_dir(out_path)
+
+    # Convert to numpy if torch
+    if isinstance(samples, torch.Tensor):
+        samples = samples.detach().cpu().numpy()
+    samples_list = [samples]
+    labels_list = ["Posterior"]
+
+    if samples_reference is not None:
+        if isinstance(samples_reference, torch.Tensor):
+            samples_reference = samples_reference.detach().cpu().numpy()
+        samples_list.append(samples_reference)
+        labels_list.append("Reference")
+
+    # Convert theta_true
+    points = None
+    if theta_true is not None:
+        if isinstance(theta_true, torch.Tensor):
+            theta_true = theta_true.detach().cpu().numpy()
+        # sbi pairplot expects points to be 2D: (n_points, d)
+        points = np.atleast_2d(theta_true)
+        if points.shape[0] != 1:
+            # If theta_true was (d,), atleast_2d makes it (1, d) which is correct
+            # If it was already (n, d), keep as is
+            pass
+
+    # Create pairplot
+    fig, axes = sbi_pairplot(
+        samples_list,
+        points=points,
+        limits=limits,
+        labels=param_names,
+        offdiag=offdiag,
+        figsize=figsize,
+    )
+
+    # Add title
+    if fig is not None:
+        fig.suptitle(title, fontsize=12, y=1.02)
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.suptitle(title, fontsize=12, y=1.02)
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=150, bbox_inches="tight")
+        plt.close()
+
+    print(f"[plots] Saved pairplot to {out_path}")
+
+
+# ---------------------------------------------------------------------
+# 8) C2ST metric calculation and visualization
+# ---------------------------------------------------------------------
+
+
+def compute_c2st(
+    samples_p: Union[np.ndarray, torch.Tensor],
+    samples_q: Union[np.ndarray, torch.Tensor],
+    n_folds: int = 5,
+) -> float:
+    """
+    Compute the Classifier Two-Sample Test (C2ST) statistic.
+
+    C2ST trains a classifier to distinguish between two sets of samples.
+    - C2ST ≈ 0.5 means samples are indistinguishable (ideal)
+    - C2ST ≈ 1.0 means samples are completely separable (poor)
+
+    Args:
+        samples_p: (N, d) first set of samples (e.g., posterior samples)
+        samples_q: (N, d) second set of samples (e.g., reference/prior)
+        n_folds: number of cross-validation folds
+
+    Returns:
+        C2ST accuracy (float between 0.5 and 1.0)
+    """
+    from sbi.utils.metrics import c2st as sbi_c2st
+
+    # Convert to torch if numpy
+    if isinstance(samples_p, np.ndarray):
+        samples_p = torch.tensor(samples_p, dtype=torch.float32)
+    if isinstance(samples_q, np.ndarray):
+        samples_q = torch.tensor(samples_q, dtype=torch.float32)
+
+    # Ensure same number of samples
+    n = min(len(samples_p), len(samples_q))
+    samples_p = samples_p[:n]
+    samples_q = samples_q[:n]
+
+    # Compute C2ST
+    c2st_value = sbi_c2st(samples_p, samples_q, n_folds=n_folds)
+
+    return float(c2st_value.mean())
+
+
+def plot_c2st_comparison(
+    c2st_values: Dict[str, float],
+    out_path: Path,
+    title: str = "C2ST Comparison",
+):
+    """
+    Plot bar chart comparing C2ST values across different methods/comparisons.
+
+    Args:
+        c2st_values: dict mapping comparison name to C2ST value
+        out_path: where to save the PNG
+        title: plot title
+    """
+    _ensure_dir(out_path)
+
+    names = list(c2st_values.keys())
+    values = list(c2st_values.values())
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars = ax.bar(range(len(names)), values, color="steelblue", alpha=0.7)
+
+    # Add horizontal line at 0.5 (ideal)
+    ax.axhline(0.5, color="green", linestyle="--", linewidth=2, label="Ideal (0.5)")
+
+    # Color bars based on quality
+    for bar, val in zip(bars, values):
+        if val < 0.55:
+            bar.set_color("green")
+        elif val < 0.65:
+            bar.set_color("orange")
+        else:
+            bar.set_color("red")
+
+    ax.set_xticks(range(len(names)))
+    ax.set_xticklabels(names, rotation=45, ha="right")
+    ax.set_ylabel("C2ST Accuracy")
+    ax.set_ylim(0.4, 1.0)
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis="y")
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"[plots] Saved C2ST comparison to {out_path}")
+
+
+# ---------------------------------------------------------------------
+# 9) Diffusion trace plots (for NPSE/FNPE)
+# ---------------------------------------------------------------------
+
+
+def plot_diffusion_traces(
+    traces: np.ndarray,
+    out_path: Path,
+    *,
+    theta_true: Optional[np.ndarray] = None,
+    param_names: Optional[List[str]] = None,
+    title: str = "Diffusion Sampling Traces",
+    max_traces: int = 100,
+    alpha: float = 0.1,
+):
+    """
+    Plot diffusion sampling traces showing how samples evolve during the
+    reverse diffusion process.
+
+    This visualization helps diagnose:
+    - Whether diffusion converges to the posterior
+    - Mixing behavior
+    - Potential numerical issues
+
+    Inspired by markovsbi notebooks.
+
+    Args:
+        traces: (num_samples, num_steps, d) array of diffusion traces.
+                Each trace shows the parameter values at each diffusion step.
+        out_path: where to save the PNG.
+        theta_true: optional (d,) true parameter values to mark.
+        param_names: list of parameter names.
+        title: plot title.
+        max_traces: maximum number of traces to plot (for clarity).
+        alpha: transparency for trace lines.
+    """
+    _ensure_dir(out_path)
+
+    num_samples, num_steps, d = traces.shape
+
+    # Limit traces for visual clarity
+    if num_samples > max_traces:
+        idx = np.random.choice(num_samples, max_traces, replace=False)
+        traces = traces[idx]
+        num_samples = max_traces
+
+    # Create subplot grid
+    ncols = min(d, 3)
+    nrows = (d + ncols - 1) // ncols
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 3 * nrows))
+    if d == 1:
+        axes = np.array([axes])
+    axes = np.array(axes).flatten()
+
+    steps = np.arange(num_steps)
+
+    for i in range(d):
+        ax = axes[i]
+
+        # Plot individual traces
+        for j in range(num_samples):
+            ax.plot(steps, traces[j, :, i], alpha=alpha, color="C0", lw=0.8)
+
+        # Mark true value at the end
+        if theta_true is not None:
+            ax.axhline(
+                theta_true[i],
+                color="red",
+                linestyle="--",
+                linewidth=2,
+                label="True θ",
+            )
+
+        # Mark final region (last 10% of steps)
+        final_start = int(0.9 * num_steps)
+        ax.axvspan(final_start, num_steps, alpha=0.1, color="green")
+
+        param_label = (
+            param_names[i] if param_names and i < len(param_names) else f"θ_{i}"
+        )
+        ax.set_ylabel(param_label)
+        ax.set_xlabel("Diffusion step")
+
+        if i == 0 and theta_true is not None:
+            ax.legend(loc="upper right")
+
+    # Hide unused axes
+    for ax in axes[d:]:
+        ax.axis("off")
+
+    fig.suptitle(title, fontsize=12)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"[plots] Saved diffusion traces to {out_path}")

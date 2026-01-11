@@ -197,19 +197,8 @@ def parse_args():
     fnpe.add_argument(
         "--fnpe-max-obs-len",
         type=int,
-        default=100,
-        help="Max observation length for inference. With --fnpe-normalize-score, can use 100-500.",
-    )
-    fnpe.add_argument(
-        "--fnpe-normalize-score",
-        action="store_true",
-        default=True,
-        help="Use mean instead of sum over windows (default: True, more stable)",
-    )
-    fnpe.add_argument(
-        "--fnpe-no-normalize-score",
-        action="store_true",
-        help="Use original FNPE formula (sum over windows, may cause NaN for large N)",
+        default=50,
+        help="Max observation length for inference (number of windows = max_obs_len - window_size + 1)",
     )
     fnpe.add_argument("--fnpe-steps-per-epoch", type=int, default=10000)
     fnpe.add_argument("--fnpe-diffusion-steps", type=int, default=500)
@@ -311,7 +300,6 @@ def main():
         fnpe_model_type=args.fnpe_model_type,
         fnpe_window_size=args.fnpe_window_size,
         fnpe_max_obs_len=args.fnpe_max_obs_len,
-        fnpe_normalize_score=not args.fnpe_no_normalize_score,
         fnpe_steps_per_epoch=args.fnpe_steps_per_epoch,
         fnpe_num_diffusion_steps=args.fnpe_diffusion_steps,
         fnpe_score_fn_type=args.fnpe_score_fn,

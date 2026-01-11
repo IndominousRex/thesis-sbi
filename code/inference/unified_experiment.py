@@ -47,6 +47,10 @@ from utils.plots import (
     plot_training_curves,
     plot_ppc_trajectories,
     plot_obs_1d_hist_custom,
+    plot_pairplot,
+    compute_c2st,
+    plot_c2st_comparison,
+    plot_diffusion_traces,
 )
 from simulation.simulation import (
     init_simulation_from_config,
@@ -315,6 +319,371 @@ def run_sbc_diagnostic(
         "check_stats": {k: tensor_to_python(v) for k, v in check_stats.items()},
         "dap_samples_norm": dap_samples_norm,
     }
+
+
+def run_pairplot_diagnostic(
+    cfg: ExperimentConfig,
+    fig_dir: Path,
+    prior,
+    posterior,
+    simulator,
+    normalizer: Normalizer,
+    device: torch.device,
+    *,
+    num_posterior_samples: int = 1000,
+    num_examples: int = 3,
+    method=None,
+) -> None:
+    """
+    Run pairplot visualization diagnostic.
+
+    Generates pairplot showing 2D marginal distributions (like markovsbi notebooks).
+
+    Args:
+        cfg: Experiment configuration
+        fig_dir: Directory to save figures
+        prior: Prior distribution
+        posterior: Trained posterior
+        simulator: Simulator function
+        normalizer: Data normalizer
+        device: Torch device
+        num_posterior_samples: Number of posterior samples
+        num_examples: Number of observation examples to generate
+        method: The method object (for FNPE-specific handling)
+    """
+    if cfg.no_plots:
+        return
+
+    print("[PAIRPLOT] Generating pairplot visualizations...")
+
+    param_names = list(cfg.active_parameters)
+
+    # Reduce samples for slower methods
+    if cfg.method in ["npse", "fnpe"]:
+        num_posterior_samples = min(num_posterior_samples, 500)
+        num_examples = min(num_examples, 2)
+
+    # For FNPE, use JAX-based data generation
+    if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
+        import jax
+
+        task = method.task
+        jax_prior = task.get_prior()
+        key = jax.random.PRNGKey(cfg.random_seed + 2000)
+
+        for ex_idx in range(num_examples):
+            print(f"[PAIRPLOT] Example {ex_idx+1}/{num_examples} (FNPE)")
+
+            # Sample true theta and simulate
+            key, key_theta, key_sim = jax.random.split(key, 3)
+            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
+            theta_true_np = np.array(theta_true_jax)
+
+            simulator_fn = task.get_simulator()
+            x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)
+
+            # Normalize observation
+            x_phys_torch = torch.tensor(np.array(x_phys), dtype=torch.float32).to(
+                device
+            )
+            if x_phys_torch.ndim == 2:
+                x_phys_torch = x_phys_torch.unsqueeze(0)
+            x_norm = (x_phys_torch - normalizer.obs_mean) / (
+                normalizer.obs_std + normalizer.eps
+            )
+
+            # Sample from posterior
+            theta_post_norm = posterior.sample((num_posterior_samples,), x=x_norm)
+            theta_post_phys = normalizer.unnormalize_theta(theta_post_norm)
+            theta_post_np = theta_post_phys.detach().cpu().numpy()
+
+            if theta_post_np.ndim == 3:
+                theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
+
+            # Pairplot
+            pairplot_path = fig_dir / f"pairplot_ex{ex_idx}.png"
+            plot_pairplot(
+                samples=theta_post_np,
+                out_path=pairplot_path,
+                theta_true=theta_true_np,
+                param_names=param_names,
+                title=f"Posterior Pairplot (Example {ex_idx+1})",
+            )
+        return
+
+    # Standard path for NPE/NPSE
+    for ex_idx in range(num_examples):
+        print(f"[PAIRPLOT] Example {ex_idx+1}/{num_examples}")
+
+        with torch.no_grad():
+            theta_true = prior.sample((1,)).to(device)
+        theta_true_np = theta_true.detach().cpu().numpy()[0]
+
+        sim_out = simulator(theta_true)
+        x_sim = sim_out[0] if isinstance(sim_out, tuple) else sim_out
+        x_cond = normalizer.normalize_x(x_sim, cfg.obs_dim).to(device)
+
+        with torch.no_grad():
+            theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
+
+        # Handle different return types
+        if isinstance(theta_post_norm, np.ndarray):
+            theta_post_np = theta_post_norm
+        else:
+            theta_post_np = (
+                normalizer.unnormalize_theta(theta_post_norm).detach().cpu().numpy()
+            )
+
+        if theta_post_np.ndim == 3:
+            theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
+
+        # Pairplot
+        pairplot_path = fig_dir / f"pairplot_ex{ex_idx}.png"
+        plot_pairplot(
+            samples=theta_post_np,
+            out_path=pairplot_path,
+            theta_true=theta_true_np,
+            param_names=param_names,
+            title=f"Posterior Pairplot (Example {ex_idx+1})",
+        )
+
+
+def run_c2st_diagnostic(
+    cfg: ExperimentConfig,
+    fig_dir: Path,
+    prior,
+    posterior,
+    simulator,
+    normalizer: Normalizer,
+    device: torch.device,
+    *,
+    num_posterior_samples: int = 1000,
+    num_examples: int = 3,
+    method=None,
+) -> Dict[str, Any]:
+    """
+    Run C2ST (Classifier Two-Sample Test) diagnostic.
+
+    Computes C2ST comparing posterior samples to prior samples.
+    C2ST ≈ 0.5 means samples are indistinguishable (posterior = prior, bad).
+    C2ST > 0.5 means posterior is different from prior (expected behavior).
+
+    Args:
+        cfg: Experiment configuration
+        fig_dir: Directory to save figures
+        prior: Prior distribution
+        posterior: Trained posterior
+        simulator: Simulator function
+        normalizer: Data normalizer
+        device: Torch device
+        num_posterior_samples: Number of posterior samples
+        num_examples: Number of observation examples to generate
+        method: The method object (for FNPE-specific handling)
+
+    Returns:
+        Dict with C2ST values for each example
+    """
+    print("[C2ST] Computing C2ST diagnostics...")
+
+    param_names = list(cfg.active_parameters)
+    c2st_results = {}
+
+    # Reduce samples for slower methods
+    if cfg.method in ["npse", "fnpe"]:
+        num_posterior_samples = min(num_posterior_samples, 500)
+        num_examples = min(num_examples, 2)
+
+    # Sample from prior for reference
+    with torch.no_grad():
+        prior_samples = prior.sample((num_posterior_samples,)).to(device)
+    prior_samples_np = prior_samples.detach().cpu().numpy()
+
+    # For FNPE, use JAX-based data generation
+    if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
+        import jax
+
+        task = method.task
+        jax_prior = task.get_prior()
+        key = jax.random.PRNGKey(cfg.random_seed + 2500)  # Different seed from pairplot
+
+        for ex_idx in range(num_examples):
+            print(f"[C2ST] Example {ex_idx+1}/{num_examples} (FNPE)")
+
+            # Sample true theta and simulate
+            key, key_theta, key_sim = jax.random.split(key, 3)
+            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
+
+            simulator_fn = task.get_simulator()
+            x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)
+
+            # Normalize observation
+            x_phys_torch = torch.tensor(np.array(x_phys), dtype=torch.float32).to(
+                device
+            )
+            if x_phys_torch.ndim == 2:
+                x_phys_torch = x_phys_torch.unsqueeze(0)
+            x_norm = (x_phys_torch - normalizer.obs_mean) / (
+                normalizer.obs_std + normalizer.eps
+            )
+
+            # Sample from posterior
+            theta_post_norm = posterior.sample((num_posterior_samples,), x=x_norm)
+            theta_post_phys = normalizer.unnormalize_theta(theta_post_norm)
+            theta_post_np = theta_post_phys.detach().cpu().numpy()
+
+            if theta_post_np.ndim == 3:
+                theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
+
+            # C2ST: compare posterior to prior
+            c2st_val = compute_c2st(
+                theta_post_np, prior_samples_np[: len(theta_post_np)]
+            )
+            c2st_results[f"c2st_prior_ex{ex_idx}"] = c2st_val
+            print(f"[C2ST] Example {ex_idx+1}: C2ST(posterior, prior) = {c2st_val:.4f}")
+
+        # Plot C2ST comparison
+        if c2st_results and not cfg.no_plots:
+            c2st_path = fig_dir / "c2st_comparison.png"
+            plot_c2st_comparison(
+                c2st_results, c2st_path, title="C2ST: Posterior vs Prior"
+            )
+
+        return c2st_results
+
+    # Standard path for NPE/NPSE
+    for ex_idx in range(num_examples):
+        print(f"[C2ST] Example {ex_idx+1}/{num_examples}")
+
+        with torch.no_grad():
+            theta_true = prior.sample((1,)).to(device)
+
+        sim_out = simulator(theta_true)
+        x_sim = sim_out[0] if isinstance(sim_out, tuple) else sim_out
+        x_cond = normalizer.normalize_x(x_sim, cfg.obs_dim).to(device)
+
+        with torch.no_grad():
+            theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
+
+        # Handle different return types
+        if isinstance(theta_post_norm, np.ndarray):
+            theta_post_np = theta_post_norm
+        else:
+            theta_post_np = (
+                normalizer.unnormalize_theta(theta_post_norm).detach().cpu().numpy()
+            )
+
+        if theta_post_np.ndim == 3:
+            theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
+
+        # C2ST: compare posterior to prior
+        c2st_val = compute_c2st(theta_post_np, prior_samples_np[: len(theta_post_np)])
+        c2st_results[f"c2st_prior_ex{ex_idx}"] = c2st_val
+        print(f"[C2ST] Example {ex_idx+1}: C2ST(posterior, prior) = {c2st_val:.4f}")
+
+    # Plot C2ST comparison
+    if c2st_results and not cfg.no_plots:
+        c2st_path = fig_dir / "c2st_comparison.png"
+        plot_c2st_comparison(c2st_results, c2st_path, title="C2ST: Posterior vs Prior")
+
+    return c2st_results
+
+
+def run_diffusion_traces_diagnostic(
+    cfg: ExperimentConfig,
+    fig_dir: Path,
+    posterior,
+    prior,
+    simulator,
+    normalizer: Normalizer,
+    device: torch.device,
+    *,
+    num_traces: int = 50,
+    num_examples: int = 2,
+    method=None,
+) -> None:
+    """
+    Run diffusion trace visualization for FNPE.
+
+    This diagnostic shows how samples evolve during the reverse diffusion
+    process, helping diagnose convergence and mixing behavior.
+
+    Only applicable to FNPE (NPSE uses sbi's internal sampler which doesn't
+    expose traces).
+
+    Args:
+        cfg: Experiment configuration
+        fig_dir: Directory to save figures
+        posterior: Trained posterior (must have sample_with_traces method)
+        prior: Prior distribution
+        simulator: Simulator function
+        normalizer: Data normalizer
+        device: Torch device
+        num_traces: Number of diffusion traces to plot
+        num_examples: Number of observation examples
+        method: The method object (for FNPE-specific handling)
+    """
+    if cfg.no_plots:
+        return
+
+    # Only for FNPE with trace support
+    if cfg.method != "fnpe":
+        print("[TRACES] Diffusion traces only available for FNPE, skipping...")
+        return
+
+    if not hasattr(posterior, "sample_with_traces"):
+        print("[TRACES] Posterior doesn't support sample_with_traces, skipping...")
+        return
+
+    print("[TRACES] Generating diffusion trace plots...")
+
+    param_names = list(cfg.active_parameters)
+
+    # Use JAX-based data generation for FNPE
+    if method is not None and hasattr(method, "task"):
+        import jax
+        import jax.numpy as jnp
+
+        task = method.task
+        jax_prior = task.get_prior()
+        key = jax.random.PRNGKey(cfg.random_seed + 3000)
+
+        for ex_idx in range(num_examples):
+            print(f"[TRACES] Example {ex_idx+1}/{num_examples}")
+
+            # Sample true theta and simulate
+            key, key_theta, key_sim = jax.random.split(key, 3)
+            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
+            theta_true_np = np.array(theta_true_jax)
+
+            simulator_fn = task.get_simulator()
+            x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)
+
+            # Normalize observation
+            x_phys_torch = torch.tensor(np.array(x_phys), dtype=torch.float32).to(
+                device
+            )
+            if x_phys_torch.ndim == 2:
+                x_phys_torch = x_phys_torch.unsqueeze(0)
+            x_norm = (x_phys_torch - normalizer.obs_mean) / (
+                normalizer.obs_std + normalizer.eps
+            )
+
+            # Get diffusion traces
+            try:
+                traces = posterior.sample_with_traces((num_traces,), x=x_norm)
+                # traces shape: (num_traces, num_steps, d_theta)
+
+                trace_path = fig_dir / f"diffusion_traces_ex{ex_idx}.png"
+                plot_diffusion_traces(
+                    traces=traces,
+                    out_path=trace_path,
+                    theta_true=theta_true_np,
+                    param_names=param_names,
+                    title=f"Diffusion Sampling Traces (Example {ex_idx+1})",
+                    max_traces=num_traces,
+                )
+            except Exception as e:
+                print(f"[TRACES] Failed to get traces for example {ex_idx}: {e}")
 
 
 def run_swd_diagnostic(
@@ -758,14 +1127,10 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "stop_after_epochs": cfg.stop_after_epochs,
                 "validation_fraction": cfg.validation_fraction,
                 "max_obs_len": cfg.fnpe_max_obs_len,
-                "normalize_score_by_windows": cfg.fnpe_normalize_score,
                 "proposal_type": cfg.fnpe_proposal_type,  # "pred" (correct), "naive", or "trajectory" (old)
             }
         )
         num_windows = cfg.fnpe_max_obs_len - cfg.fnpe_window_size + 1
-        norm_mode = (
-            "normalized (mean)" if cfg.fnpe_normalize_score else "original (sum)"
-        )
         proposal_desc = {
             "pred": "proposal from pilot sims (CORRECT)",
             "naive": "initial state distribution only",
@@ -773,7 +1138,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         }.get(cfg.fnpe_proposal_type, cfg.fnpe_proposal_type)
         print(
             f"[FNPE] window_size={cfg.fnpe_window_size}, max_obs_len={cfg.fnpe_max_obs_len} "
-            f"(N={num_windows} windows, score={norm_mode})",
+            f"(N={num_windows} windows)",
             flush=True,
         )
         print(
@@ -939,6 +1304,63 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     json.dump(one_step_results, f, indent=2)
             except Exception as e:
                 print(f"[DIAG] 1-step RMSE failed: {e}")
+
+        # Pairplot visualization (markovsbi-style)
+        print("\n[DIAG] Running pairplot diagnostics...")
+        try:
+            run_pairplot_diagnostic(
+                cfg,
+                fig_dir,
+                prior_phys,
+                posterior,
+                simulator,
+                normalizer,
+                device,
+                num_posterior_samples=1000 if cfg.method == "npe" else 500,
+                num_examples=3 if cfg.method == "npe" else 2,
+                method=method,
+            )
+        except Exception as e:
+            print(f"[DIAG] Pairplot failed: {e}")
+
+        # C2ST diagnostic (markovsbi-style)
+        print("\n[DIAG] Running C2ST diagnostics...")
+        try:
+            c2st_results = run_c2st_diagnostic(
+                cfg,
+                fig_dir,
+                prior_phys,
+                posterior,
+                simulator,
+                normalizer,
+                device,
+                num_posterior_samples=1000 if cfg.method == "npe" else 500,
+                num_examples=3 if cfg.method == "npe" else 2,
+                method=method,
+            )
+            if c2st_results:
+                metrics["c2st"] = c2st_results
+        except Exception as e:
+            print(f"[DIAG] C2ST failed: {e}")
+
+        # Diffusion traces (FNPE only)
+        if cfg.method == "fnpe":
+            print("\n[DIAG] Running diffusion trace diagnostics...")
+            try:
+                run_diffusion_traces_diagnostic(
+                    cfg,
+                    fig_dir,
+                    posterior,
+                    prior_phys,
+                    simulator,
+                    normalizer,
+                    device,
+                    num_traces=50,
+                    num_examples=2,
+                    method=method,
+                )
+            except Exception as e:
+                print(f"[DIAG] Diffusion traces failed: {e}")
 
     # --- Real data eval (inline) ---
     if cfg.real_data_csv and cfg.do_eval:
