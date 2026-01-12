@@ -333,6 +333,9 @@ class FNPEMethod(BaseMethod):
         validation_fraction: float = 0.1,
         max_obs_len: int = 50,  # Max observation windows at inference
         proposal_type: str = "pred",  # "pred" (correct), "naive", or "trajectory" (old/wrong)
+        pilot_fraction: float = 0.02,  # Fraction of num_sims for pilots (2%)
+        pilot_length: int = 500,  # Length of each pilot trajectory
+        proposal_noise: float = 0.03,  # Noise scale: noise = proposal_noise * std(pool)
     ):
         # Note: FNPE doesn't use torch prior/device directly
         super().__init__(cfg, prior, device)
@@ -355,6 +358,10 @@ class FNPEMethod(BaseMethod):
         # "naive" = sample from initial state distribution
         # "trajectory" = OLD incorrect implementation (divide trajectories into pairs)
         self.proposal_type = proposal_type
+        # Proposal hyperparameters
+        self.pilot_fraction = pilot_fraction  # 2% of training sims for pilots
+        self.pilot_length = pilot_length  # Length of pilot trajectories
+        self.proposal_noise = proposal_noise  # Noise = proposal_noise * std(pool)
 
         # Will be set during build/train
         self.task = None
@@ -448,9 +455,15 @@ class FNPEMethod(BaseMethod):
         self._key, key_data = jax.random.split(self._key)
 
         # Configure proposal parameters (only used for "pred" mode)
-        num_pilot_sims = min(100, num_sim // 100)  # Use 1% of training size for pilots
-        num_pilot_sims = max(20, num_pilot_sims)  # At least 20 pilots
-        T_pilot = min(500, self._t_obs_full)  # Use observation length or 500
+        # num_pilot_sims = pilot_fraction * num_sim (default 2%)
+        num_pilot_sims = max(10, int(num_sim * self.pilot_fraction))
+        T_pilot = self.pilot_length
+
+        print(
+            f"[FNPE] Proposal config: {num_pilot_sims} pilots (={self.pilot_fraction*100:.1f}% of {num_sim}), "
+            f"T_pilot={T_pilot}, noise={self.proposal_noise}*std",
+            flush=True,
+        )
 
         data = self.task.get_data(
             key_data,
@@ -459,6 +472,7 @@ class FNPEMethod(BaseMethod):
             proposal=self.proposal_type,  # Use configured proposal type
             num_pilot_sims=num_pilot_sims,
             T_pilot=T_pilot,
+            proposal_noise=self.proposal_noise,  # Pass noise scale
         )
 
         print(

@@ -114,6 +114,12 @@ class ExperimentConfig:
     # - "naive": Sample from initial state distribution only
     # - "trajectory" (OLD, INCORRECT): Divide trajectories into pairs
     fnpe_proposal_type: str = "pred"
+    # Proposal hyperparameters (only used when proposal_type="pred")
+    fnpe_pilot_fraction: float = 0.02  # Fraction of num_simulations for pilot sims (2%)
+    fnpe_pilot_length: int = 1500  # Length of each pilot trajectory
+    fnpe_proposal_noise: float = (
+        0.03  # Noise scale: noise_scale = proposal_noise * std(pool)
+    )
 
     # --- Training ---
     learning_rate: float = 5e-4  # Lower LR for complex data (MarkovSBI large uses 5e-4)

@@ -216,6 +216,24 @@ def parse_args():
         default="pred",
         help="Proposal type for FNPE training: 'pred' (correct, default), 'naive', or 'trajectory' (old)",
     )
+    fnpe.add_argument(
+        "--fnpe-pilot-fraction",
+        type=float,
+        default=0.02,
+        help="Fraction of num_simulations for pilot sims (default: 0.02 = 2%%)",
+    )
+    fnpe.add_argument(
+        "--fnpe-pilot-length",
+        type=int,
+        default=1500,
+        help="Length of each pilot trajectory (default: 1500)",
+    )
+    fnpe.add_argument(
+        "--fnpe-proposal-noise",
+        type=float,
+        default=0.03,
+        help="Proposal noise scale as fraction of pool std (default: 0.03)",
+    )
 
     # ==========================================================================
     # Diagnostics
@@ -304,6 +322,9 @@ def main():
         fnpe_num_diffusion_steps=args.fnpe_diffusion_steps,
         fnpe_score_fn_type=args.fnpe_score_fn,
         fnpe_proposal_type=args.fnpe_proposal_type,  # "pred" (correct), "naive", "trajectory" (old)
+        fnpe_pilot_fraction=args.fnpe_pilot_fraction,  # Fraction of sims for pilots (default 2%)
+        fnpe_pilot_length=args.fnpe_pilot_length,  # Length of pilot trajectories (default 1500)
+        fnpe_proposal_noise=args.fnpe_proposal_noise,  # Noise scale (default 0.03 * std)
         # Diagnostics
         num_sbc_samples=args.num_sbc_samples,
         num_lc2st_samples=args.num_lc2st_samples,

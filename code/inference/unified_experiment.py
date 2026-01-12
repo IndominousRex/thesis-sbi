@@ -1128,6 +1128,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "validation_fraction": cfg.validation_fraction,
                 "max_obs_len": cfg.fnpe_max_obs_len,
                 "proposal_type": cfg.fnpe_proposal_type,  # "pred" (correct), "naive", or "trajectory" (old)
+                "pilot_fraction": cfg.fnpe_pilot_fraction,  # Fraction of sims for pilots (default 2%)
+                "pilot_length": cfg.fnpe_pilot_length,  # Length of pilot trajectories (default 500)
+                "proposal_noise": cfg.fnpe_proposal_noise,  # Noise scale (default 0.03 * std)
             }
         )
         num_windows = cfg.fnpe_max_obs_len - cfg.fnpe_window_size + 1
