@@ -56,7 +56,7 @@ def parse_args():
     core.add_argument(
         "--device",
         type=str,
-        default="auto",
+        default="cuda",
         choices=["auto", "cpu", "cuda"],
     )
 
@@ -107,8 +107,8 @@ def parse_args():
 
     # Fixed parameter values
     data.add_argument("--fixed-mu", type=float, default=1.0)
-    data.add_argument("--fixed-cd", type=float, default=0.3)
-    data.add_argument("--fixed-m", type=float, default=1700.0)
+    data.add_argument("--fixed-cd", type=float, default=0.27)
+    data.add_argument("--fixed-m", type=float, default=1720.0)
 
     # ==========================================================================
     # Dataset caching
@@ -147,7 +147,7 @@ def parse_args():
     # Training settings
     # ==========================================================================
     training = p.add_argument_group("Training settings")
-    training.add_argument("--lr", type=float, default=1e-3)
+    training.add_argument("--lr", type=float, default=5e-4)
     training.add_argument("--batch-size", type=int, default=512)
     training.add_argument(
         "--stop-after-epochs",
@@ -155,7 +155,7 @@ def parse_args():
         default=30,
         help="Patience for early stopping (default 30 for noisy val loss)",
     )
-    training.add_argument("--num-epochs", type=int, default=20)
+    training.add_argument("--num-epochs", type=int, default=200)
 
     # ==========================================================================
     # NPE-specific

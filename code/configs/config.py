@@ -123,9 +123,9 @@ class ExperimentConfig:
 
     # --- Training ---
     learning_rate: float = 5e-4  # Lower LR for complex data (MarkovSBI large uses 5e-4)
-    training_batch_size: int = 1024  # Larger batch for stability
+    training_batch_size: int = 512  # Larger batch for stability
     validation_fraction: float = 0.15  # 15% for stable validation metrics
-    stop_after_epochs: int = 50  # High patience, let LR schedule do its work
+    stop_after_epochs: int = 30  # High patience, let LR schedule do its work
     clip_max_norm: float = (
         20.0  # Higher clip for complex data (MarkovSBI large uses 20)
     )

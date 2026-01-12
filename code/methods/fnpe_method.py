@@ -326,10 +326,10 @@ class FNPEMethod(BaseMethod):
         window_size: int = 2,  # Markov window size - CRITICAL for performance
         num_epochs: int = 20,
         steps_per_epoch: int = 10000,
-        batch_size: int = 256,
+        batch_size: int = 512,
         num_diffusion_steps: int = 500,
         score_fn_type: str = "fnpe",
-        stop_after_epochs: int = 20,
+        stop_after_epochs: int = 30,
         validation_fraction: float = 0.1,
         max_obs_len: int = 50,  # Max observation windows at inference
         proposal_type: str = "pred",  # "pred" (correct), "naive", or "trajectory" (old/wrong)
