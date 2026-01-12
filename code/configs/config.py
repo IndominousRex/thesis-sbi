@@ -102,10 +102,10 @@ class ExperimentConfig:
     fnpe_steps_per_epoch: int = 10000  # Steps per epoch (like Lotka-Volterra example)
     fnpe_num_diffusion_steps: int = 500
     # Score composition method:
-    # - "fnpe" (DEFAULT): Fast, uses (1-N)*prior + sum(scores) or normalized mean
-    # - "gauss_corrected": Paper GAUSS method - VERY SLOW (estimates covariances per obs)
+    # - "gauss_corrected" (DEFAULT): Paper GAUSS method - accurate but slow at inference
+    # - "fnpe": Fast, uses (1-N)*prior + sum(scores)
     # - "uncorrected": Uses marginal prior score
-    fnpe_score_fn_type: str = "fnpe"
+    fnpe_score_fn_type: str = "gauss_corrected"
     # Max observation length at inference
     # Keep reasonably small to avoid (1-N)*prior_score dominating with large N
     fnpe_max_obs_len: int = 50

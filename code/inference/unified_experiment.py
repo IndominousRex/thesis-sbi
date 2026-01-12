@@ -1264,8 +1264,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 method=method,  # Pass method for FNPE
             )
 
-        # SBC
-        if cfg.run_sbc:
+        # SBC (skip for FNPE - GAUSS score is too slow for many samples)
+        if cfg.run_sbc and cfg.method != "fnpe":
             print("\n[DIAG] Running SBC...")
             sbc_results = run_sbc_diagnostic(
                 cfg,

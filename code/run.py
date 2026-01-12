@@ -206,8 +206,8 @@ def parse_args():
         "--fnpe-score-fn",
         type=str,
         choices=["fnpe", "uncorrected", "gauss_corrected"],
-        default="fnpe",
-        help="Score composition: 'fnpe' (fast, default), 'gauss_corrected' (SLOW - estimates covariances)",
+        default="gauss_corrected",
+        help="Score composition: 'gauss_corrected' (default, accurate), 'fnpe' (fast)",
     )
     fnpe.add_argument(
         "--fnpe-proposal-type",
