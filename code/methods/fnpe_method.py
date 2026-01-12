@@ -132,24 +132,8 @@ class FNPEPosterior:
         # FNPE expects PHYSICAL data and normalizes it using its own task stats
         x_jax = jnp.asarray(x_squeezed)
 
-        # Check for NaN in input
-        if jnp.any(jnp.isnan(x_jax)):
-            print(
-                f"[FNPE WARNING] NaN detected in input observation! shape={x_jax.shape}",
-                flush=True,
-            )
-
         # FNPE internal normalization (using task's own stats)
         x_norm = self.task.normalize_x(x_jax)
-
-        # Check for NaN after normalization
-        if jnp.any(jnp.isnan(x_norm)):
-            print(
-                f"[FNPE WARNING] NaN after normalization! x_norm shape={x_norm.shape}",
-                flush=True,
-            )
-            print(f"[FNPE DEBUG] obs_mean: {self.task._obs_mean}", flush=True)
-            print(f"[FNPE DEBUG] obs_std: {self.task._obs_std}", flush=True)
 
         # Check if score function requires hyperparameter estimation (e.g., GaussCorrectedScoreFn)
         # This is VERY slow - should use fnpe score_fn_type instead for speed
@@ -158,14 +142,6 @@ class FNPEPosterior:
             hasattr(score_fn, "requires_hyperparameters")
             and score_fn.requires_hyperparameters
         ):
-            print(
-                f"[FNPE WARNING] Score function requires hyperparameter estimation - this is SLOW!",
-                flush=True,
-            )
-            print(
-                f"[FNPE WARNING] Consider using --fnpe-score-fn fnpe for much faster sampling.",
-                flush=True,
-            )
             self.key, key_hyper = jax.random.split(self.key)
             score_fn.estimate_hyperparameters(
                 x_norm, self.sampler.theta_shape, key_hyper
@@ -179,14 +155,6 @@ class FNPEPosterior:
             sample_keys, x_norm
         )
         samples_norm_jax = jax.block_until_ready(samples_norm_jax)
-
-        # Check for NaN in samples
-        nan_count = int(jnp.sum(jnp.isnan(samples_norm_jax)))
-        if nan_count > 0:
-            print(
-                f"[FNPE WARNING] {nan_count} NaN values in normalized samples! shape={samples_norm_jax.shape}",
-                flush=True,
-            )
 
         # Unnormalize using FNPE's task stats -> physical units
         samples_phys = jax.vmap(self.task.unnormalize_theta)(samples_norm_jax)
@@ -436,10 +404,6 @@ class FNPEMethod(BaseMethod):
         if self.proposal_type == "trajectory":
             print(
                 f"[FNPE] Using 'trajectory' proposal (OLD implementation - divides trajectories into pairs)",
-                flush=True,
-            )
-            print(
-                f"[FNPE] WARNING: This is NOT per FNPE paper! Use proposal_type='pred' for correct implementation.",
                 flush=True,
             )
             # For trajectory mode, we need longer T to get enough pairs

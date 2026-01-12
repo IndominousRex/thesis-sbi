@@ -496,16 +496,9 @@ def plot_prior_posterior_1d(
     post_valid = post_1d[~np.isnan(post_1d)]
 
     if len(post_valid) == 0:
-        print(
-            f"[plots] WARNING: All posterior samples are NaN for {param_name}, skipping plot"
-        )
         return
 
     nan_count = len(post_1d) - len(post_valid)
-    if nan_count > 0:
-        print(
-            f"[plots] WARNING: {nan_count}/{len(post_1d)} NaN values in posterior for {param_name}"
-        )
 
     _ensure_dir(out_path)
 
