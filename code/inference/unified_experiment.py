@@ -191,16 +191,12 @@ def run_parameter_posterior_plots(
             )
 
             # Normalize observation for unified posterior interface
-            # FNPE data is obs-only, so we normalize obs directly (no controls)
             x_phys_torch = torch.tensor(np.array(x_phys), dtype=torch.float32).to(
                 device
             )
             if x_phys_torch.ndim == 2:
                 x_phys_torch = x_phys_torch.unsqueeze(0)  # (1, T, obs_dim)
-            # Normalize obs only (FNPE doesn't use controls)
-            x_norm = (x_phys_torch - normalizer.obs_mean) / (
-                normalizer.obs_std + normalizer.eps
-            )
+            x_norm = normalizer.normalize_x(x_phys_torch, cfg.obs_dim)
 
             # Sample from posterior (unified interface: normalized in, normalized out)
             print(
@@ -388,9 +384,7 @@ def run_pairplot_diagnostic(
             )
             if x_phys_torch.ndim == 2:
                 x_phys_torch = x_phys_torch.unsqueeze(0)
-            x_norm = (x_phys_torch - normalizer.obs_mean) / (
-                normalizer.obs_std + normalizer.eps
-            )
+            x_norm = normalizer.normalize_x(x_phys_torch, cfg.obs_dim)
 
             # Sample from posterior
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_norm)
@@ -522,9 +516,7 @@ def run_c2st_diagnostic(
             )
             if x_phys_torch.ndim == 2:
                 x_phys_torch = x_phys_torch.unsqueeze(0)
-            x_norm = (x_phys_torch - normalizer.obs_mean) / (
-                normalizer.obs_std + normalizer.eps
-            )
+            x_norm = normalizer.normalize_x(x_phys_torch, cfg.obs_dim)
 
             # Sample from posterior
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_norm)
@@ -664,9 +656,7 @@ def run_diffusion_traces_diagnostic(
             )
             if x_phys_torch.ndim == 2:
                 x_phys_torch = x_phys_torch.unsqueeze(0)
-            x_norm = (x_phys_torch - normalizer.obs_mean) / (
-                normalizer.obs_std + normalizer.eps
-            )
+            x_norm = normalizer.normalize_x(x_phys_torch, cfg.obs_dim)
 
             # Get diffusion traces
             try:
@@ -1167,9 +1157,12 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             norm_stats = method.task.get_normalization_stats()
             from utils.normalization import Normalizer
 
-            # FNPE task has obs_mean/std but no control stats - create dummy controls
-            # since FNPE handles obs without controls
             obs_dim = cfg.obs_dim
+            ctrl_mean = norm_stats.get("ctrl_mean")
+            ctrl_std = norm_stats.get("ctrl_std")
+            if ctrl_mean is None or ctrl_std is None:
+                ctrl_mean = np.zeros(4, dtype=np.float32)
+                ctrl_std = np.ones(4, dtype=np.float32)
             normalizer = Normalizer(
                 obs_mean=torch.tensor(
                     np.array(norm_stats["obs_mean"]), dtype=torch.float32
@@ -1177,10 +1170,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 obs_std=torch.tensor(
                     np.array(norm_stats["obs_std"]), dtype=torch.float32
                 ),
-                ctrl_mean=torch.zeros(
-                    4, dtype=torch.float32
-                ),  # Dummy - FNPE doesn't use controls
-                ctrl_std=torch.ones(4, dtype=torch.float32),
+                ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
+                ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
                 theta_mean=torch.tensor(
                     np.array(norm_stats["theta_mean"]), dtype=torch.float32
                 ),
@@ -1210,6 +1201,11 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             else:
                 # Create from task stats
                 norm_stats = method.task.get_normalization_stats()
+                ctrl_mean = norm_stats.get("ctrl_mean")
+                ctrl_std = norm_stats.get("ctrl_std")
+                if ctrl_mean is None or ctrl_std is None:
+                    ctrl_mean = np.zeros(4, dtype=np.float32)
+                    ctrl_std = np.ones(4, dtype=np.float32)
                 normalizer = Normalizer(
                     obs_mean=torch.tensor(
                         np.array(norm_stats["obs_mean"]), dtype=torch.float32
@@ -1217,8 +1213,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     obs_std=torch.tensor(
                         np.array(norm_stats["obs_std"]), dtype=torch.float32
                     ),
-                    ctrl_mean=torch.zeros(4, dtype=torch.float32),
-                    ctrl_std=torch.ones(4, dtype=torch.float32),
+                    ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
+                    ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
                     theta_mean=torch.tensor(
                         np.array(norm_stats["theta_mean"]), dtype=torch.float32
                     ),

@@ -57,7 +57,7 @@ class FNPEPosterior:
         self.task = task
         self.key = key
         self.normalizer = normalizer  # Used to match NPE/NPSE interface
-        self.obs_dim = obs_dim  # FNPE uses obs only, no controls
+        self.obs_dim = obs_dim  # Observation dimension (controls appended separately)
 
     def sample(
         self,
@@ -104,30 +104,29 @@ class FNPEPosterior:
         # If we have an external normalizer, input is NORMALIZED - unnormalize first
         # This makes FNPE accept the same input as NPE/NPSE
         if self.normalizer is not None and not return_physical:
-            # Input is [obs_norm || ctrl_norm] - FNPE only needs obs part
-            # First unnormalize to physical, then extract obs only
             x_tensor = torch.tensor(x_squeezed, dtype=torch.float32)
-            # normalizer.unnormalize_x expects shape (batch, T, D)
             if x_tensor.ndim == 2:
                 x_tensor = x_tensor.unsqueeze(0)  # (1, T, D)
 
-            # Move normalizer stats to CPU for this operation (result goes to JAX anyway)
-            obs_std_cpu = self.normalizer.obs_std.cpu()
-            obs_mean_cpu = self.normalizer.obs_mean.cpu()
-
-            # Extract obs part only (first obs_dim channels)
-            # If input has controls, strip them since FNPE doesn't use them
-            if x_tensor.shape[-1] > self.obs_dim:
-                # Input is [obs || ctrl] - extract obs and unnormalize separately
-                obs_norm = x_tensor[..., : self.obs_dim].cpu()
-                obs_phys = obs_norm * (obs_std_cpu + self.normalizer.eps) + obs_mean_cpu
-                x_squeezed = obs_phys.squeeze(0).numpy()  # (T, obs_dim)
-            else:
-                # Input is obs only - unnormalize
+            if self.task.obs_only:
+                obs_std_cpu = self.normalizer.obs_std.cpu()
+                obs_mean_cpu = self.normalizer.obs_mean.cpu()
                 obs_phys = (
                     x_tensor.cpu() * (obs_std_cpu + self.normalizer.eps) + obs_mean_cpu
                 )
                 x_squeezed = obs_phys.squeeze(0).numpy()
+            else:
+                expected_dim = self.obs_dim + getattr(self.task, "_ctrl_dim", 0)
+                if x_tensor.shape[-1] != expected_dim:
+                    raise ValueError(
+                        f"FNPE expects {expected_dim} dims (obs+ctrl), "
+                        f"got {x_tensor.shape[-1]}"
+                    )
+                norm_device = self.normalizer.obs_mean.device
+                x_phys = self.normalizer.unnormalize_x(
+                    x_tensor.to(norm_device), self.obs_dim
+                )
+                x_squeezed = x_phys.squeeze(0).detach().cpu().numpy()
 
         # FNPE expects PHYSICAL data and normalizes it using its own task stats
         x_jax = jnp.asarray(x_squeezed)
@@ -223,18 +222,25 @@ class FNPEPosterior:
             if x_tensor.ndim == 2:
                 x_tensor = x_tensor.unsqueeze(0)
 
-            obs_std_cpu = self.normalizer.obs_std.cpu()
-            obs_mean_cpu = self.normalizer.obs_mean.cpu()
-
-            if x_tensor.shape[-1] > self.obs_dim:
-                obs_norm = x_tensor[..., : self.obs_dim].cpu()
-                obs_phys = obs_norm * (obs_std_cpu + self.normalizer.eps) + obs_mean_cpu
-                x_squeezed = obs_phys.squeeze(0).numpy()
-            else:
+            if self.task.obs_only:
+                obs_std_cpu = self.normalizer.obs_std.cpu()
+                obs_mean_cpu = self.normalizer.obs_mean.cpu()
                 obs_phys = (
                     x_tensor.cpu() * (obs_std_cpu + self.normalizer.eps) + obs_mean_cpu
                 )
                 x_squeezed = obs_phys.squeeze(0).numpy()
+            else:
+                expected_dim = self.obs_dim + getattr(self.task, "_ctrl_dim", 0)
+                if x_tensor.shape[-1] != expected_dim:
+                    raise ValueError(
+                        f"FNPE expects {expected_dim} dims (obs+ctrl), "
+                        f"got {x_tensor.shape[-1]}"
+                    )
+                norm_device = self.normalizer.obs_mean.device
+                x_phys = self.normalizer.unnormalize_x(
+                    x_tensor.to(norm_device), self.obs_dim
+                )
+                x_squeezed = x_phys.squeeze(0).detach().cpu().numpy()
 
         # FNPE internal normalization
         x_jax = jnp.asarray(x_squeezed)
@@ -358,6 +364,7 @@ class FNPEMethod(BaseMethod):
         # Create task (this includes the simulator and normalization)
         self.task = VehicleDynamicsTask(
             cfg=self.cfg,
+            obs_only=False,
             normalize=True,
             seed=self.cfg.random_seed,
         )
