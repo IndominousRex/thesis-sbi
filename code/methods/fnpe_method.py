@@ -310,6 +310,7 @@ class FNPEMethod(BaseMethod):
         pilot_fraction: float = 0.02,  # Fraction of num_sims for pilots (2%)
         pilot_length: int = 500,  # Length of each pilot trajectory
         proposal_noise: float = 0.03,  # Noise scale: noise = proposal_noise * std(pool)
+        gauss_posterior_precission_scale: Optional[float] = None,
     ):
         # Note: FNPE doesn't use torch prior/device directly
         super().__init__(cfg, prior, device)
@@ -336,6 +337,7 @@ class FNPEMethod(BaseMethod):
         self.pilot_fraction = pilot_fraction  # 2% of training sims for pilots
         self.pilot_length = pilot_length  # Length of pilot trajectories
         self.proposal_noise = proposal_noise  # Noise = proposal_noise * std(pool)
+        self.gauss_posterior_precission_scale = gauss_posterior_precission_scale
 
         # Will be set during build/train
         self.task = None
@@ -623,11 +625,21 @@ class FNPEMethod(BaseMethod):
         elif self.score_fn_type.lower() == "gauss_corrected":
             # Gaussian-corrected FNPE score (more accurate at a > 0)
             # Uses covariance weighting as described in paper Section 6.2
+            posterior_precission_est_fn = None
+            if self.gauss_posterior_precission_scale is not None:
+                scale = float(self.gauss_posterior_precission_scale)
+                prior_var = prior_norm.var
+                posterior_precission_est_fn = (
+                    lambda *args, _scale=scale, _prior_var=prior_var: _scale
+                    / _prior_var
+                )
             score_fn = GaussCorrectedScoreFn(
                 self.score_net,
                 self.params,
                 self.sde,
                 prior_norm,
+                posterior_precission_est_fn=posterior_precission_est_fn,
+                window_size=self.window_size,
             )
         else:
             # Uncorrected: uses marginal prior score

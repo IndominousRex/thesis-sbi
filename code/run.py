@@ -223,6 +223,12 @@ def parse_args():
         help="Fraction of num_simulations for pilot sims (default: 0.02 = 2%%)",
     )
     fnpe.add_argument(
+        "--fnpe-num-sim",
+        type=int,
+        default=100000,
+        help="Simulation budget for FNPE training (default: 100000)",
+    )
+    fnpe.add_argument(
         "--fnpe-pilot-length",
         type=int,
         default=1500,
@@ -325,6 +331,7 @@ def main():
         fnpe_pilot_fraction=args.fnpe_pilot_fraction,  # Fraction of sims for pilots (default 2%)
         fnpe_pilot_length=args.fnpe_pilot_length,  # Length of pilot trajectories (default 1500)
         fnpe_proposal_noise=args.fnpe_proposal_noise,  # Noise scale (default 0.03 * std)
+        fnpe_num_simulations=args.fnpe_num_sim,  # FNPE simulation budget
         # Diagnostics
         num_sbc_samples=args.num_sbc_samples,
         num_lc2st_samples=args.num_lc2st_samples,
