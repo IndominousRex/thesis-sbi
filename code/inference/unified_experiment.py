@@ -1014,7 +1014,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     print(f"SBI Experiment: {cfg.method.upper()}")
     print(f"{'='*60}")
     print(f"Parameters: {cfg.active_parameters}")
-    print(f"Simulations: {cfg.num_simulations}")
+    sim_budget = cfg.fnpe_num_simulations if cfg.method == "fnpe" else cfg.num_simulations
+    print(f"Simulations: {sim_budget}")
     print(f"Sequence length: {cfg.T_seg}")
     print(f"{'='*60}\n")
 
@@ -1151,7 +1152,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         if cfg.method == "fnpe":
             # FNPE generates its own data
             training_summary = method.train(
-                num_simulations=cfg.num_simulations, T_obs=T_event
+                num_simulations=cfg.fnpe_num_simulations, T_obs=T_event
             )
             # After training, create normalizer from FNPE's task stats for unified interface
             norm_stats = method.task.get_normalization_stats()

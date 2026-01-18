@@ -112,9 +112,9 @@ class NPSEMethod(BaseMethod):
         summary = self.inference.summary
         self._training_summary = {
             "train_loss": summary.get("training_loss", []),
-            "val_loss": summary.get("validation_loss", []),
-            "train_time_s": train_time,
             "sde_type": self.sde_type,
+            "train_time_s": train_time,
+            "val_loss": summary.get("validation_loss", []),
         }
 
         return self._training_summary

@@ -101,6 +101,8 @@ class ExperimentConfig:
     fnpe_window_size: int = 2  # Markov window size (CRITICAL: keep small, e.g. 2-10)
     fnpe_steps_per_epoch: int = 10000  # Steps per epoch (like Lotka-Volterra example)
     fnpe_num_diffusion_steps: int = 500
+    fnpe_num_simulations: int = 100000  # Simulation budget for FNPE runs
+    fnpe_max_epochs: int = 5000  # Hard cap for FNPE epochs
     # Score composition method:
     # - "gauss_corrected" (DEFAULT): Paper GAUSS method - accurate but slow at inference
     # - "fnpe": Fast, uses (1-N)*prior + sum(scores)
@@ -245,6 +247,7 @@ class ExperimentConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
         return asdict(self)
+
 
     def get_dataset_cache_path(self) -> Path:
         """Get path for cached dataset."""

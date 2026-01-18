@@ -456,8 +456,10 @@ class FNPEMethod(BaseMethod):
         self.sde, self.weight_fn = init_sde(data)
 
         # Train score network
+        budget_epochs = self._compute_budget_epochs(num_sim)
+        self.num_epochs = budget_epochs
         print(
-            f"[FNPE] Training score network (max {self.num_epochs} epochs, early stop after {self.stop_after_epochs})...",
+            f"[FNPE] Training score network (max {self.num_epochs} epochs)...",
             flush=True,
         )
         train_start = time.time()
@@ -479,46 +481,26 @@ class FNPEMethod(BaseMethod):
         # losses is now a dict with 'train' and 'val' keys
         self._training_summary = {
             "train_loss": losses.get("train", []),
-            "val_loss": losses.get("val", []),
             "final_train_loss": losses["train"][-1] if losses.get("train") else None,
-            "final_val_loss": losses["val"][-1] if losses.get("val") else None,
-            "best_val_loss": min(losses["val"]) if losses.get("val") else None,
             "epochs_trained": len(losses.get("train", [])),
             "train_time_s": train_time,
             "num_simulations": num_sim,
             "T_train": t_train,  # Training window size
             "T_obs_full": self._t_obs_full,  # Full observation length for inference
+            "budget_epochs": budget_epochs,
         }
 
         return self._training_summary
 
     def _train_score_network(self, data: Dict, window_size: int):
-        """Internal method to train score network with early stopping."""
+        """Internal method to train score network without validation/early stopping."""
         key = self._key
-        key, key_init, key_split = jax.random.split(key, 3)
-
-        # Split data into train/val for early stopping
-        n_total = data["thetas"].shape[0]
-        n_val = int(n_total * self.validation_fraction)
-        n_train = n_total - n_val
-
-        # Shuffle and split
-        perm = jax.random.permutation(key_split, n_total)
-        train_idx = perm[:n_train]
-        val_idx = perm[n_train:]
+        key, key_init = jax.random.split(key, 2)
 
         train_data = {
-            "thetas": data["thetas"][train_idx],
-            "xs": data["xs"][train_idx],
+            "thetas": data["thetas"],
+            "xs": data["xs"],
         }
-        val_data = {
-            "thetas": data["thetas"][val_idx],
-            "xs": data["xs"][val_idx],
-        }
-
-        print(f"[FNPE] Train/Val split: {n_train}/{n_val} samples", flush=True)
-
-        d = data["thetas"].shape[1]
 
         # Preconditioning
         c_in, c_noise, c_out = precondition_functions(self.sde)
@@ -534,9 +516,8 @@ class FNPEMethod(BaseMethod):
             c_out=c_out,
         )
 
-        # Build batch samplers for train and val
+        # Build batch sampler for training
         train_batch_sampler = build_batch_sampler(train_data)
-        val_batch_sampler = build_batch_sampler(val_data)
         loss_fn = build_loss_fn(
             "dsm", score_net, self.sde, self.weight_fn, control_variate=True
         )
@@ -570,11 +551,6 @@ class FNPEMethod(BaseMethod):
             params = optax.apply_updates(params, updates)
             return loss, params, opt_state
 
-        # JIT eval (no gradient)
-        @jax.jit
-        def eval_loss(params, rng, theta_batch, x_batch):
-            return loss_fn(params, rng, theta_batch, x_batch)
-
         # JIT warmup
         print("[FNPE] JIT compiling...", flush=True)
         key, key_batch, key_loss = jax.random.split(key, 3)
@@ -585,22 +561,8 @@ class FNPEMethod(BaseMethod):
         _ = float(loss)  # Block until done
         print("[FNPE] JIT compilation complete.", flush=True)
 
-        # Early stopping state
-        best_val_loss = float("inf")
-        best_params = params
-        epochs_without_improvement = 0
-
-        # Evaluate on ALL validation data for stable metrics
-        # Calculate number of full batches we can make from validation set
-        n_val_batches = n_val // self.batch_size
-        print(
-            f"[FNPE] Validation: {n_val_batches} batches of {self.batch_size} samples",
-            flush=True,
-        )
-
-        # Training loop with early stopping
+        # Training loop (no validation/early stopping)
         train_losses = []
-        val_losses = []
 
         print(
             f"[FNPE] Starting training: {self.num_epochs} epochs, {self.steps_per_epoch} steps/epoch",
@@ -636,62 +598,15 @@ class FNPEMethod(BaseMethod):
             epoch_train_loss = float(jnp.mean(all_losses))
             train_losses.append(epoch_train_loss)
 
-            # Validation - evaluate on ALL validation batches for stable metrics
-            val_losses_batch = []
-            if n_val_batches > 0:
-                for batch_idx in range(n_val_batches):
-                    key, key_loss = jax.random.split(key)
-                    # Use deterministic batch selection for reproducibility
-                    start_idx = batch_idx * self.batch_size
-                    end_idx = start_idx + self.batch_size
-                    theta_batch = val_data["thetas"][start_idx:end_idx]
-                    x_batch = val_data["xs"][start_idx:end_idx]
-                    val_loss = eval_loss(params, key_loss, theta_batch, x_batch)
-                    val_losses_batch.append(val_loss)
-                # Single sync point for validation
-                val_losses_stacked = jnp.stack(val_losses_batch)
-                epoch_val_loss = float(jnp.mean(val_losses_stacked))
-            else:
-                # Not enough validation samples for full batch - use all val data
-                key, key_loss = jax.random.split(key)
-                theta_batch = val_data["thetas"]
-                x_batch = val_data["xs"]
-                epoch_val_loss = float(
-                    eval_loss(params, key_loss, theta_batch, x_batch)
-                )
-
-            val_losses.append(epoch_val_loss)
-
-            # Early stopping based on validation loss
-            if epoch_val_loss < best_val_loss:
-                best_val_loss = epoch_val_loss
-                best_params = params
-                epochs_without_improvement = 0
-                marker = "*"  # Best so far
-            else:
-                epochs_without_improvement += 1
-                marker = ""
-
             print(
                 f"[FNPE] Epoch {epoch+1}/{self.num_epochs}: "
-                f"Train={epoch_train_loss:.6f}, Val={epoch_val_loss:.6f} "
-                f"(best={best_val_loss:.6f}, patience={self.stop_after_epochs - epochs_without_improvement}) {marker}",
+                f"Train={epoch_train_loss:.6f}",
                 flush=True,
             )
 
-            # Check early stopping
-            if epochs_without_improvement >= self.stop_after_epochs:
-                print(
-                    f"[FNPE] Early stopping at epoch {epoch+1}. "
-                    f"Best val loss: {best_val_loss:.6f}",
-                    flush=True,
-                )
-                break
-
         self._key = key
 
-        # Return best params
-        return best_params, score_net, {"train": train_losses, "val": val_losses}
+        return params, score_net, {"train": train_losses}
 
     def _setup_sampler(self):
         """Set up the diffusion sampler."""
@@ -725,6 +640,12 @@ class FNPEMethod(BaseMethod):
             self.sde.T_min, self.sde.T_max, self.num_diffusion_steps
         )
         self.sampler = Diffuser(kernel, time_grid, self.task.input_shape)
+
+    def _compute_budget_epochs(self, num_simulations: int) -> int:
+        """Compute FNPE epoch budget from simulation count, capped."""
+        batch_size = max(1, int(self.cfg.training_batch_size))
+        epochs = (num_simulations + batch_size - 1) // batch_size
+        return min(int(self.cfg.fnpe_max_epochs), max(1, int(epochs)))
 
     def build_posterior(self, normalizer=None) -> FNPEPosterior:
         """Build posterior wrapper for sampling.

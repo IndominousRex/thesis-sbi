@@ -87,8 +87,8 @@ class NPEMethod(BaseMethod):
         summary = self.inference.summary
         self._training_summary = {
             "train_loss": summary.get("training_loss", []),
-            "val_loss": summary.get("validation_loss", []),
             "train_time_s": train_time,
+            "val_loss": summary.get("validation_loss", []),
             "best_val_loss": summary.get("best_validation_loss", None),
         }
 
