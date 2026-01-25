@@ -22,6 +22,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
+# SBATCH --gres=gpu:1
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=24:00:00
 #SBATCH --output=sbi_exp_%j.out
