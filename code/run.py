@@ -99,6 +99,36 @@ def parse_args():
     data.add_argument("--dt", type=float, default=0.01)
     data.add_argument("--T-seg", type=int, default=3000, help="Sequence length")
     data.add_argument(
+        "--steer-scale",
+        type=float,
+        default=0.5,
+        help="Scale factor for steering during data creation",
+    )
+    data.add_argument(
+        "--init-speed-center-ms",
+        type=float,
+        default=11.0,
+        help="Target initial v_body_x in m/s",
+    )
+    data.add_argument(
+        "--init-speed-range-ms",
+        type=float,
+        default=10.0,
+        help="Range around initial v_body_x in m/s",
+    )
+    data.add_argument(
+        "--brake-block-fraction",
+        type=float,
+        default=0.5,
+        help="Relative number of brake blocks vs default",
+    )
+    data.add_argument(
+        "--accel-scale",
+        type=float,
+        default=1.2,
+        help="Scale factor for accel blocks during data creation",
+    )
+    data.add_argument(
         "--params",
         type=active_param_type,
         default=PARAMETER_ORDER,
@@ -297,6 +327,11 @@ def main():
         num_simulations=args.num_sim,
         dt=args.dt,
         T_seg=args.T_seg,
+        steer_scale=args.steer_scale,
+        init_speed_center_ms=args.init_speed_center_ms,
+        init_speed_range_ms=args.init_speed_range_ms,
+        brake_block_fraction=args.brake_block_fraction,
+        accel_scale=args.accel_scale,
         active_parameters=args.params,
         fixed_mu=args.fixed_mu,
         fixed_cd=args.fixed_cd,

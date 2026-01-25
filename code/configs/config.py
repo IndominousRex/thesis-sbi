@@ -43,6 +43,11 @@ class ExperimentConfig:
     T_seg: int = 3000  # Sequence length (T)
     state_dim: int = 10
     obs_dim: int = 9
+    steer_scale: float = 0.5  # Scale factor applied to steering during data creation
+    init_speed_center_ms: float = 11.0  # Target initial v_body_x (m/s)
+    init_speed_range_ms: float = 10.0  # Sample +/- range around center (m/s)
+    brake_block_fraction: float = 0.5  # Relative number of brake blocks vs default
+    accel_scale: float = 1.2  # Scale factor for accel blocks during data creation
 
     # --- Prior (3 params: mu, C_d, m) ---
     prior_low_mu: float = 0.50
@@ -220,6 +225,11 @@ class ExperimentConfig:
             "num_simulations": self.num_simulations,
             "T_seg": self.T_seg,
             "dt": self.dt,
+            "steer_scale": self.steer_scale,
+            "init_speed_center_ms": self.init_speed_center_ms,
+            "init_speed_range_ms": self.init_speed_range_ms,
+            "brake_block_fraction": self.brake_block_fraction,
+            "accel_scale": self.accel_scale,
             "active_parameters": self.active_parameters,
             "prior_bounds": self.param_bounds(),
             "fixed_values": self.fixed_param_values(),

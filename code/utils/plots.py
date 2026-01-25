@@ -173,7 +173,7 @@ def plot_ppc_trajectories(
     y_ppc: np.ndarray,
     obs_labels: Sequence[str],
     dt: float,
-    out_path: Path,
+    out_path: Optional[Path],
     max_trajs: int = 60,
     max_dims: Optional[int] = None,
     ncols: int = 3,
@@ -185,6 +185,7 @@ def plot_ppc_trajectories(
       - median of PPC samples
       - real trajectory (half linewidth)
       - legend showing #samples
+      - y-limits focused on the real trajectory range
 
     Args:
         y_real: (T, D)
@@ -254,14 +255,23 @@ def plot_ppc_trajectories(
             label="PPC median",
         )
 
-        # Real trajectory — half thickness from earlier lw=1.8 → lw=0.9
+        # Real trajectory - lighter color so it doesn't hide PPC median on overlap
         ax.plot(
             t,
             y_real[:, d],
-            color="black",
-            lw=0.9,
+            color="#1b9e77",
+            alpha=0.85,
+            lw=1.1,
             label="Real",
         )
+
+        # Focus y-limits on real trajectory (ignore PPC outliers)
+        y_min = float(np.min(y_real[:, d]))
+        y_max = float(np.max(y_real[:, d]))
+        span = max(y_max - y_min, 1e-6)
+        ref = max(1.0, abs(y_min), abs(y_max))
+        margin = max(span * 0.1, 0.05 * ref)
+        ax.set_ylim(y_min - margin, y_max + margin)
 
         label = obs_labels[d] if d < len(obs_labels) else f"obs_{d}"
         ax.set_ylabel(label)
@@ -277,10 +287,13 @@ def plot_ppc_trajectories(
         ax.axis("off")
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    _ensure_dir(out_path)
-    plt.savefig(out_path, dpi=150)
-    plt.close()
-    print(f"[plots] Saved PPC trajectories to {out_path}")
+    if out_path is not None:
+        _ensure_dir(out_path)
+        plt.savefig(out_path, dpi=150)
+        plt.close()
+        print(f"[plots] Saved PPC trajectories to {out_path}")
+    else:
+        plt.show()
 
 
 # ---------------------------------------------------------------------

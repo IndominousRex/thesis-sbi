@@ -165,10 +165,14 @@ def _prepare_step_kwargs(kw, T_block, dt):
     return kw
 
 
-def controls_from_blocks(blocks, *, T_seg, dt, gear_default=3, ramp_s=0.0):
+def controls_from_blocks(
+    blocks, *, T_seg, dt, gear_default=3, ramp_s=0.0, steer_scale: float = 1.0
+):
     """
     Build a long control sequence from a list of 'blocks' with different behaviours
     (accel, brake, coast). This is the same logic as your notebook.
+
+    steer_scale can be used to downscale steering during data creation.
     """
     segs = []
     left = T_seg
@@ -227,6 +231,9 @@ def controls_from_blocks(blocks, *, T_seg, dt, gear_default=3, ramp_s=0.0):
         eng = ramp(eng)
         brk = ramp(brk)
 
+    if steer_scale != 1.0:
+        steer = steer * steer_scale
+
     return {
         "steer_ang": jnp.asarray(steer),
         "engine_torque": jnp.asarray(eng),
@@ -235,9 +242,9 @@ def controls_from_blocks(blocks, *, T_seg, dt, gear_default=3, ramp_s=0.0):
     }
 
 
-def rand_block_accel(rng):
-    eng = float(rng.uniform(300, 500))
-    duty = float(rng.uniform(0.4, 1.0))
+def rand_block_accel(rng, accel_scale: float = 1.0):
+    eng = float(rng.uniform(300, 500) * accel_scale)
+    duty = float(min(1.0, rng.uniform(0.4, 1.0) * accel_scale))
     steer_deg = float(rng.uniform(4, 12))
     f = float(rng.uniform(0.5, 1.5))
     dur = float(rng.uniform(1.5, 4.0))
@@ -278,16 +285,25 @@ def rand_block_coast(rng):
     }
 
 
-def make_shuffled_U(rng, total_T, dt):
+def make_shuffled_U(
+    rng,
+    total_T,
+    dt,
+    brake_block_fraction: float = 1.0,
+    accel_scale: float = 1.0,
+):
     """
     Build a shuffled mixture of accel, brake, and coast blocks
     until total length reaches total_T * dt.
     """
     pieces = []
-    for _ in range(12):
-        pieces.append(rand_block_accel(rng))
-        pieces.append(rand_block_brake(rng))
+    num_blocks = 12
+    num_brake_blocks = max(1, int(round(num_blocks * brake_block_fraction)))
+    for _ in range(num_blocks):
+        pieces.append(rand_block_accel(rng, accel_scale=accel_scale))
         pieces.append(rand_block_coast(rng))
+    for _ in range(num_brake_blocks):
+        pieces.append(rand_block_brake(rng))
     rng.shuffle(pieces)
 
     blocks, tsum = [], 0.0
@@ -306,12 +322,23 @@ KMH_TO_MS = 1.0 / 3.6
 INIT_SPEEDS_MS = np.arange(10.0, 130.0, 10.0, dtype=np.float32) * KMH_TO_MS
 
 
-def sample_initial_states(rng: np.random.Generator, B: int) -> jnp.ndarray:
+def sample_initial_states(
+    rng: np.random.Generator,
+    B: int,
+    *,
+    center_ms: float | None = None,
+    range_ms: float | None = None,
+) -> jnp.ndarray:
     """
     Sample a batch of initial states following your chosen heuristics.
     """
-    idx = rng.integers(0, len(INIT_SPEEDS_MS), size=B)
-    v_x0 = INIT_SPEEDS_MS[idx]
+    if center_ms is not None and range_ms is not None:
+        low = max(0.0, float(center_ms - range_ms))
+        high = max(low + 1e-3, float(center_ms + range_ms))
+        v_x0 = rng.uniform(low, high, size=B).astype(np.float32)
+    else:
+        idx = rng.integers(0, len(INIT_SPEEDS_MS), size=B)
+        v_x0 = INIT_SPEEDS_MS[idx]
 
     v_y0 = rng.uniform(-1.0, 1.0, size=B).astype(np.float32)
     yaw0 = rng.uniform(-0.05, 0.05, size=B).astype(np.float32)
@@ -384,10 +411,27 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
         )
         simulator._batch_idx = getattr(simulator, "_batch_idx", 0) + 1
 
-        recipe = make_shuffled_U(rng, cfg.T_seg, cfg.dt)
-        ctrls = controls_from_blocks(recipe, T_seg=cfg.T_seg, dt=cfg.dt, ramp_s=0.2)
+        recipe = make_shuffled_U(
+            rng,
+            cfg.T_seg,
+            cfg.dt,
+            brake_block_fraction=cfg.brake_block_fraction,
+            accel_scale=cfg.accel_scale,
+        )
+        ctrls = controls_from_blocks(
+            recipe,
+            T_seg=cfg.T_seg,
+            dt=cfg.dt,
+            ramp_s=0.2,
+            steer_scale=cfg.steer_scale,
+        )
 
-        S0 = sample_initial_states(rng, B)
+        S0 = sample_initial_states(
+            rng,
+            B,
+            center_ms=cfg.init_speed_center_ms,
+            range_ms=cfg.init_speed_range_ms,
+        )
         P = expand_theta_to_full(theta_np, cfg)
 
         y_batch = vmapped_rollout_train(P, S0, ctrls)  # (B, T_seg, d_obs)
