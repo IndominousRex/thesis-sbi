@@ -16,6 +16,34 @@ def _ensure_dir(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _format_theta_true(
+    theta_true: Union[np.ndarray, torch.Tensor],
+    param_names: Optional[List[str]] = None,
+    *,
+    precision: int = 6,
+) -> str:
+    """
+    Format theta_true into a compact string for plot titles, e.g.
+    "θ_true: mu=1, cd=0.27, m=1800".
+    """
+    if isinstance(theta_true, torch.Tensor):
+        theta_true = theta_true.detach().cpu().numpy()
+    theta_arr = np.asarray(theta_true, dtype=float).reshape(-1)
+
+    if param_names is None:
+        names = [f"θ_{i}" for i in range(len(theta_arr))]
+    else:
+        names = list(param_names) + [
+            f"θ_{i}" for i in range(len(param_names), len(theta_arr))
+        ]
+
+    fmt = f"{{:.{precision}g}}"
+    parts = [
+        f"{names[i]}={fmt.format(float(theta_arr[i]))}" for i in range(len(theta_arr))
+    ]
+    return "θ_true: " + ", ".join(parts)
+
+
 # ---------------------------------------------------------------------
 # 1) Training curves (loss vs epoch)
 # ---------------------------------------------------------------------
@@ -175,6 +203,7 @@ def plot_ppc_trajectories(
     dt: float,
     out_path: Optional[Path],
     max_trajs: int = 60,
+    plot_all_trajs: bool = False,
     max_dims: Optional[int] = None,
     ncols: int = 3,
     title: str = "Posterior Predictive Check (time series)",
@@ -209,11 +238,14 @@ def plot_ppc_trajectories(
     max_dims = min(max_dims, D)
 
     num_trajs = min(K, max_trajs)
-    idxs = (
-        np.random.choice(K, size=num_trajs, replace=False)
-        if K > num_trajs
-        else np.arange(K)
-    )
+    if plot_all_trajs:
+        idxs = np.arange(K)
+    else:
+        idxs = (
+            np.random.choice(K, size=num_trajs, replace=False)
+            if K > num_trajs
+            else np.arange(K)
+        )
 
     # Compute median trajectory across PPC samples
     y_median = np.median(y_ppc, axis=0)  # (T, D)
@@ -488,6 +520,9 @@ def plot_prior_posterior_1d(
     param_name: str,
     out_path: Path,
     bins: int = 100,
+    example_id: Optional[str] = None,
+    theta_true_full: Optional[np.ndarray] = None,
+    param_names: Optional[List[str]] = None,
 ) -> None:
     """
     Plot 1D prior and posterior marginals for a single parameter, with an
@@ -500,6 +535,9 @@ def plot_prior_posterior_1d(
         param_name: label for the parameter (e.g. "mu").
         out_path: output path for the PNG.
         bins: number of histogram bins.
+        example_id: Optional example identifier (e.g. "ex0") for consistent labeling.
+        theta_true_full: Optional full theta_true vector for display in title.
+        param_names: Optional list of all parameter names for formatting theta_true_full.
     """
     prior_1d = np.asarray(prior_1d, dtype=np.float32)
     post_1d = np.asarray(post_1d, dtype=np.float32)
@@ -539,17 +577,31 @@ def plot_prior_posterior_1d(
 
     # Optional vertical reference line
     if theta_ref is not None:
+        theta_ref_val = float(theta_ref)
         plt.axvline(
-            float(theta_ref),
+            theta_ref_val,
             color="black",
             linestyle="--",
             linewidth=2.0,
-            label="Reference θ",
+            label=f"θ_true={theta_ref_val:.6g}",
         )
 
     plt.xlabel(param_name)
     plt.ylabel("Density")
-    plt.title(f"Prior vs posterior for {param_name}")
+
+    # Build title with example_id and full theta_true
+    title = f"Prior vs posterior for {param_name}"
+    if example_id is not None:
+        title += f" ({example_id})"
+
+    # Add full theta_true vector to title if provided
+    if theta_true_full is not None:
+        title += f"\n{_format_theta_true(theta_true_full, param_names)}"
+    elif theta_ref is not None and not np.isnan(float(theta_ref)):
+        # Fallback: just show single parameter's theta_ref
+        title += f"\nθ_true({param_name})={float(theta_ref):.6g}"
+
+    plt.title(title)
     plt.legend()
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
@@ -573,6 +625,8 @@ def plot_pairplot(
     title: str = "Posterior Pairplot",
     figsize: tuple = (10, 10),
     offdiag: str = "scatter",  # "scatter" or "contour"
+    example_id: Optional[str] = None,
+    show_theta_true_in_title: bool = True,
 ):
     """
     Plot pairwise marginal distributions using sbi's pairplot.
@@ -627,14 +681,24 @@ def plot_pairplot(
         figsize=figsize,
     )
 
+    title_full = title
+    if example_id is not None and example_id not in title_full:
+        title_full = f"{title_full} ({example_id})"
+    if (
+        show_theta_true_in_title
+        and theta_true is not None
+        and "θ_true" not in title_full
+    ):
+        title_full = f"{title_full}\n{_format_theta_true(theta_true, param_names)}"
+
     # Add title
     if fig is not None:
-        fig.suptitle(title, fontsize=12, y=1.02)
+        fig.suptitle(title_full, fontsize=12, y=1.02)
         fig.tight_layout()
         fig.savefig(out_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
     else:
-        plt.suptitle(title, fontsize=12, y=1.02)
+        plt.suptitle(title_full, fontsize=12, y=1.02)
         plt.tight_layout()
         plt.savefig(out_path, dpi=150, bbox_inches="tight")
         plt.close()
@@ -747,6 +811,8 @@ def plot_diffusion_traces(
     title: str = "Diffusion Sampling Traces",
     max_traces: int = 100,
     alpha: float = 0.1,
+    example_id: Optional[str] = None,
+    show_theta_true_in_title: bool = True,
 ):
     """
     Plot diffusion sampling traces showing how samples evolve during the
@@ -824,7 +890,17 @@ def plot_diffusion_traces(
     for ax in axes[d:]:
         ax.axis("off")
 
-    fig.suptitle(title, fontsize=12)
+    title_full = title
+    if example_id is not None and example_id not in title_full:
+        title_full = f"{title_full} ({example_id})"
+    if (
+        show_theta_true_in_title
+        and theta_true is not None
+        and "θ_true" not in title_full
+    ):
+        title_full = f"{title_full}\n{_format_theta_true(theta_true, param_names)}"
+
+    fig.suptitle(title_full, fontsize=12)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150)
     plt.close()

@@ -12,7 +12,7 @@ import json
 import pickle
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 import torch
 import numpy as np
@@ -139,6 +139,99 @@ def get_or_generate_dataset(
 # =============================================================================
 
 
+def build_shared_diagnostic_examples(
+    cfg: ExperimentConfig,
+    *,
+    prior,
+    simulator,
+    normalizer: Normalizer,
+    device: torch.device,
+    num_examples: int,
+    seed_offset: int = 2000,
+    method=None,
+) -> List[Dict[str, Any]]:
+    """
+    Build a shared set of synthetic examples (theta_true, x_phys, x_cond) so all
+    diagnostics refer to identical conditioning data for the same ex_idx.
+
+    This avoids accidental apples/oranges comparisons when different diagnostics
+    sample different synthetic examples under the same label "ex{idx}".
+
+    Returns:
+        List of dicts with keys:
+          - ex_idx: int
+          - theta_true: np.ndarray (physical units, shape (d_theta,))
+          - x_phys: np.ndarray (physical units, shape (T, D_in))
+          - x_cond: torch.Tensor (normalized, shape (1, T, D_in or obs_dim))
+    """
+    examples: List[Dict[str, Any]] = []
+
+    # FNPE: generate via task's JAX prior + simulator for consistency
+    if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
+        import jax
+
+        task = method.task
+        jax_prior = task.get_prior()
+        simulator_fn = task.get_simulator()
+
+        key = jax.random.PRNGKey(int(cfg.random_seed) + int(seed_offset))
+
+        for ex_idx in range(int(num_examples)):
+            key, key_theta, key_sim = jax.random.split(key, 3)
+            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
+            theta_true_np = np.array(theta_true_jax).astype(np.float32)
+
+            x_phys_jax = simulator_fn(key_sim, theta_true_jax, int(cfg.T_seg))
+            x_phys_np = np.array(x_phys_jax).astype(np.float32)
+
+            x_phys_t = torch.tensor(x_phys_np, dtype=torch.float32, device=device)
+            if x_phys_t.ndim == 2:
+                x_phys_t = x_phys_t.unsqueeze(0)  # (1, T, D)
+
+            # Condition in normalized space (unified interface). Support both obs-only
+            # and [obs||ctrl] layouts depending on how the simulator is configured.
+            D = int(x_phys_t.shape[-1])
+            if D == int(cfg.obs_dim):
+                x_cond = (x_phys_t - normalizer.obs_mean) / (
+                    normalizer.obs_std + normalizer.eps
+                )
+            else:
+                x_cond = normalizer.normalize_x(x_phys_t, int(cfg.obs_dim))
+
+            examples.append(
+                {
+                    "ex_idx": ex_idx,
+                    "theta_true": theta_true_np,
+                    "x_phys": x_phys_np,
+                    "x_cond": x_cond,
+                }
+            )
+
+        return examples
+
+    # Standard path for NPE/NPSE (torch prior + simulator)
+    for ex_idx in range(int(num_examples)):
+        with torch.no_grad():
+            theta_true = prior.sample((1,)).to(device)
+        theta_true_np = theta_true.detach().cpu().numpy()[0].astype(np.float32)
+
+        sim_out = simulator(theta_true)
+        x_sim = sim_out[0] if isinstance(sim_out, tuple) else sim_out
+        x_phys_t = x_sim.to(device)
+        x_cond = normalizer.normalize_x(x_phys_t, int(cfg.obs_dim)).to(device)
+
+        examples.append(
+            {
+                "ex_idx": ex_idx,
+                "theta_true": theta_true_np,
+                "x_phys": x_phys_t.detach().cpu().numpy()[0].astype(np.float32),
+                "x_cond": x_cond,
+            }
+        )
+
+    return examples
+
+
 def run_parameter_posterior_plots(
     cfg: ExperimentConfig,
     fig_dir: Path,
@@ -152,6 +245,7 @@ def run_parameter_posterior_plots(
     num_prior_samples: int = 20000,
     num_posterior_samples: int = 5000,
     method=None,  # Pass method for FNPE to use its own data generation
+    examples: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """Generate prior vs posterior marginal plots."""
     if cfg.no_plots:
@@ -162,7 +256,6 @@ def run_parameter_posterior_plots(
     # For FNPE, use JAX-based prior sampling and simulator but unified posterior interface
     if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
         import jax
-        import jax.numpy as jnp
 
         task = method.task
         jax_prior = task.get_prior()
@@ -173,30 +266,18 @@ def run_parameter_posterior_plots(
         prior_pool_jax = jax_prior.sample(key_prior, (num_prior_samples,))
         prior_pool_np = np.array(prior_pool_jax)
 
-        for ex_idx in range(num_examples):
+        if examples is None:
+            raise ValueError(
+                "[DIAG] examples must be provided for consistent diagnostics. "
+                "Use build_shared_diagnostic_examples() in run_experiment()."
+            )
+
+        for ex in examples[:num_examples]:
+            ex_idx = int(ex["ex_idx"])
             print(f"[DIAG] Posterior plots (FNPE): example {ex_idx+1}/{num_examples}")
 
-            # Sample true theta and simulate (physical units)
-            key, key_theta, key_sim = jax.random.split(key, 3)
-            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
-            theta_true_np = np.array(theta_true_jax)
-            print(f"[DIAG] True theta: {theta_true_np}", flush=True)
-
-            # Generate observation using FNPE's task simulator (physical units)
-            simulator_fn = task.get_simulator()
-            x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)  # (T, obs_dim)
-            print(
-                f"[DIAG] x_phys shape: {x_phys.shape}, has NaN: {np.any(np.isnan(x_phys))}",
-                flush=True,
-            )
-
-            # Normalize observation for unified posterior interface
-            x_phys_torch = torch.tensor(np.array(x_phys), dtype=torch.float32).to(
-                device
-            )
-            if x_phys_torch.ndim == 2:
-                x_phys_torch = x_phys_torch.unsqueeze(0)  # (1, T, obs_dim)
-            x_norm = normalizer.normalize_x(x_phys_torch, cfg.obs_dim)
+            theta_true_np = np.asarray(ex["theta_true"], dtype=np.float32).reshape(-1)
+            x_norm = ex["x_cond"]
 
             # Sample from posterior (unified interface: normalized in, normalized out)
             print(
@@ -225,6 +306,9 @@ def run_parameter_posterior_plots(
                     param_name=pname,
                     out_path=out_path,
                     bins=80,
+                    example_id=f"ex{ex_idx}",
+                    theta_true_full=theta_true_np,
+                    param_names=param_names,
                 )
         return
 
@@ -233,16 +317,18 @@ def run_parameter_posterior_plots(
         prior_pool = prior.sample((num_prior_samples,)).to(device)
     prior_pool_np = prior_pool.detach().cpu().numpy()
 
-    for ex_idx in range(num_examples):
+    if examples is None:
+        raise ValueError(
+            "[DIAG] examples must be provided for consistent diagnostics. "
+            "Use build_shared_diagnostic_examples() in run_experiment()."
+        )
+
+    for ex in examples[:num_examples]:
+        ex_idx = int(ex["ex_idx"])
         print(f"[DIAG] Posterior plots: example {ex_idx+1}/{num_examples}")
 
-        with torch.no_grad():
-            theta_true = prior.sample((1,)).to(device)
-        theta_true_np = theta_true.detach().cpu().numpy()[0]
-
-        sim_out = simulator(theta_true)
-        x_sim = sim_out[0] if isinstance(sim_out, tuple) else sim_out
-        x_cond = normalizer.normalize_x(x_sim, cfg.obs_dim).to(device)
+        theta_true_np = np.asarray(ex["theta_true"], dtype=np.float32).reshape(-1)
+        x_cond = ex["x_cond"]
 
         with torch.no_grad():
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
@@ -267,6 +353,9 @@ def run_parameter_posterior_plots(
                 param_name=pname,
                 out_path=out_path,
                 bins=80,
+                example_id=f"ex{ex_idx}",
+                theta_true_full=theta_true_np,
+                param_names=param_names,
             )
 
 
@@ -329,6 +418,7 @@ def run_pairplot_diagnostic(
     num_posterior_samples: int = 1000,
     num_examples: int = 3,
     method=None,
+    examples: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """
     Run pairplot visualization diagnostic.
@@ -361,30 +451,18 @@ def run_pairplot_diagnostic(
 
     # For FNPE, use JAX-based data generation
     if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
-        import jax
+        if examples is None:
+            raise ValueError(
+                "[PAIRPLOT] examples must be provided for consistent diagnostics. "
+                "Use build_shared_diagnostic_examples() in run_experiment()."
+            )
 
-        task = method.task
-        jax_prior = task.get_prior()
-        key = jax.random.PRNGKey(cfg.random_seed + 2000)
-
-        for ex_idx in range(num_examples):
+        for ex in examples[:num_examples]:
+            ex_idx = int(ex["ex_idx"])
             print(f"[PAIRPLOT] Example {ex_idx+1}/{num_examples} (FNPE)")
 
-            # Sample true theta and simulate
-            key, key_theta, key_sim = jax.random.split(key, 3)
-            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
-            theta_true_np = np.array(theta_true_jax)
-
-            simulator_fn = task.get_simulator()
-            x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)
-
-            # Normalize observation
-            x_phys_torch = torch.tensor(np.array(x_phys), dtype=torch.float32).to(
-                device
-            )
-            if x_phys_torch.ndim == 2:
-                x_phys_torch = x_phys_torch.unsqueeze(0)
-            x_norm = normalizer.normalize_x(x_phys_torch, cfg.obs_dim)
+            theta_true_np = np.asarray(ex["theta_true"], dtype=np.float32).reshape(-1)
+            x_norm = ex["x_cond"]
 
             # Sample from posterior
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_norm)
@@ -401,21 +479,24 @@ def run_pairplot_diagnostic(
                 out_path=pairplot_path,
                 theta_true=theta_true_np,
                 param_names=param_names,
-                title=f"Posterior Pairplot (Example {ex_idx+1})",
+                title="Posterior Pairplot",
+                example_id=f"ex{ex_idx}",
             )
         return
 
     # Standard path for NPE/NPSE
-    for ex_idx in range(num_examples):
+    if examples is None:
+        raise ValueError(
+            "[PAIRPLOT] examples must be provided for consistent diagnostics. "
+            "Use build_shared_diagnostic_examples() in run_experiment()."
+        )
+
+    for ex in examples[:num_examples]:
+        ex_idx = int(ex["ex_idx"])
         print(f"[PAIRPLOT] Example {ex_idx+1}/{num_examples}")
 
-        with torch.no_grad():
-            theta_true = prior.sample((1,)).to(device)
-        theta_true_np = theta_true.detach().cpu().numpy()[0]
-
-        sim_out = simulator(theta_true)
-        x_sim = sim_out[0] if isinstance(sim_out, tuple) else sim_out
-        x_cond = normalizer.normalize_x(x_sim, cfg.obs_dim).to(device)
+        theta_true_np = np.asarray(ex["theta_true"], dtype=np.float32).reshape(-1)
+        x_cond = ex["x_cond"]
 
         with torch.no_grad():
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
@@ -438,7 +519,8 @@ def run_pairplot_diagnostic(
             out_path=pairplot_path,
             theta_true=theta_true_np,
             param_names=param_names,
-            title=f"Posterior Pairplot (Example {ex_idx+1})",
+            title="Posterior Pairplot",
+            example_id=f"ex{ex_idx}",
         )
 
 
@@ -454,6 +536,7 @@ def run_c2st_diagnostic(
     num_posterior_samples: int = 1000,
     num_examples: int = 3,
     method=None,
+    examples: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Run C2ST (Classifier Two-Sample Test) diagnostic.
@@ -492,31 +575,19 @@ def run_c2st_diagnostic(
         prior_samples = prior.sample((num_posterior_samples,)).to(device)
     prior_samples_np = prior_samples.detach().cpu().numpy()
 
-    # For FNPE, use JAX-based data generation
+    # For FNPE, use shared examples if provided (preferred for consistency)
     if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
-        import jax
+        if examples is None:
+            raise ValueError(
+                "[C2ST] examples must be provided for consistent diagnostics. "
+                "Use build_shared_diagnostic_examples() in run_experiment()."
+            )
 
-        task = method.task
-        jax_prior = task.get_prior()
-        key = jax.random.PRNGKey(cfg.random_seed + 2500)  # Different seed from pairplot
-
-        for ex_idx in range(num_examples):
+        for ex in examples[:num_examples]:
+            ex_idx = int(ex["ex_idx"])
             print(f"[C2ST] Example {ex_idx+1}/{num_examples} (FNPE)")
 
-            # Sample true theta and simulate
-            key, key_theta, key_sim = jax.random.split(key, 3)
-            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
-
-            simulator_fn = task.get_simulator()
-            x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)
-
-            # Normalize observation
-            x_phys_torch = torch.tensor(np.array(x_phys), dtype=torch.float32).to(
-                device
-            )
-            if x_phys_torch.ndim == 2:
-                x_phys_torch = x_phys_torch.unsqueeze(0)
-            x_norm = normalizer.normalize_x(x_phys_torch, cfg.obs_dim)
+            x_norm = ex["x_cond"]
 
             # Sample from posterior
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_norm)
@@ -543,15 +614,17 @@ def run_c2st_diagnostic(
         return c2st_results
 
     # Standard path for NPE/NPSE
-    for ex_idx in range(num_examples):
+    if examples is None:
+        raise ValueError(
+            "[C2ST] examples must be provided for consistent diagnostics. "
+            "Use build_shared_diagnostic_examples() in run_experiment()."
+        )
+
+    for ex in examples[:num_examples]:
+        ex_idx = int(ex["ex_idx"])
         print(f"[C2ST] Example {ex_idx+1}/{num_examples}")
 
-        with torch.no_grad():
-            theta_true = prior.sample((1,)).to(device)
-
-        sim_out = simulator(theta_true)
-        x_sim = sim_out[0] if isinstance(sim_out, tuple) else sim_out
-        x_cond = normalizer.normalize_x(x_sim, cfg.obs_dim).to(device)
+        x_cond = ex["x_cond"]
 
         with torch.no_grad():
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
@@ -592,6 +665,7 @@ def run_diffusion_traces_diagnostic(
     num_traces: int = 50,
     num_examples: int = 2,
     method=None,
+    examples: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """
     Run diffusion trace visualization for FNPE.
@@ -630,37 +704,28 @@ def run_diffusion_traces_diagnostic(
 
     param_names = list(cfg.active_parameters)
 
-    # Use JAX-based data generation for FNPE
+    # Use shared examples if provided (preferred for consistency)
     if method is not None and hasattr(method, "task"):
-        import jax
-        import jax.numpy as jnp
+        if examples is None:
+            raise ValueError(
+                "[TRACES] examples must be provided for consistent diagnostics. "
+                "Use build_shared_diagnostic_examples() in run_experiment()."
+            )
 
-        task = method.task
-        jax_prior = task.get_prior()
-        key = jax.random.PRNGKey(cfg.random_seed + 3000)
-
-        for ex_idx in range(num_examples):
+        for ex in examples[:num_examples]:
+            ex_idx = int(ex["ex_idx"])
             print(f"[TRACES] Example {ex_idx+1}/{num_examples}")
 
-            # Sample true theta and simulate
-            key, key_theta, key_sim = jax.random.split(key, 3)
-            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
-            theta_true_np = np.array(theta_true_jax)
-
-            simulator_fn = task.get_simulator()
-            x_phys = simulator_fn(key_sim, theta_true_jax, cfg.T_seg)
-
-            # Normalize observation
-            x_phys_torch = torch.tensor(np.array(x_phys), dtype=torch.float32).to(
-                device
-            )
-            if x_phys_torch.ndim == 2:
-                x_phys_torch = x_phys_torch.unsqueeze(0)
-            x_norm = normalizer.normalize_x(x_phys_torch, cfg.obs_dim)
+            theta_true_np = np.asarray(ex["theta_true"], dtype=np.float32).reshape(-1)
+            x_norm = ex["x_cond"]
 
             # Get diffusion traces
             try:
-                traces = posterior.sample_with_traces((num_traces,), x=x_norm)
+                # x_norm is in normalized units (unified interface), so set
+                # return_physical=False to unnormalize conditioning internally.
+                traces = posterior.sample_with_traces(
+                    (num_traces,), x=x_norm, return_physical=False
+                )
                 # traces shape: (num_traces, num_steps, d_theta)
 
                 trace_path = fig_dir / f"diffusion_traces_ex{ex_idx}.png"
@@ -669,7 +734,8 @@ def run_diffusion_traces_diagnostic(
                     out_path=trace_path,
                     theta_true=theta_true_np,
                     param_names=param_names,
-                    title=f"Diffusion Sampling Traces (Example {ex_idx+1})",
+                    title="Diffusion Sampling Traces",
+                    example_id=f"ex{ex_idx}",
                     max_traces=num_traces,
                 )
             except Exception as e:
@@ -883,6 +949,7 @@ def run_real_data_evaluation(
             dt=cfg.dt,
             out_path=ppc_path,
             max_trajs=20,
+            plot_all_trajs=True,
             max_dims=cfg.obs_dim,
             title="Posterior Predictive Check on Real Drive Segment",
         )
@@ -910,6 +977,7 @@ def run_real_data_evaluation(
                 dt=cfg.dt,
                 out_path=ppc_sim_path,
                 max_trajs=20,
+                plot_all_trajs=True,
                 max_dims=cfg.obs_dim,
                 title="Posterior Predictive Check on Simulated Holdout",
             )
@@ -1014,7 +1082,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     print(f"SBI Experiment: {cfg.method.upper()}")
     print(f"{'='*60}")
     print(f"Parameters: {cfg.active_parameters}")
-    sim_budget = cfg.fnpe_num_simulations if cfg.method == "fnpe" else cfg.num_simulations
+    sim_budget = (
+        cfg.fnpe_num_simulations if cfg.method == "fnpe" else cfg.num_simulations
+    )
     print(f"Simulations: {sim_budget}")
     print(f"Sequence length: {cfg.T_seg}")
     print(f"{'='*60}\n")
@@ -1249,9 +1319,30 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     }
 
     if cfg.do_eval:
+        # ---------------------------------------------------------------------
+        # Build shared synthetic examples so ex_idx refers to the same
+        # (theta_true, x_cond) across all diagnostics.
+        # ---------------------------------------------------------------------
+        shared_examples: Optional[List[Dict[str, Any]]] = None
+        try:
+            shared_examples = build_shared_diagnostic_examples(
+                cfg,
+                prior=prior_phys,
+                simulator=simulator,
+                normalizer=normalizer,
+                device=device,
+                num_examples=3,
+                seed_offset=1000,
+                method=method,
+            )
+        except Exception as e:
+            print(f"[DIAG] Failed to build shared diagnostic examples: {e}")
+            shared_examples = None
+
         # Posterior plots
-        if cfg.run_posterior_plots:
+        if cfg.run_posterior_plots and shared_examples is not None:
             print("\n[DIAG] Generating posterior plots...")
+            num_ex = 3 if cfg.method == "npe" else 2
             run_parameter_posterior_plots(
                 cfg,
                 fig_dir,
@@ -1260,9 +1351,13 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 simulator,
                 normalizer,
                 device,
+                num_examples=num_ex,
                 num_posterior_samples=5000 if cfg.method == "npe" else 2000,
                 method=method,  # Pass method for FNPE
+                examples=shared_examples[:num_ex],
             )
+        elif cfg.run_posterior_plots:
+            print("[DIAG] Skipping posterior plots - no shared examples available")
 
         # SBC (skip for FNPE - GAUSS score is too slow for many samples)
         if cfg.run_sbc and cfg.method != "fnpe":
@@ -1306,45 +1401,55 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 print(f"[DIAG] 1-step RMSE failed: {e}")
 
         # Pairplot visualization (markovsbi-style)
-        print("\n[DIAG] Running pairplot diagnostics...")
-        try:
-            run_pairplot_diagnostic(
-                cfg,
-                fig_dir,
-                prior_phys,
-                posterior,
-                simulator,
-                normalizer,
-                device,
-                num_posterior_samples=1000 if cfg.method == "npe" else 500,
-                num_examples=3 if cfg.method == "npe" else 2,
-                method=method,
-            )
-        except Exception as e:
-            print(f"[DIAG] Pairplot failed: {e}")
+        if shared_examples is not None:
+            print("\n[DIAG] Running pairplot diagnostics...")
+            try:
+                num_ex = 3 if cfg.method == "npe" else 2
+                run_pairplot_diagnostic(
+                    cfg,
+                    fig_dir,
+                    prior_phys,
+                    posterior,
+                    simulator,
+                    normalizer,
+                    device,
+                    num_posterior_samples=1000 if cfg.method == "npe" else 500,
+                    num_examples=num_ex,
+                    method=method,
+                    examples=shared_examples[:num_ex],
+                )
+            except Exception as e:
+                print(f"[DIAG] Pairplot failed: {e}")
+        else:
+            print("[DIAG] Skipping pairplot - no shared examples available")
 
         # C2ST diagnostic (markovsbi-style)
-        print("\n[DIAG] Running C2ST diagnostics...")
-        try:
-            c2st_results = run_c2st_diagnostic(
-                cfg,
-                fig_dir,
-                prior_phys,
-                posterior,
-                simulator,
-                normalizer,
-                device,
-                num_posterior_samples=1000 if cfg.method == "npe" else 500,
-                num_examples=3 if cfg.method == "npe" else 2,
-                method=method,
-            )
-            if c2st_results:
-                metrics["c2st"] = c2st_results
-        except Exception as e:
-            print(f"[DIAG] C2ST failed: {e}")
+        if shared_examples is not None:
+            print("\n[DIAG] Running C2ST diagnostics...")
+            try:
+                num_ex = 3 if cfg.method == "npe" else 2
+                c2st_results = run_c2st_diagnostic(
+                    cfg,
+                    fig_dir,
+                    prior_phys,
+                    posterior,
+                    simulator,
+                    normalizer,
+                    device,
+                    num_posterior_samples=1000 if cfg.method == "npe" else 500,
+                    num_examples=num_ex,
+                    method=method,
+                    examples=shared_examples[:num_ex],
+                )
+                if c2st_results:
+                    metrics["c2st"] = c2st_results
+            except Exception as e:
+                print(f"[DIAG] C2ST failed: {e}")
+        else:
+            print("[DIAG] Skipping C2ST - no shared examples available")
 
         # Diffusion traces (FNPE only)
-        if cfg.method == "fnpe":
+        if cfg.method == "fnpe" and shared_examples is not None:
             print("\n[DIAG] Running diffusion trace diagnostics...")
             try:
                 run_diffusion_traces_diagnostic(
@@ -1358,9 +1463,12 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     num_traces=50,
                     num_examples=2,
                     method=method,
+                    examples=shared_examples[:2],
                 )
             except Exception as e:
                 print(f"[DIAG] Diffusion traces failed: {e}")
+        elif cfg.method == "fnpe":
+            print("[DIAG] Skipping diffusion traces - no shared examples available")
 
     # --- Real data eval (inline) ---
     if cfg.real_data_csv and cfg.do_eval:
