@@ -103,7 +103,10 @@ class ProjectedTransformer(nn.Module):
 # -----------------------------------------------------------------------------
 def build_prior(cfg: ExperimentConfig, device: torch.device):
     """
-    Build the BoxUniform prior over active parameters.
+    Build the Gaussian/Normal prior over active parameters.
+    
+    Uses mean = (low + high) / 2 and std = (high - low) / 6
+    so that ±3σ approximately covers the original uniform bounds.
     """
     bounds = cfg.param_bounds()
     low_list = [bounds[name][0] for name in cfg.active_parameters]
@@ -111,7 +114,15 @@ def build_prior(cfg: ExperimentConfig, device: torch.device):
 
     low = torch.tensor(low_list, dtype=torch.float32, device=device)
     high = torch.tensor(high_list, dtype=torch.float32, device=device)
-    return sbi_utils.BoxUniform(low=low, high=high)
+    
+    # Gaussian prior centered in the bounds
+    mean = (low + high) / 2.0
+    std = (high - low) / 6.0  # 3-sigma covers the range
+    
+    return torch.distributions.MultivariateNormal(
+        loc=mean,
+        covariance_matrix=torch.diag(std ** 2)
+    )
 
 
 # -----------------------------------------------------------------------------
