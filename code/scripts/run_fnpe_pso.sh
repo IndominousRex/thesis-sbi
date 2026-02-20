@@ -3,8 +3,8 @@
 # SLURM script for running FNPE with PSO-optimized vehicle parameters
 #
 # Usage:
-#   sbatch run_fnpe_pso.sh                           # defaults
-#   sbatch run_fnpe_pso.sh fnpe_pso_v1 100000 3000   # custom name/sims/Tseg
+#   sbatch run_fnpe_pso.sh                                    # defaults
+#   sbatch run_fnpe_pso.sh fnpe_pso_v1 10000 3000 20000       # name/budget/Tseg/numsim
 # ==============================================================================
 
 #SBATCH --job-name=fnpe_pso
@@ -24,6 +24,7 @@
 EXP_NAME=${1:-fnpe_pso_optimized}
 FNPE_NUM_SIM=${2:-100000}
 T_SEG=${3:-3000}
+NUM_SIM=${4:-2000}
 
 # Path to PSO results (relative to code dir)
 PSO_JSON="notebooks/experiments/pso_optimization_results.json"
@@ -40,7 +41,8 @@ echo "Date:       $(date)"
 echo "Node:       $(hostname)"
 echo "Job ID:     ${SLURM_JOB_ID:-local}"
 echo "Exp Name:   ${EXP_NAME}"
-echo "FNPE Sims:  ${FNPE_NUM_SIM}"
+echo "FNPE Budget: ${FNPE_NUM_SIM}"
+echo "Num Sims:   ${NUM_SIM}"
 echo "T_seg:      ${T_SEG}"
 echo "PSO JSON:   ${PSO_JSON}"
 echo "=================================================="
@@ -64,6 +66,7 @@ srun python run_fnpe_pso.py \
     --exp-name ${EXP_NAME} \
     --device cuda \
     --fnpe-num-sim ${FNPE_NUM_SIM} \
+    --num-sim ${NUM_SIM} \
     --T-seg ${T_SEG} \
     --params mu \
     --num-epochs 200 \
