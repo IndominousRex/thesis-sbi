@@ -94,16 +94,20 @@ def V_Regularization(vel, vel_limit):
     return jnp.sqrt(vel**2 + vel_limit**2) * e + jnp.abs(vel) * (1 - e)
 
 
-def tire_slip(v_x_tire, v_y_tire, tire_rate):
+def tire_slip(v_x_tire, v_y_tire, tire_rate, radius_tire_param=None):
     """
-    Calculate slip with longitudinal and lateral tire velocity
+    Calculate slip with longitudinal and lateral tire velocity.
+
+    If radius_tire_param is provided it overrides the module-level default,
+    allowing the value to be passed through JIT-traced params.
     """
+    r_tire = radius_tire if radius_tire_param is None else radius_tire_param
 
     # v_reg = V_Regularization(v_x_tire, vel_limit)
     v_reg = jnp.maximum(jnp.abs(v_x_tire), vel_limit)
 
     # longitudinal slip
-    s_x = (tire_rate * radius_tire - v_x_tire) / v_reg
+    s_x = (tire_rate * r_tire - v_x_tire) / v_reg
 
     # lateral slip tan(side_slip_angle)
     s_y = -v_y_tire / v_reg
@@ -279,8 +283,11 @@ def vehicle_dx(
     gear_transmission = jnp.array([gear_transmission, gear_transmission, 0, 0])
 
     # contact forces with dynamic tire loads
+    r_tire = params.get("radius_tire", radius_tire)
     vel_tire = tire_velocity(veh_vel[0], veh_vel[1], dyaw, steer_ang)
-    s_x, s_y = tire_slip(vel_tire[:, 0], vel_tire[:, 1], tire_rate)
+    s_x, s_y = tire_slip(
+        vel_tire[:, 0], vel_tire[:, 1], tire_rate, radius_tire_param=r_tire
+    )
     F_z = static_tire_load(**params)
     s = jnp.sqrt(s_x**2 + s_y**2) + 1e-6
     F_x_tire = MTF_x(s, F_z, friction, **params) * s_x / s
@@ -330,7 +337,7 @@ def vehicle_dx(
     # Calculate net torque excluding friction forces
     drive_torque = engine_torque * gear_transmission
     resistance_torque = (
-        F_x_tire * radius_tire + roll_resistance + break_torque * jnp.sign(tire_rate)
+        F_x_tire * r_tire + roll_resistance + break_torque * jnp.sign(tire_rate)
     )
 
     # Vectorized condition over all 4 tires
