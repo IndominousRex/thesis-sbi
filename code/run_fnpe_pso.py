@@ -54,6 +54,7 @@ def patch_vehicle_model(pso_results: dict):
     global_params = pso_results["global_params"]
 
     # Map PSO global param names -> default_params keys
+    # Supports both old format (c_1x etc. per-trajectory) and new global format
     param_mapping = {
         "mass": "mass",
         "Inertia_z": "Inertia_z",
@@ -66,6 +67,11 @@ def patch_vehicle_model(pso_results: dict):
         "E_y": "E_y",
         "C_roll1": "C_roll1",
         "C_roll2": "C_roll2",
+        # These are global in the new PSO format (run_pso_global.py)
+        "c_1x": "c_1x",
+        "c_2x": "c_2x",
+        "C_x": "C_x",
+        "E_x": "E_x",
     }
 
     print("\n[PSO] Patching VehicleModel.default_params (global params):")
