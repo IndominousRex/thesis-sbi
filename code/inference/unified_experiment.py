@@ -1055,6 +1055,220 @@ def run_real_data_evaluation(
     return metrics
 
 
+def run_multi_trajectory_ppc(
+    cfg: ExperimentConfig,
+    exp_dir: Path,
+    fig_dir: Path,
+    posterior,
+    normalizer: Normalizer,
+    device: torch.device,
+    T_event: int,
+    data_dir: str = "../data/measurements",
+    K_ppc: int = 300,
+    pso_trajectory_params: Optional[List[Dict]] = None,
+) -> Dict[str, Any]:
+    """
+    Run posterior predictive checks on ALL measurement CSV trajectories.
+
+    For each CSV in *data_dir*, builds a real-data window, samples from the
+    posterior, forward-simulates, plots PPC time-series, and computes metrics.
+    Aggregated results are saved to ``exp_dir / multi_traj_ppc_metrics.json``.
+
+    Args:
+        cfg:          Experiment configuration (T_seg, obs_dim, etc.)
+        exp_dir:      Experiment output directory
+        fig_dir:      Directory for figures
+        posterior:    Trained posterior
+        normalizer:   Data normalizer (for conditioning and theta mapping)
+        device:       Torch device
+        T_event:      Expected time-series length (must match training)
+        data_dir:     Path to directory containing measurement CSVs
+        K_ppc:        Number of posterior predictive samples per trajectory
+        pso_trajectory_params:
+            Optional list of per-trajectory PSO results (each dict should
+            contain at least ``"csv"`` and ``"params"``).  Used only for
+            logging the PSO-optimized mu alongside the posterior estimate.
+
+    Returns:
+        Dict with per-trajectory and aggregate PPC metrics.
+    """
+    import pandas as pd
+    from pathlib import Path as _Path
+
+    data_path = _Path(data_dir)
+    csv_files = sorted(data_path.glob("*.csv"))
+    if not csv_files:
+        print(f"[MULTI-PPC] No CSV files found in {data_path}")
+        return {}
+
+    print(f"\n{'='*60}")
+    print(f"Multi-Trajectory Posterior Predictive Check")
+    print(f"{'='*60}")
+    print(f"  Data dir:    {data_path}")
+    print(f"  Num CSVs:    {len(csv_files)}")
+    print(f"  K_ppc:       {K_ppc}")
+    print(f"  T_event:     {T_event}")
+    print(f"{'='*60}\n")
+
+    # Create sub-directory for multi-trajectory PPC figures
+    ppc_fig_dir = fig_dir / "multi_traj_ppc"
+    ppc_fig_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build lookup for PSO per-trajectory params (if provided)
+    pso_mu_lookup: Dict[str, float] = {}
+    if pso_trajectory_params:
+        for tp in pso_trajectory_params:
+            csv_name = _Path(tp.get("csv", "")).name
+            mu_val = tp.get("params", {}).get("mu")
+            if csv_name and mu_val is not None:
+                pso_mu_lookup[csv_name] = float(mu_val)
+
+    per_traj_results: List[Dict[str, Any]] = []
+
+    for i, csv_path in enumerate(csv_files):
+        traj_name = csv_path.stem
+        print(f"\n--- Trajectory {i+1}/{len(csv_files)}: {traj_name} ---")
+
+        try:
+            df_real = pd.read_csv(csv_path)
+        except Exception as e:
+            print(f"  [SKIP] Failed to read CSV: {e}")
+            continue
+
+        # Build observation window + controls
+        try:
+            x_obs_full, controls_real, start_idx = build_real_window_from_csv(
+                df_real,
+                cfg,
+                device,
+                start_idx=None,
+                prefer_low_brake=True,
+                brake_thresh=5.0,
+                max_viol_frac=0.01,
+                rate_body_z_in_deg_s=True,
+                tire_rates_in_rpm=False,
+                vel_body_in_kmh=False,
+            )
+        except Exception as e:
+            print(f"  [SKIP] Failed to build real window: {e}")
+            continue
+
+        # Check time length matches training
+        if x_obs_full.shape[1] != T_event:
+            print(
+                f"  [SKIP] Window length {x_obs_full.shape[1]} != T_event={T_event}"
+            )
+            continue
+
+        print(
+            f"  Real window: shape={x_obs_full.shape}, start_idx={start_idx}"
+        )
+
+        # Posterior predictive
+        try:
+            y_real, y_ppc = posterior_predictive_from_real(
+                posterior,
+                x_obs_full,
+                controls_real,
+                cfg,
+                normalizer=normalizer,
+                device=device,
+                K_ppc=K_ppc,
+            )
+        except Exception as e:
+            print(f"  [SKIP] PPC simulation failed: {e}")
+            continue
+
+        print(f"  PPC shapes: y_real={y_real.shape}, y_ppc={y_ppc.shape}")
+
+        # Plot PPC for this trajectory
+        if not cfg.no_plots:
+            ppc_path = ppc_fig_dir / f"ppc_{traj_name}.png"
+            title = f"PPC: {traj_name}"
+            if csv_path.name in pso_mu_lookup:
+                title += f" (PSO mu={pso_mu_lookup[csv_path.name]:.4f})"
+            plot_ppc_trajectories(
+                y_real=y_real,
+                y_ppc=y_ppc,
+                obs_labels=OBS_LABELS,
+                dt=cfg.dt,
+                out_path=ppc_path,
+                max_trajs=20,
+                plot_all_trajs=True,
+                max_dims=cfg.obs_dim,
+                title=title,
+            )
+
+        # Compute metrics
+        traj_metrics = real_data_trajectory_metrics(
+            y_real, y_ppc, normalize_w2=True
+        )
+
+        result_entry = {
+            "csv": csv_path.name,
+            "trajectory": traj_name,
+            "start_idx": int(start_idx),
+            "metrics": traj_metrics,
+        }
+        if csv_path.name in pso_mu_lookup:
+            result_entry["pso_mu"] = pso_mu_lookup[csv_path.name]
+
+        per_traj_results.append(result_entry)
+
+        print(f"  RMSE: {traj_metrics['rmse_overall']:.4f}")
+        print(f"  W2:   {traj_metrics['w2']:.4f}")
+
+    # Aggregate metrics across trajectories
+    if per_traj_results:
+        rmses = [r["metrics"]["rmse_overall"] for r in per_traj_results]
+        w2s = [r["metrics"]["w2"] for r in per_traj_results]
+        aggregate = {
+            "num_trajectories": len(per_traj_results),
+            "rmse_mean": float(np.mean(rmses)),
+            "rmse_std": float(np.std(rmses)),
+            "rmse_min": float(np.min(rmses)),
+            "rmse_max": float(np.max(rmses)),
+            "w2_mean": float(np.mean(w2s)),
+            "w2_std": float(np.std(w2s)),
+            "w2_min": float(np.min(w2s)),
+            "w2_max": float(np.max(w2s)),
+        }
+    else:
+        aggregate = {"num_trajectories": 0}
+
+    combined = {
+        "aggregate": aggregate,
+        "per_trajectory": per_traj_results,
+    }
+
+    # Save
+    out_path = exp_dir / "multi_traj_ppc_metrics.json"
+    with out_path.open("w") as f:
+        json.dump(combined, f, indent=2, default=tensor_to_python)
+
+    # Print summary
+    print(f"\n{'='*60}")
+    print(f"Multi-Trajectory PPC Summary")
+    print(f"{'='*60}")
+    if per_traj_results:
+        print(f"  Trajectories evaluated: {len(per_traj_results)}/{len(csv_files)}")
+        print(f"  RMSE  mean={aggregate['rmse_mean']:.4f}  std={aggregate['rmse_std']:.4f}")
+        print(f"  W2    mean={aggregate['w2_mean']:.4f}  std={aggregate['w2_std']:.4f}")
+        print(f"\n  Per-trajectory breakdown:")
+        for r in per_traj_results:
+            mu_str = f"  (PSO mu={r['pso_mu']:.4f})" if "pso_mu" in r else ""
+            print(
+                f"    {r['trajectory']:<50}  RMSE={r['metrics']['rmse_overall']:.4f}  "
+                f"W2={r['metrics']['w2']:.4f}{mu_str}"
+            )
+    else:
+        print("  No trajectories evaluated successfully.")
+    print(f"\n  Results saved to {out_path}")
+    print(f"{'='*60}\n")
+
+    return combined
+
+
 # =============================================================================
 # Main Experiment Runner
 # =============================================================================

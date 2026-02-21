@@ -241,6 +241,23 @@ def parse_args():
         type=str,
         default="../data/measurements/Jeversen_2022_10_12_110132.csv",
     )
+    p.add_argument(
+        "--data-dir",
+        type=str,
+        default="../data/measurements",
+        help="Directory containing all measurement CSVs for multi-trajectory PPC",
+    )
+    p.add_argument(
+        "--K-ppc",
+        type=int,
+        default=300,
+        help="Number of posterior predictive samples per trajectory",
+    )
+    p.add_argument(
+        "--skip-multi-ppc",
+        action="store_true",
+        help="Skip multi-trajectory PPC evaluation",
+    )
 
     # --- Output ---
     p.add_argument("--results-root", type=str, default="experiments")
@@ -382,7 +399,40 @@ def main():
     print(f"  Device:         {cfg.device}")
     print("=" * 70)
 
-    run_experiment(cfg)
+    results = run_experiment(cfg)
+
+    # ---------------------------------------------------------------
+    # 5) Multi-trajectory PPC evaluation on all measurement CSVs
+    # ---------------------------------------------------------------
+    if not args.skip_multi_ppc and results.get("posterior") is not None:
+        from inference.unified_experiment import run_multi_trajectory_ppc
+        from utils.env_utils import get_device
+        import torch
+
+        exp_dir = results["exp_dir"]
+        fig_dir = exp_dir / "figures"
+        fig_dir.mkdir(parents=True, exist_ok=True)
+
+        # T_event = cfg.T_seg (training and real window share same length)
+        T_event = cfg.T_seg
+        device = get_device(cfg.device)
+
+        run_multi_trajectory_ppc(
+            cfg=cfg,
+            exp_dir=exp_dir,
+            fig_dir=fig_dir,
+            posterior=results["posterior"],
+            normalizer=results["normalizer"],
+            device=device,
+            T_event=T_event,
+            data_dir=args.data_dir,
+            K_ppc=args.K_ppc,
+            pso_trajectory_params=pso_results.get("trajectory_params"),
+        )
+    elif args.skip_multi_ppc:
+        print("[PSO] Skipping multi-trajectory PPC (--skip-multi-ppc)")
+    else:
+        print("[PSO] Skipping multi-trajectory PPC (no posterior available)")
 
 
 if __name__ == "__main__":

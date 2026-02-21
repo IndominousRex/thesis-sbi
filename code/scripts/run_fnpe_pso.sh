@@ -27,7 +27,7 @@ T_SEG=${3:-3000}
 NUM_SIM=${4:-2000}
 
 # Path to PSO results (relative to code dir)
-PSO_JSON="notebooks/experiments/pso_optimization_results.json"
+PSO_JSON="notebooks/experiments/pso_global_optimization_results.json"
 
 # ==============================================================================
 # Environment setup
@@ -72,7 +72,9 @@ srun python run_fnpe_pso.py \
     --num-epochs 200 \
     --batch-size 512 \
     --fnpe-steps-per-epoch 10000 \
-    --fnpe-diffusion-steps 500
+    --fnpe-diffusion-steps 500 \
+    --data-dir ../data/measurements \
+    --K-ppc 300
 
 echo "=================================================="
 echo "[$(date)] Completed"
