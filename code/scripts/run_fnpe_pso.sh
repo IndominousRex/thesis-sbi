@@ -26,7 +26,7 @@ EXP_NAME=${1:-fnpe_pso_optimized}
 FNPE_NUM_SIM=${2:-10000}
 T_SEG=${3:-1000}
 NUM_SIM=${4:-20000}
-PILOT_LENGTH=${5:-1500}
+PILOT_LENGTH=${5:-500}
 SKIP_NORM=${6:-no}   # "yes" to disable normalization
 
 # Path to PSO results (relative to code dir)
