@@ -210,7 +210,12 @@ def parse_args():
         "--fnpe-model-type", type=str, default="gru", choices=["gru", "linear"]
     )
     p.add_argument("--fnpe-window-size", type=int, default=2)
-    p.add_argument("--fnpe-max-obs-len", type=int, default=50)
+    p.add_argument(
+        "--fnpe-t-min",
+        type=float,
+        default=0.05,
+        help="SDE T_min (default 0.05, was 0.01)",
+    )
     p.add_argument("--fnpe-steps-per-epoch", type=int, default=10000)
     p.add_argument("--fnpe-diffusion-steps", type=int, default=500)
     p.add_argument("--fnpe-score-fn", type=str, default="gauss_corrected")
@@ -218,6 +223,28 @@ def parse_args():
     p.add_argument("--fnpe-pilot-fraction", type=float, default=0.02)
     p.add_argument("--fnpe-pilot-length", type=int, default=1500)
     p.add_argument("--fnpe-proposal-noise", type=float, default=0.03)
+    p.add_argument(
+        "--fnpe-skip-normalize",
+        action="store_true",
+        help="Disable internal FNPE normalization (debug mode)",
+    )
+    p.add_argument(
+        "--fnpe-clip-samples",
+        action="store_true",
+        default=True,
+        help="Clip diffusion samples to prior bounds (default: True)",
+    )
+    p.add_argument(
+        "--fnpe-no-clip-samples",
+        action="store_true",
+        help="Disable diffusion sample clipping",
+    )
+    p.add_argument(
+        "--fnpe-gauss-precision-scale",
+        type=float,
+        default=None,
+        help="Fixed precision scale for GaussCorrectedScoreFn (None = auto-estimate)",
+    )
 
     # --- Training ---
     p.add_argument("--lr", type=float, default=5e-4)
@@ -359,7 +386,7 @@ def main():
         fnpe_num_hidden=args.fnpe_num_hidden,
         fnpe_model_type=args.fnpe_model_type,
         fnpe_window_size=args.fnpe_window_size,
-        fnpe_max_obs_len=args.fnpe_max_obs_len,
+        fnpe_t_min=args.fnpe_t_min,
         fnpe_steps_per_epoch=args.fnpe_steps_per_epoch,
         fnpe_num_diffusion_steps=args.fnpe_diffusion_steps,
         fnpe_score_fn_type=args.fnpe_score_fn,
@@ -368,6 +395,9 @@ def main():
         fnpe_pilot_length=args.fnpe_pilot_length,
         fnpe_proposal_noise=args.fnpe_proposal_noise,
         fnpe_num_simulations=args.fnpe_num_sim,
+        fnpe_skip_normalize=args.fnpe_skip_normalize,
+        fnpe_clip_samples=args.fnpe_clip_samples and not args.fnpe_no_clip_samples,
+        fnpe_gauss_precision_scale=args.fnpe_gauss_precision_scale,
         # Diagnostics
         run_sbc=not args.no_sbc,
         run_swd=not args.no_swd,

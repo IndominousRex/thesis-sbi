@@ -1155,14 +1155,10 @@ def run_multi_trajectory_ppc(
 
         # Check time length matches training
         if x_obs_full.shape[1] != T_event:
-            print(
-                f"  [SKIP] Window length {x_obs_full.shape[1]} != T_event={T_event}"
-            )
+            print(f"  [SKIP] Window length {x_obs_full.shape[1]} != T_event={T_event}")
             continue
 
-        print(
-            f"  Real window: shape={x_obs_full.shape}, start_idx={start_idx}"
-        )
+        print(f"  Real window: shape={x_obs_full.shape}, start_idx={start_idx}")
 
         # Posterior predictive
         try:
@@ -1200,9 +1196,7 @@ def run_multi_trajectory_ppc(
             )
 
         # Compute metrics
-        traj_metrics = real_data_trajectory_metrics(
-            y_real, y_ppc, normalize_w2=True
-        )
+        traj_metrics = real_data_trajectory_metrics(y_real, y_ppc, normalize_w2=True)
 
         result_entry = {
             "csv": csv_path.name,
@@ -1252,7 +1246,9 @@ def run_multi_trajectory_ppc(
     print(f"{'='*60}")
     if per_traj_results:
         print(f"  Trajectories evaluated: {len(per_traj_results)}/{len(csv_files)}")
-        print(f"  RMSE  mean={aggregate['rmse_mean']:.4f}  std={aggregate['rmse_std']:.4f}")
+        print(
+            f"  RMSE  mean={aggregate['rmse_mean']:.4f}  std={aggregate['rmse_std']:.4f}"
+        )
         print(f"  W2    mean={aggregate['w2_mean']:.4f}  std={aggregate['w2_std']:.4f}")
         print(f"\n  Per-trajectory breakdown:")
         for r in per_traj_results:
@@ -1401,28 +1397,35 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "score_fn_type": cfg.fnpe_score_fn_type,
                 "stop_after_epochs": cfg.stop_after_epochs,
                 "validation_fraction": cfg.validation_fraction,
-                "max_obs_len": cfg.fnpe_max_obs_len,
                 "proposal_type": cfg.fnpe_proposal_type,  # "pred" (correct), "naive", or "trajectory" (old)
                 "pilot_fraction": cfg.fnpe_pilot_fraction,  # Fraction of sims for pilots (default 2%)
                 "pilot_length": cfg.fnpe_pilot_length,  # Length of pilot trajectories (default 500)
                 "proposal_noise": cfg.fnpe_proposal_noise,  # Noise scale (default 0.03 * std)
+                "gauss_posterior_precission_scale": getattr(
+                    cfg, "fnpe_gauss_precision_scale", None
+                ),
             }
         )
-        num_windows = cfg.fnpe_max_obs_len - cfg.fnpe_window_size + 1
         proposal_desc = {
             "pred": "proposal from pilot sims (CORRECT)",
             "naive": "initial state distribution only",
             "trajectory": "trajectory pairs (OLD/INCORRECT)",
         }.get(cfg.fnpe_proposal_type, cfg.fnpe_proposal_type)
         print(
-            f"[FNPE] window_size={cfg.fnpe_window_size}, max_obs_len={cfg.fnpe_max_obs_len} "
-            f"(N={num_windows} windows)",
+            f"[FNPE] window_size={cfg.fnpe_window_size}",
             flush=True,
         )
         print(
             f"[FNPE] proposal_type='{cfg.fnpe_proposal_type}' - {proposal_desc}",
             flush=True,
         )
+        if getattr(cfg, "fnpe_skip_normalize", False):
+            print(
+                "[FNPE] *** NORMALIZATION DISABLED (fnpe_skip_normalize=True) ***",
+                flush=True,
+            )
+        if getattr(cfg, "fnpe_clip_samples", False):
+            print("[FNPE] Diffusion sample clipping ENABLED", flush=True)
 
     method = build_method(cfg.method, cfg, prior_norm, device, **method_kwargs)
     method.build(input_dim=D_in, seq_len=T_event)
@@ -1443,27 +1446,40 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             from utils.normalization import Normalizer
 
             obs_dim = cfg.obs_dim
-            ctrl_mean = norm_stats.get("ctrl_mean")
-            ctrl_std = norm_stats.get("ctrl_std")
-            if ctrl_mean is None or ctrl_std is None:
-                ctrl_mean = np.zeros(4, dtype=np.float32)
-                ctrl_std = np.ones(4, dtype=np.float32)
-            normalizer = Normalizer(
-                obs_mean=torch.tensor(
-                    np.array(norm_stats["obs_mean"]), dtype=torch.float32
-                ),
-                obs_std=torch.tensor(
-                    np.array(norm_stats["obs_std"]), dtype=torch.float32
-                ),
-                ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
-                ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
-                theta_mean=torch.tensor(
-                    np.array(norm_stats["theta_mean"]), dtype=torch.float32
-                ),
-                theta_std=torch.tensor(
-                    np.array(norm_stats["theta_std"]), dtype=torch.float32
-                ),
-            ).to(device)
+            skip_norm = getattr(cfg, "fnpe_skip_normalize", False)
+            if skip_norm or norm_stats.get("obs_mean") is None:
+                # Identity normalizer: mean=0, std=1 → no-op transform
+                print("[NORM] Using identity normalizer (normalization disabled)")
+                normalizer = Normalizer(
+                    obs_mean=torch.zeros(obs_dim, dtype=torch.float32),
+                    obs_std=torch.ones(obs_dim, dtype=torch.float32),
+                    ctrl_mean=torch.zeros(4, dtype=torch.float32),
+                    ctrl_std=torch.ones(4, dtype=torch.float32),
+                    theta_mean=torch.zeros(cfg.active_param_dim(), dtype=torch.float32),
+                    theta_std=torch.ones(cfg.active_param_dim(), dtype=torch.float32),
+                ).to(device)
+            else:
+                ctrl_mean = norm_stats.get("ctrl_mean")
+                ctrl_std = norm_stats.get("ctrl_std")
+                if ctrl_mean is None or ctrl_std is None:
+                    ctrl_mean = np.zeros(4, dtype=np.float32)
+                    ctrl_std = np.ones(4, dtype=np.float32)
+                normalizer = Normalizer(
+                    obs_mean=torch.tensor(
+                        np.array(norm_stats["obs_mean"]), dtype=torch.float32
+                    ),
+                    obs_std=torch.tensor(
+                        np.array(norm_stats["obs_std"]), dtype=torch.float32
+                    ),
+                    ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
+                    ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
+                    theta_mean=torch.tensor(
+                        np.array(norm_stats["theta_mean"]), dtype=torch.float32
+                    ),
+                    theta_std=torch.tensor(
+                        np.array(norm_stats["theta_std"]), dtype=torch.float32
+                    ),
+                ).to(device)
             # Save normalizer for consistency
             save_normalizer(normalizer, exp_dir / "stats_normalization.json")
             print(f"[NORM] Created normalizer from FNPE task stats")

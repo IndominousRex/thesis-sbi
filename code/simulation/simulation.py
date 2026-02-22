@@ -259,8 +259,10 @@ def rand_block_accel(rng, accel_scale: float = 1.0):
 
 
 def rand_block_brake(rng):
-    brk = float(rng.uniform(180, 380))
-    duty = float(rng.uniform(0.2, 1.0))
+    brk = float(
+        rng.uniform(100, 250)
+    )  # Reduced from 180-380 to stay in linear Pacejka region
+    duty = float(rng.uniform(0.2, 0.8))  # Reduced max duty from 1.0 to 0.8
     dur = float(rng.uniform(0.6, 3.0))
     gear = int(rng.integers(2, 6))
     return {

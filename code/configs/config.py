@@ -113,20 +113,29 @@ class ExperimentConfig:
     # - "fnpe": Fast, uses (1-N)*prior + sum(scores)
     # - "uncorrected": Uses marginal prior score
     fnpe_score_fn_type: str = "gauss_corrected"
-    # Max observation length at inference
-    # Keep reasonably small to avoid (1-N)*prior_score dominating with large N
-    fnpe_max_obs_len: int = 50
     # Proposal type for training data generation:
     # - "pred" (DEFAULT, CORRECT): Sample states from pilot simulation pool
     # - "naive": Sample from initial state distribution only
     # - "trajectory" (OLD, INCORRECT): Divide trajectories into pairs
     fnpe_proposal_type: str = "pred"
+    # SDE T_min: minimum diffusion time. Higher = more stable but less precise.
+    # Default 0.05 (was 0.01, which caused score explosion near t→0).
+    fnpe_t_min: float = 0.05
+    # Debugging: skip internal FNPE normalization of thetas and observations.
+    # When True, raw (physical-unit) data is fed directly to the score network.
+    # Use to diagnose whether normalization is causing posterior issues.
+    fnpe_skip_normalize: bool = False
+    # Clip diffusion samples to prior bounds during reverse sampling.
+    # Prevents physically impossible values (e.g., negative mu).
+    fnpe_clip_samples: bool = True
     # Proposal hyperparameters (only used when proposal_type="pred")
     fnpe_pilot_fraction: float = 0.02  # Fraction of num_simulations for pilot sims (2%)
     fnpe_pilot_length: int = 1500  # Length of each pilot trajectory
     fnpe_proposal_noise: float = (
         0.03  # Noise scale: noise_scale = proposal_noise * std(pool)
     )
+    # Precision scale for GaussCorrectedScoreFn (None = auto-estimate).
+    fnpe_gauss_precision_scale: Optional[float] = None
 
     # --- Training ---
     learning_rate: float = 5e-4  # Lower LR for complex data (MarkovSBI large uses 5e-4)
@@ -257,7 +266,6 @@ class ExperimentConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
         return asdict(self)
-
 
     def get_dataset_cache_path(self) -> Path:
         """Get path for cached dataset."""

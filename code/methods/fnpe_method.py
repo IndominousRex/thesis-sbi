@@ -135,16 +135,22 @@ class FNPEPosterior:
         x_norm = self.task.normalize_x(x_jax)
 
         # Check if score function requires hyperparameter estimation (e.g., GaussCorrectedScoreFn)
-        # This is VERY slow - should use fnpe score_fn_type instead for speed
         score_fn = self.sampler.kernel.score_fn
         if (
             hasattr(score_fn, "requires_hyperparameters")
             and score_fn.requires_hyperparameters
         ):
-            self.key, key_hyper = jax.random.split(self.key)
-            score_fn.estimate_hyperparameters(
-                x_norm, self.sampler.theta_shape, key_hyper
-            )
+            # Cache: skip re-estimation if observation hasn't changed
+            x_hash = hash(x_norm.tobytes())
+            if (
+                not hasattr(self, "_hyper_cache_hash")
+                or self._hyper_cache_hash != x_hash
+            ):
+                self.key, key_hyper = jax.random.split(self.key)
+                score_fn.estimate_hyperparameters(
+                    x_norm, self.sampler.theta_shape, key_hyper
+                )
+                self._hyper_cache_hash = x_hash
 
         # Sample from diffusion
         self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
@@ -252,10 +258,16 @@ class FNPEPosterior:
             hasattr(score_fn, "requires_hyperparameters")
             and score_fn.requires_hyperparameters
         ):
-            self.key, key_hyper = jax.random.split(self.key)
-            score_fn.estimate_hyperparameters(
-                x_norm, self.sampler.theta_shape, key_hyper
-            )
+            x_hash = hash(x_norm.tobytes())
+            if (
+                not hasattr(self, "_hyper_cache_hash")
+                or self._hyper_cache_hash != x_hash
+            ):
+                self.key, key_hyper = jax.random.split(self.key)
+                score_fn.estimate_hyperparameters(
+                    x_norm, self.sampler.theta_shape, key_hyper
+                )
+                self._hyper_cache_hash = x_hash
 
         # Sample with traces using sampler.simulate (returns full trajectory)
         self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
@@ -305,7 +317,6 @@ class FNPEMethod(BaseMethod):
         score_fn_type: str = "fnpe",
         stop_after_epochs: int = 30,
         validation_fraction: float = 0.1,
-        max_obs_len: int = 50,  # Max observation windows at inference
         proposal_type: str = "pred",  # "pred" (correct), "naive", or "trajectory" (old/wrong)
         pilot_fraction: float = 0.02,  # Fraction of num_sims for pilots (2%)
         pilot_length: int = 500,  # Length of each pilot trajectory
@@ -327,7 +338,6 @@ class FNPEMethod(BaseMethod):
         self.score_fn_type = score_fn_type
         self.stop_after_epochs = stop_after_epochs
         self.validation_fraction = validation_fraction
-        self.max_obs_len = max_obs_len
         # Proposal type for training data generation
         # "pred" = correct FNPE (proposal from pilot sims)
         # "naive" = sample from initial state distribution
@@ -454,8 +464,9 @@ class FNPEMethod(BaseMethod):
         )
 
         # Initialize SDE
-        print("[FNPE] Initializing SDE...", flush=True)
-        self.sde, self.weight_fn = init_sde(data)
+        t_min = getattr(self.cfg, "fnpe_t_min", 0.05)
+        print(f"[FNPE] Initializing SDE (T_min={t_min})...", flush=True)
+        self.sde, self.weight_fn = init_sde(data, T_min=t_min)
 
         # Train score network
         budget_epochs = self._compute_budget_epochs(num_sim)
@@ -651,7 +662,39 @@ class FNPEMethod(BaseMethod):
         time_grid = jnp.linspace(
             self.sde.T_min, self.sde.T_max, self.num_diffusion_steps
         )
-        self.sampler = Diffuser(kernel, time_grid, self.task.input_shape)
+
+        # Optionally clip samples to normalized prior bounds during diffusion
+        transform_state = None
+        if getattr(self.cfg, "fnpe_clip_samples", False):
+            # Compute normalized prior bounds for clipping
+            bounds = self.cfg.param_bounds()
+            low_list = [bounds[name][0] for name in self.cfg.active_parameters]
+            high_list = [bounds[name][1] for name in self.cfg.active_parameters]
+            low_phys = jnp.array(low_list, dtype=jnp.float32)
+            high_phys = jnp.array(high_list, dtype=jnp.float32)
+
+            if self.task.normalize and self.task._theta_mean is not None:
+                low_norm = (low_phys - self.task._theta_mean) / self.task._theta_std
+                high_norm = (high_phys - self.task._theta_mean) / self.task._theta_std
+            else:
+                low_norm = low_phys
+                high_norm = high_phys
+
+            from markovsbi.sampling.sample import clip_transform
+
+            transform_state = clip_transform(low_norm, high_norm)
+            print(
+                f"[FNPE] Clipping diffusion samples to "
+                f"[{np.array(low_norm)}, {np.array(high_norm)}] (normalized)",
+                flush=True,
+            )
+
+        self.sampler = Diffuser(
+            kernel,
+            time_grid,
+            self.task.input_shape,
+            transform_state=transform_state,
+        )
 
     def _compute_budget_epochs(self, num_simulations: int) -> int:
         """Compute FNPE epoch budget from simulation count, capped."""
