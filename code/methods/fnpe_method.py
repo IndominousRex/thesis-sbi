@@ -733,9 +733,11 @@ class FNPEMethod(BaseMethod):
         with open(model_path, "wb") as f:
             pickle.dump(self.params, f)
 
-        # Save normalization stats
+        # Save normalization stats (values may be None when normalization is skipped)
         norm_stats = self.task.get_normalization_stats()
-        norm_stats_json = {k: v.tolist() for k, v in norm_stats.items()}
+        norm_stats_json = {
+            k: v.tolist() if v is not None else None for k, v in norm_stats.items()
+        }
         with open(exp_dir / "normalization_stats.json", "w") as f:
             json.dump(norm_stats_json, f, indent=2)
 
