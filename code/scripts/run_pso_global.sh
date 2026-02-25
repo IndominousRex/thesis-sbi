@@ -43,7 +43,7 @@ echo "Job ID:      ${SLURM_JOB_ID:-local}"
 echo "Max iter:    ${MAX_ITER}"
 echo "Swarm size:  ${SWARM_SIZE}"
 echo "Log scale:   ${LOG_SCALE}"
-echo "==================================================""
+echo "=================================================="
 
 cd /bigwork/nhkbarit/thesis-code/code
 
