@@ -143,8 +143,30 @@ PER_TRAJ_BOUNDS = {
     "mu": (0.3, 1.2),
 }
 
+
 # --- Observation-channel weights for MSE ---
 OBS_WEIGHTS = np.array([1.0, 5.0, 1.0, 2.0, 1.0, 3.0, 3.0, 3.0, 3.0], dtype=np.float32)
+
+# --- Parameters to optimize in log scale ---
+LOG_SCALE_PARAMS = ["mass", "Inertia_z", "Inertia_tire", "c_1y", "c_2y", "c_1x", "c_2x"]
+
+
+def log_transform_params(x, param_names):
+    return np.array(
+        [
+            np.log(x[i]) if name in LOG_SCALE_PARAMS else x[i]
+            for i, name in enumerate(param_names)
+        ]
+    )
+
+
+def exp_transform_params(x, param_names):
+    return np.array(
+        [
+            np.exp(x[i]) if name in LOG_SCALE_PARAMS else x[i]
+            for i, name in enumerate(param_names)
+        ]
+    )
 
 
 # ============================================================================
@@ -311,7 +333,8 @@ def simulate_trajectory_jit(
 
 def decode_params(x, num_trajectories):
     """
-    Decode flat optimisation vector → global dict + list of per-traj dicts.
+    Decode flat optimisation vector → global dict + list of per-traj dicts (linear scale).
+    Replaced at runtime by a log-scale variant when --log-scale is set.
 
     Layout:
         x[0 : NUM_GLOBAL]                             — 16 global params
@@ -320,7 +343,6 @@ def decode_params(x, num_trajectories):
     global_dict = {}
     for i, name in enumerate(GLOBAL_PARAMS):
         global_dict[name] = float(x[i])
-
     traj_params_list = []
     for traj_idx in range(num_trajectories):
         offset = NUM_GLOBAL + traj_idx * NUM_PER_TRAJ
@@ -328,7 +350,6 @@ def decode_params(x, num_trajectories):
         for j, name in enumerate(PER_TRAJ_PARAMS):
             traj_dict[name] = float(x[offset + j])
         traj_params_list.append(traj_dict)
-
     return global_dict, traj_params_list
 
 
@@ -486,6 +507,11 @@ def parse_args():
         default="notebooks/experiments/pso_global_optimization_results.json",
         help="Output JSON path (relative to code/)",
     )
+    p.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="Optimize selected parameters in log scale (mass, inertia, c_1x, c_2x, etc.)",
+    )
     return p.parse_args()
 
 
@@ -503,6 +529,7 @@ def main():
     print(f"  T_seg      : {args.T_seg}")
     print(f"  Swarm size : {args.swarm_size}")
     print(f"  Max iter   : {args.max_iter}")
+    print(f"  Log scale  : {args.log_scale}")
     print(f"  JAX backend: {jax.default_backend()}")
     print("=" * 70)
 
@@ -517,22 +544,64 @@ def main():
         f"\n[PSO] {NUM_GLOBAL} global + {num_traj} × {NUM_PER_TRAJ} per-traj = {total_params} params\n"
     )
 
+    # ---- Bounds ----
+    lb, ub, param_names = build_bounds(num_traj)
+
+    # If log scale, transform bounds for selected params
+    if args.log_scale:
+        for i, name in enumerate(param_names):
+            if name in LOG_SCALE_PARAMS:
+                lb[i] = np.log(lb[i])
+                ub[i] = np.log(ub[i])
+        print(f"[LOG-SCALE] Optimising {LOG_SCALE_PARAMS} in log space.")
+
+    # ---- Set decode_params depending on log_scale ----
+    global decode_params
+
+    def decode_params_log(x, num_trajectories):
+        global_dict = {}
+        for i, name in enumerate(GLOBAL_PARAMS):
+            val = np.exp(x[i]) if name in LOG_SCALE_PARAMS else x[i]
+            global_dict[name] = float(val)
+        traj_params_list = []
+        for traj_idx in range(num_trajectories):
+            offset = NUM_GLOBAL + traj_idx * NUM_PER_TRAJ
+            traj_dict = {}
+            for j, pname in enumerate(PER_TRAJ_PARAMS):
+                traj_dict[pname] = float(x[offset + j])
+            traj_params_list.append(traj_dict)
+        return global_dict, traj_params_list
+
+    def decode_params_linear(x, num_trajectories):
+        global_dict = {}
+        for i, name in enumerate(GLOBAL_PARAMS):
+            global_dict[name] = float(x[i])
+        traj_params_list = []
+        for traj_idx in range(num_trajectories):
+            offset = NUM_GLOBAL + traj_idx * NUM_PER_TRAJ
+            traj_dict = {}
+            for j, name in enumerate(PER_TRAJ_PARAMS):
+                traj_dict[name] = float(x[offset + j])
+            traj_params_list.append(traj_dict)
+        return global_dict, traj_params_list
+
+    decode_params = decode_params_log if args.log_scale else decode_params_linear
+
     # ---- Build objective ----
     objective = make_objective(prepared_data)
 
     # ---- Warm-up JIT (first call is slow) ----
     print("[JIT] Warm-up call …")
-    x0 = np.array(
-        [DEFAULTS.get(n.split("_traj")[0], 0.8) for n in build_bounds(num_traj)[2]]
-    )
+    x0 = np.array([DEFAULTS.get(n.split("_traj")[0], 0.8) for n in param_names])
+    if args.log_scale:
+        for i, name in enumerate(param_names):
+            if name in LOG_SCALE_PARAMS:
+                x0[i] = np.log(x0[i])
     t0 = datetime.now()
     err0 = objective(x0)
     print(
         f"[JIT] Warm-up done in {datetime.now() - t0}.  Default-param error = {err0:.6f}\n"
     )
-
-    # ---- Bounds ----
-    lb, ub, param_names = build_bounds(num_traj)
 
     # ---- Tracking ----
     optimization_history = []
@@ -663,6 +732,7 @@ def main():
 
     results = {
         "method": "PSO (pyswarm) — global tire params, per-trajectory mu",
+        "log_scale": args.log_scale,
         "timestamp": datetime.now().isoformat(),
         "final_error": float(best_fit),
         "function_evaluations": eval_count[0],
