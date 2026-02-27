@@ -41,7 +41,8 @@ _jax_devices = jax.devices()
 print(f"[JAX] Available devices: {_jax_devices}")
 print(f"[JAX] Default backend : {jax.default_backend()}")
 
-from pyswarm import pso
+from scipy.optimize import minimize
+from scipy.stats.qmc import LatinHypercube
 
 warnings.filterwarnings("ignore")
 
@@ -438,13 +439,23 @@ def make_objective(prepared_data):
                 )
                 y_sim = np.asarray(y_sim)
 
-                if np.any(np.isnan(y_sim)):
-                    return 1e10
+                # Smooth penalty — proportional to divergence extent
+                nan_mask = np.any(np.isnan(y_sim), axis=1)
+                n_valid = int(np.sum(~nan_mask))
 
-                mse = np.mean(OBS_WEIGHTS * (y_sim - tc["y_real"]) ** 2)
-                total_error += mse
+                if n_valid == 0:
+                    total_error += 1e6  # completely diverged
+                    continue
+
+                valid_mse = float(
+                    np.mean(
+                        OBS_WEIGHTS * (y_sim[~nan_mask] - tc["y_real"][~nan_mask]) ** 2
+                    )
+                )
+                divergence_penalty = (1.0 - n_valid / tc["T"]) * 1e4
+                total_error += valid_mse + divergence_penalty
             except Exception:
-                return 1e10
+                total_error += 1e6  # smoothly penalise crashes too
 
         return total_error / num_traj
 
@@ -483,9 +494,201 @@ def build_bounds(num_trajectories):
 # ============================================================================
 
 
+# ============================================================================
+# Advanced PSO engine
+# ============================================================================
+
+
+def advanced_pso(
+    objective_fn,
+    lb,
+    ub,
+    swarm_size=50,
+    max_iter=500,
+    w_start=0.9,
+    w_end=0.4,
+    c1=1.5,
+    c2=1.5,
+    topology_switch_frac=0.7,
+    stagnation_limit=15,
+    reinit_fraction=0.3,
+    vmax_fraction=0.5,
+    ring_k=2,
+    init_positions=None,
+    seed=42,
+    callback=None,
+):
+    """
+    Advanced PSO with:
+      - Internal [0,1] normalisation (all dims comparable)
+      - lbest ring topology → gbest switch at *topology_switch_frac*
+      - Linear inertia schedule w_start → w_end
+      - Velocity clamping
+      - Stagnation detection + partial reinit of worst particles
+
+    Parameters
+    ----------
+    objective_fn : callable
+        f(x) → float, where x is in the original (lb, ub) space.
+    lb, ub : 1-D arrays
+        Bounds in the original space.
+    init_positions : (N, D) array in original space, or None.
+        If provided, the first len(init_positions) particles are placed here;
+        remaining slots (if any) are filled with uniform random samples.
+    callback : callable or None
+        Called as callback(iteration, gbest_pos_original, gbest_fit, history).
+
+    Returns
+    -------
+    gbest_pos : 1-D array in original space
+    gbest_fit : float
+    history : list[float]  – per-iteration best fitness
+    """
+    rng = np.random.default_rng(seed)
+    lb = np.asarray(lb, dtype=np.float64)
+    ub = np.asarray(ub, dtype=np.float64)
+    ndim = len(lb)
+    span = ub - lb
+    span = np.where(span == 0, 1.0, span)  # avoid div-by-zero for fixed params
+
+    switch_iter = int(topology_switch_frac * max_iter)
+
+    # ---- [0,1] normalisation helpers ----
+    def to_unit(x):
+        return (x - lb) / span
+
+    def from_unit(x01):
+        return lb + x01 * span
+
+    def obj(x01):
+        return objective_fn(from_unit(np.clip(x01, 0.0, 1.0)))
+
+    # ---- Initialise positions in [0,1]^D ----
+    if init_positions is not None:
+        n_provided = min(len(init_positions), swarm_size)
+        positions = np.clip(
+            np.array([to_unit(p) for p in init_positions[:n_provided]]), 0.0, 1.0
+        )
+        if n_provided < swarm_size:
+            extra = rng.uniform(0, 1, (swarm_size - n_provided, ndim))
+            positions = np.vstack([positions, extra])
+    else:
+        positions = rng.uniform(0, 1, (swarm_size, ndim))
+
+    # ---- Velocities (small initial) ----
+    vmax = vmax_fraction  # in [0,1] normalised space
+    velocities = rng.uniform(-vmax * 0.1, vmax * 0.1, (swarm_size, ndim))
+
+    # ---- Personal bests ----
+    pbest_pos = positions.copy()
+    pbest_fit = np.full(swarm_size, np.inf)
+
+    print(f"[PSO] Evaluating initial swarm ({swarm_size} particles) …")
+    for i in range(swarm_size):
+        pbest_fit[i] = obj(positions[i])
+
+    # ---- Global best ----
+    gbest_idx = int(np.argmin(pbest_fit))
+    gbest_pos = pbest_pos[gbest_idx].copy()
+    gbest_fit = float(pbest_fit[gbest_idx])
+    print(f"[PSO] Initial best = {gbest_fit:.6f}")
+
+    # ---- lbest ring helper ----
+    def get_lbest(idx):
+        best_f = pbest_fit[idx]
+        best_p = pbest_pos[idx].copy()
+        for offset in range(-ring_k, ring_k + 1):
+            j = (idx + offset) % swarm_size
+            if pbest_fit[j] < best_f:
+                best_f = pbest_fit[j]
+                best_p = pbest_pos[j].copy()
+        return best_p
+
+    # ---- Main loop ----
+    history = []
+    stagnation_count = 0
+    prev_gbest_fit = gbest_fit
+
+    for iteration in range(max_iter):
+        # Linear inertia decay
+        w = w_start - (w_start - w_end) * (iteration / max(max_iter - 1, 1))
+
+        # Topology switch announcement
+        use_gbest = iteration >= switch_iter
+        if iteration == switch_iter and switch_iter > 0:
+            print(
+                f"  Iter {iteration + 1:4d} | TOPOLOGY → switching from lbest to gbest"
+            )
+
+        for i in range(swarm_size):
+            r1 = rng.uniform(0, 1, ndim)
+            r2 = rng.uniform(0, 1, ndim)
+
+            cognitive = c1 * r1 * (pbest_pos[i] - positions[i])
+
+            if use_gbest:
+                social_target = gbest_pos
+            else:
+                social_target = get_lbest(i)
+
+            social = c2 * r2 * (social_target - positions[i])
+
+            velocities[i] = w * velocities[i] + cognitive + social
+            velocities[i] = np.clip(velocities[i], -vmax, vmax)
+
+            positions[i] = positions[i] + velocities[i]
+            positions[i] = np.clip(positions[i], 0.0, 1.0)
+
+            fit = obj(positions[i])
+
+            if fit < pbest_fit[i]:
+                pbest_fit[i] = fit
+                pbest_pos[i] = positions[i].copy()
+
+                if fit < gbest_fit:
+                    gbest_fit = fit
+                    gbest_pos = positions[i].copy()
+                    gbest_idx = i
+
+        history.append(gbest_fit)
+
+        # ---- Stagnation detection + partial reinit ----
+        if gbest_fit < prev_gbest_fit - 1e-10:
+            stagnation_count = 0
+            prev_gbest_fit = gbest_fit
+        else:
+            stagnation_count += 1
+
+        if stagnation_count >= stagnation_limit:
+            n_reinit = max(1, int(reinit_fraction * swarm_size))
+            worst_indices = np.argsort(pbest_fit)[-n_reinit:]
+            reinited = 0
+            for idx in worst_indices:
+                if idx == gbest_idx:
+                    continue  # never reinit the global best particle
+                positions[idx] = rng.uniform(0, 1, ndim)
+                velocities[idx] = rng.uniform(-vmax * 0.1, vmax * 0.1, ndim)
+                # keep pbest memory (partial reset: reset position & velocity only)
+                reinited += 1
+            stagnation_count = 0
+            print(
+                f"  Iter {iteration + 1:4d} | STAGNATION → reinitialised {reinited} particles"
+            )
+
+        if callback:
+            callback(iteration, from_unit(gbest_pos), gbest_fit, history)
+
+    return from_unit(gbest_pos), gbest_fit, history
+
+
+# ============================================================================
+# CLI
+# ============================================================================
+
+
 def parse_args():
     p = argparse.ArgumentParser(
-        description="PSO optimisation of vehicle model parameters (global c_1x/c_2x/C_x/E_x).",
+        description="Advanced PSO optimisation of vehicle model parameters.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(
@@ -498,9 +701,34 @@ def parse_args():
     p.add_argument("--T-seg", type=int, default=800)
     p.add_argument("--swarm-size", type=int, default=50)
     p.add_argument("--max-iter", type=int, default=500)
-    p.add_argument("--omega", type=float, default=0.7, help="Inertia weight")
-    p.add_argument("--phip", type=float, default=1.5, help="Cognitive coefficient")
-    p.add_argument("--phig", type=float, default=1.5, help="Social coefficient")
+    p.add_argument("--w-start", type=float, default=0.9, help="Initial inertia weight")
+    p.add_argument("--w-end", type=float, default=0.4, help="Final inertia weight")
+    p.add_argument("--c1", type=float, default=1.5, help="Cognitive coefficient")
+    p.add_argument("--c2", type=float, default=1.5, help="Social coefficient")
+    p.add_argument(
+        "--topology-switch-frac",
+        type=float,
+        default=0.7,
+        help="Fraction of iterations using lbest ring before switching to gbest",
+    )
+    p.add_argument(
+        "--stagnation-limit",
+        type=int,
+        default=15,
+        help="Iterations without improvement before reinitialising worst particles",
+    )
+    p.add_argument(
+        "--reinit-fraction",
+        type=float,
+        default=0.3,
+        help="Fraction of swarm to reinitialise on stagnation",
+    )
+    p.add_argument(
+        "--no-polish",
+        action="store_true",
+        help="Disable local Powell optimisation after PSO",
+    )
+    p.add_argument("--seed", type=int, default=42, help="Random seed")
     p.add_argument(
         "--output",
         type=str,
@@ -510,9 +738,14 @@ def parse_args():
     p.add_argument(
         "--log-scale",
         action="store_true",
-        help="Optimize selected parameters in log scale (mass, inertia, c_1x, c_2x, etc.)",
+        help="Optimise selected parameters in log scale (mass, inertia, c_1x, c_2x, etc.)",
     )
     return p.parse_args()
+
+
+# ============================================================================
+# Main
+# ============================================================================
 
 
 def main():
@@ -523,14 +756,22 @@ def main():
         data_dir = (PROJECT_ROOT / data_dir).resolve()
 
     print("=" * 70)
-    print("PSO Optimisation — Global Tire Params, Per-Trajectory mu Only")
+    print("Advanced PSO — Global Tire Params, Per-Trajectory mu Only")
     print("=" * 70)
-    print(f"  Data dir   : {data_dir}")
-    print(f"  T_seg      : {args.T_seg}")
-    print(f"  Swarm size : {args.swarm_size}")
-    print(f"  Max iter   : {args.max_iter}")
-    print(f"  Log scale  : {args.log_scale}")
-    print(f"  JAX backend: {jax.default_backend()}")
+    print(f"  Data dir         : {data_dir}")
+    print(f"  T_seg            : {args.T_seg}")
+    print(f"  Swarm size       : {args.swarm_size}")
+    print(f"  Max iter         : {args.max_iter}")
+    print(f"  Inertia          : {args.w_start} → {args.w_end}")
+    print(f"  c1, c2           : {args.c1}, {args.c2}")
+    print(f"  Topology switch  : lbest → gbest at {args.topology_switch_frac:.0%}")
+    print(
+        f"  Stagnation reinit: worst {args.reinit_fraction:.0%} after {args.stagnation_limit} iters"
+    )
+    print(f"  Local polish     : {'off' if args.no_polish else 'Powell'}")
+    print(f"  Log scale        : {args.log_scale}")
+    print(f"  Seed             : {args.seed}")
+    print(f"  JAX backend      : {jax.default_backend()}")
     print("=" * 70)
 
     # ---- Load data ----
@@ -541,13 +782,14 @@ def main():
     num_traj = len(prepared_data)
     total_params = NUM_GLOBAL + NUM_PER_TRAJ * num_traj
     print(
-        f"\n[PSO] {NUM_GLOBAL} global + {num_traj} × {NUM_PER_TRAJ} per-traj = {total_params} params\n"
+        f"\n[PSO] {NUM_GLOBAL} global + {num_traj} × {NUM_PER_TRAJ} per-traj"
+        f" = {total_params} params\n"
     )
 
     # ---- Bounds ----
     lb, ub, param_names = build_bounds(num_traj)
 
-    # If log scale, transform bounds for selected params
+    # Log-scale transform on bounds for selected params
     if args.log_scale:
         for i, name in enumerate(param_names):
             if name in LOG_SCALE_PARAMS:
@@ -592,67 +834,104 @@ def main():
 
     # ---- Warm-up JIT (first call is slow) ----
     print("[JIT] Warm-up call …")
-    x0 = np.array([DEFAULTS.get(n.split("_traj")[0], 0.8) for n in param_names])
+    x_default = np.array([DEFAULTS.get(n.split("_traj")[0], 0.8) for n in param_names])
     if args.log_scale:
         for i, name in enumerate(param_names):
             if name in LOG_SCALE_PARAMS:
-                x0[i] = np.log(x0[i])
+                x_default[i] = np.log(x_default[i])
     t0 = datetime.now()
-    err0 = objective(x0)
+    err0 = objective(x_default)
     print(
-        f"[JIT] Warm-up done in {datetime.now() - t0}.  Default-param error = {err0:.6f}\n"
+        f"[JIT] Warm-up done in {datetime.now() - t0}.  "
+        f"Default-param error = {err0:.6f}\n"
     )
 
-    # ---- Tracking ----
-    optimization_history = []
-    eval_count = [0]
-    start_time = [datetime.now()]
-    swarm_size = args.swarm_size
-
-    def objective_with_tracking(x):
-        error = objective(x)
-        eval_count[0] += 1
-
-        # Log once per completed swarm iteration
-        if eval_count[0] % swarm_size == 0:
-            if len(optimization_history) == 0 or error < min(optimization_history):
-                optimization_history.append(error)
-            else:
-                optimization_history.append(min(optimization_history))
-
-            iter_num = len(optimization_history)
-            if iter_num % 10 == 0:
-                elapsed = datetime.now() - start_time[0]
-                print(
-                    f"  Iter {iter_num:4d} | Best = {optimization_history[-1]:.6f} | "
-                    f"Elapsed = {elapsed}"
-                )
-        return error
-
-    # ---- Run PSO ----
+    # ---- LHS initialisation with seeded defaults (tip #6) ----
+    print("[INIT] Latin Hypercube Sampling + seeded defaults …")
+    lhs_sampler = LatinHypercube(d=total_params, seed=args.seed)
+    lhs_01 = lhs_sampler.random(n=args.swarm_size)
+    init_positions = lb + lhs_01 * (ub - lb)
+    init_positions[0] = x_default  # first particle = known-good defaults
     print(
-        f"[PSO] Starting optimisation ({args.max_iter} iterations, swarm={swarm_size}) …\n"
+        f"[INIT] {args.swarm_size} particles "
+        f"({args.swarm_size - 1} LHS + 1 default seed)"
+    )
+
+    # ---- Iteration callback for logging ----
+    start_time = [datetime.now()]
+
+    def iteration_callback(iteration, gbest_pos, gbest_fit, history):
+        if (iteration + 1) % 10 == 0:
+            elapsed = datetime.now() - start_time[0]
+            print(
+                f"  Iter {iteration + 1:4d} | Best = {gbest_fit:.6f} "
+                f"| Elapsed = {elapsed}"
+            )
+
+    # ---- Run advanced PSO ----
+    print(
+        f"\n[PSO] Starting optimisation "
+        f"({args.max_iter} iters, swarm={args.swarm_size}) …\n"
     )
     start_time[0] = datetime.now()
 
-    best_pos, best_fit = pso(
-        objective_with_tracking,
+    best_pos, best_fit, convergence_history = advanced_pso(
+        objective,
         lb,
         ub,
-        swarmsize=swarm_size,
-        maxiter=args.max_iter,
-        minstep=1e-8,
-        minfunc=1e-8,
-        omega=args.omega,
-        phip=args.phip,
-        phig=args.phig,
-        debug=False,
+        swarm_size=args.swarm_size,
+        max_iter=args.max_iter,
+        w_start=args.w_start,
+        w_end=args.w_end,
+        c1=args.c1,
+        c2=args.c2,
+        topology_switch_frac=args.topology_switch_frac,
+        stagnation_limit=args.stagnation_limit,
+        reinit_fraction=args.reinit_fraction,
+        init_positions=init_positions,
+        seed=args.seed,
+        callback=iteration_callback,
     )
 
-    elapsed = datetime.now() - start_time[0]
-    print(f"\n[PSO] Finished in {elapsed}")
+    elapsed_pso = datetime.now() - start_time[0]
+    total_evals = args.swarm_size * (1 + args.max_iter)
+    print(f"\n[PSO] Finished in {elapsed_pso}")
     print(f"[PSO] Best fitness (mean weighted MSE): {best_fit:.6f}")
-    print(f"[PSO] Total evaluations: {eval_count[0]}")
+    print(f"[PSO] Approx evaluations: {total_evals}")
+
+    # ---- Local polish with Powell (tip #7) ----
+    if not args.no_polish:
+        print("\n[POLISH] Running Powell local optimisation around PSO best …")
+        t_polish = datetime.now()
+
+        def bounded_objective(x):
+            return objective(np.clip(x, lb, ub))
+
+        polish_result = minimize(
+            bounded_objective,
+            best_pos,
+            method="Powell",
+            options={"maxiter": 5000, "ftol": 1e-10},
+        )
+        polish_pos = np.clip(polish_result.x, lb, ub)
+        polish_fit = objective(polish_pos)
+
+        if polish_fit < best_fit:
+            improvement = best_fit - polish_fit
+            print(
+                f"[POLISH] Improved: {best_fit:.6f} → {polish_fit:.6f} "
+                f"(Δ = {improvement:.6f})"
+            )
+            best_pos = polish_pos
+            best_fit = polish_fit
+        else:
+            print(f"[POLISH] No improvement ({polish_fit:.6f} >= {best_fit:.6f})")
+
+        elapsed_polish = datetime.now() - t_polish
+        print(f"[POLISH] Time: {elapsed_polish}")
+        total_evals += polish_result.nfev + 1
+
+    elapsed_total = datetime.now() - start_time[0]
 
     # ---- Decode results ----
     global_opt, traj_opt_list = decode_params(best_pos, num_traj)
@@ -665,7 +944,8 @@ def main():
     print("\n[RESULTS] Per-trajectory mu:")
     for i, (data, tp) in enumerate(zip(prepared_data, traj_opt_list)):
         print(
-            f"  Traj {i+1} [{data['surface']:10s}] {data['name'][:50]:50s}  mu = {tp['mu']:.6f}"
+            f"  Traj {i+1} [{data['surface']:10s}] "
+            f"{data['name'][:50]:50s}  mu = {tp['mu']:.6f}"
         )
 
     # ---- Per-trajectory error breakdown ----
@@ -731,18 +1011,30 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     results = {
-        "method": "PSO (pyswarm) — global tire params, per-trajectory mu",
+        "method": (
+            "Advanced PSO — lbest→gbest, inertia schedule, "
+            "LHS init, stagnation reinit, Powell polish"
+        ),
         "log_scale": args.log_scale,
         "timestamp": datetime.now().isoformat(),
         "final_error": float(best_fit),
-        "function_evaluations": eval_count[0],
-        "swarm_size": swarm_size,
+        "approx_function_evaluations": total_evals,
+        "swarm_size": args.swarm_size,
         "max_iterations": args.max_iter,
+        "w_schedule": f"{args.w_start} → {args.w_end}",
+        "c1": args.c1,
+        "c2": args.c2,
+        "topology_switch_frac": args.topology_switch_frac,
+        "stagnation_limit": args.stagnation_limit,
+        "reinit_fraction": args.reinit_fraction,
+        "local_polish": not args.no_polish,
+        "seed": args.seed,
         "T_seg": args.T_seg,
         "start_idx": args.start_idx,
         "num_trajectories": num_traj,
         "total_optimised_params": total_params,
-        "elapsed_seconds": elapsed.total_seconds(),
+        "elapsed_pso_seconds": elapsed_pso.total_seconds(),
+        "elapsed_total_seconds": elapsed_total.total_seconds(),
         "jax_backend": str(jax.default_backend()),
         "global_params": {k: float(v) for k, v in global_opt.items()},
         "trajectory_params": [
@@ -753,7 +1045,7 @@ def main():
             }
             for data, tp in zip(prepared_data, traj_opt_list)
         ],
-        "convergence_history": [float(e) for e in optimization_history],
+        "convergence_history": [float(e) for e in convergence_history],
         "defaults_used": {k: float(v) for k, v in DEFAULTS.items()},
     }
 
@@ -764,7 +1056,8 @@ def main():
     # ---- Summary ----
     print("\n" + "=" * 70)
     print(
-        f"DONE — Best error: {best_fit:.6f}  |  Evals: {eval_count[0]}  |  Time: {elapsed}"
+        f"DONE — Best error: {best_fit:.6f}  |  "
+        f"Evals: ~{total_evals}  |  Time: {elapsed_total}"
     )
     print("=" * 70)
 

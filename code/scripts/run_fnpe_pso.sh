@@ -30,7 +30,7 @@ PILOT_LENGTH=${5:-500}
 SKIP_NORM=${6:-no}   # "yes" to disable normalization
 
 # Path to PSO results (relative to code dir)
-PSO_JSON="notebooks/experiments/pso_global_optimization_results.json"
+PSO_JSON="notebooks/experiments/pso_global_log_optimization_results.json"
 
 # ==============================================================================
 # Environment setup
