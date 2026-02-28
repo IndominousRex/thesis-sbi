@@ -48,6 +48,16 @@ class ExperimentConfig:
     init_speed_range_ms: float = 10.0  # Sample +/- range around center (m/s)
     brake_block_fraction: float = 0.5  # Relative number of brake blocks vs default
     accel_scale: float = 1.2  # Scale factor for accel blocks during data creation
+    emergency_brake_fraction: float = (
+        0.4  # Fraction of brake blocks using aggressive types
+    )
+    ramp_s: float = 0.1  # Ramp duration between blocks (s); 0.1 = snappier transitions
+
+    # --- Sim-to-real noise injection ---
+    # Calibrated from 7 real measurement CSVs (see simulation/noise.py).
+    # Scales are global multipliers: 0.0 = off, 1.0 = calibrated level.
+    obs_noise_scale: float = 1.0  # Observation (sensor) noise scale
+    process_noise_scale: float = 1.0  # Process (dynamics drift) noise scale
 
     # --- Prior (3 params: mu, C_d, m) ---
     prior_low_mu: float = 0.50
@@ -239,6 +249,10 @@ class ExperimentConfig:
             "init_speed_range_ms": self.init_speed_range_ms,
             "brake_block_fraction": self.brake_block_fraction,
             "accel_scale": self.accel_scale,
+            "emergency_brake_fraction": self.emergency_brake_fraction,
+            "ramp_s": self.ramp_s,
+            "obs_noise_scale": self.obs_noise_scale,
+            "process_noise_scale": self.process_noise_scale,
             "active_parameters": self.active_parameters,
             "prior_bounds": self.param_bounds(),
             "fixed_values": self.fixed_param_values(),

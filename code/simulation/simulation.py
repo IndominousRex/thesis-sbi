@@ -15,6 +15,7 @@ from simulation.VehicleModel import (  # your existing module
     vehicle_fy,
     radius_tire,
 )
+from simulation.noise import add_sim_noise
 from configs.config import ExperimentConfig, PARAMETER_ORDER
 
 
@@ -287,25 +288,99 @@ def rand_block_coast(rng):
     }
 
 
+def rand_block_emergency_brake(rng):
+    """Emergency full-braking with much higher torques (300-600 Nm)."""
+    brk = float(rng.uniform(350, 600))
+    duty = float(rng.uniform(0.7, 1.0))
+    dur = float(rng.uniform(1.0, 4.0))
+    gear = int(rng.integers(2, 6))
+    return {
+        "dur_s": dur,
+        "engine": ("step", {"value": 0.0, "duty": 0.0}),
+        "brake": ("step", {"value": brk, "duty": duty}),
+        "steer": ("flat", {"value": 0.0}),
+        "gear": ("flat", {"value": gear}),
+    }
+
+
+def rand_block_brake_and_steer(rng):
+    """Combined braking + evasive steering (panic swerve)."""
+    brk = float(rng.uniform(200, 500))
+    duty = float(rng.uniform(0.5, 1.0))
+    steer_deg = float(rng.uniform(8, 25))
+    freq = float(rng.uniform(0.3, 1.0))
+    dur = float(rng.uniform(1.5, 3.5))
+    gear = int(rng.integers(2, 6))
+    return {
+        "dur_s": dur,
+        "engine": ("step", {"value": 0.0, "duty": 0.0}),
+        "brake": ("step", {"value": brk, "duty": duty}),
+        "steer": (
+            "sine",
+            {"amp": np.deg2rad(steer_deg), "freq_hz": freq, "phase": 0.0},
+        ),
+        "gear": ("flat", {"value": gear}),
+    }
+
+
+def rand_block_coast_with_disturbance(rng):
+    """Coasting with road disturbance (small high-freq steering input)."""
+    dur = float(rng.uniform(1.0, 3.0))
+    steer_deg = float(rng.uniform(0.5, 3.0))
+    freq = float(rng.uniform(1.0, 3.0))
+    gear = int(rng.integers(3, 6))
+    return {
+        "dur_s": dur,
+        "engine": ("step", {"value": 0.0, "duty": 0.0}),
+        "brake": ("step", {"value": 0.0, "duty": 0.0}),
+        "steer": (
+            "sine",
+            {"amp": np.deg2rad(steer_deg), "freq_hz": freq, "phase": 0.0},
+        ),
+        "gear": ("flat", {"value": gear}),
+    }
+
+
 def make_shuffled_U(
     rng,
     total_T,
     dt,
     brake_block_fraction: float = 1.0,
     accel_scale: float = 1.0,
+    emergency_brake_fraction: float = 0.0,
 ):
     """
-    Build a shuffled mixture of accel, brake, and coast blocks
+    Build a shuffled mixture of accel, brake, coast, and (optionally)
+    emergency-braking / brake-and-steer / coast-with-disturbance blocks
     until total length reaches total_T * dt.
+
+    Args:
+        emergency_brake_fraction: fraction of brake blocks that are
+            replaced by the new aggressive block types (0.0 = legacy,
+            1.0 = all aggressive).  Recommended: 0.3-0.5.
     """
     pieces = []
     num_blocks = 12
     num_brake_blocks = max(1, int(round(num_blocks * brake_block_fraction)))
+
     for _ in range(num_blocks):
         pieces.append(rand_block_accel(rng, accel_scale=accel_scale))
-        pieces.append(rand_block_coast(rng))
+        # Mix in coast-with-disturbance alongside plain coasts
+        if emergency_brake_fraction > 0 and rng.random() < 0.3:
+            pieces.append(rand_block_coast_with_disturbance(rng))
+        else:
+            pieces.append(rand_block_coast(rng))
+
     for _ in range(num_brake_blocks):
-        pieces.append(rand_block_brake(rng))
+        if emergency_brake_fraction > 0 and rng.random() < emergency_brake_fraction:
+            # Randomly pick emergency brake or brake+steer
+            if rng.random() < 0.5:
+                pieces.append(rand_block_emergency_brake(rng))
+            else:
+                pieces.append(rand_block_brake_and_steer(rng))
+        else:
+            pieces.append(rand_block_brake(rng))
+
     rng.shuffle(pieces)
 
     blocks, tsum = [], 0.0
@@ -398,9 +473,10 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
     Factory that returns a simulator(theta) -> torch.Tensor, matching the SBI API.
 
     The returned simulator:
-      - samples a fresh control recipe per call,
+      - samples a fresh control recipe per call (including new aggressive blocks),
       - samples initial states,
       - runs the JAX vehicle model,
+      - injects calibrated process + observation noise (if enabled in cfg),
       - concatenates controls to observations.
     """
 
@@ -419,12 +495,13 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
             cfg.dt,
             brake_block_fraction=cfg.brake_block_fraction,
             accel_scale=cfg.accel_scale,
+            emergency_brake_fraction=cfg.emergency_brake_fraction,
         )
         ctrls = controls_from_blocks(
             recipe,
             T_seg=cfg.T_seg,
             dt=cfg.dt,
-            ramp_s=0.2,
+            ramp_s=cfg.ramp_s,
             steer_scale=cfg.steer_scale,
         )
 
@@ -437,6 +514,18 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
         P = expand_theta_to_full(theta_np, cfg)
 
         y_batch = vmapped_rollout_train(P, S0, ctrls)  # (B, T_seg, d_obs)
+
+        # ── Inject calibrated noise (per-sample, on observation channels only) ──
+        if cfg.obs_noise_scale > 0 or cfg.process_noise_scale > 0:
+            y_np = np.asarray(y_batch, dtype=np.float32).copy()  # (B, T, 9)
+            for b_idx in range(B):
+                y_np[b_idx] = add_sim_noise(
+                    y_np[b_idx],
+                    rng,
+                    obs_noise_scale=cfg.obs_noise_scale,
+                    process_noise_scale=cfg.process_noise_scale,
+                )
+            y_batch = jnp.asarray(y_np)
 
         c = controls_to_array(ctrls)  # (T_seg, 4)
         c_rep = jnp.broadcast_to(c, (B, c.shape[0], c.shape[1]))  # (B, T_seg, 4)

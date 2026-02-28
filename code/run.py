@@ -129,6 +129,30 @@ def parse_args():
         help="Scale factor for accel blocks during data creation",
     )
     data.add_argument(
+        "--emergency-brake-fraction",
+        type=float,
+        default=0.4,
+        help="Fraction of brake blocks using aggressive emergency/steer variants (0=off)",
+    )
+    data.add_argument(
+        "--ramp-s",
+        type=float,
+        default=0.1,
+        help="Ramp duration (s) between control blocks (default 0.1, snappier transitions)",
+    )
+    data.add_argument(
+        "--obs-noise-scale",
+        type=float,
+        default=1.0,
+        help="Observation noise scale (0=off, 1=calibrated from real data)",
+    )
+    data.add_argument(
+        "--process-noise-scale",
+        type=float,
+        default=1.0,
+        help="Process noise scale (0=off, 1=calibrated from real data)",
+    )
+    data.add_argument(
         "--params",
         type=active_param_type,
         default=PARAMETER_ORDER,
@@ -329,6 +353,10 @@ def main():
         init_speed_range_ms=args.init_speed_range_ms,
         brake_block_fraction=args.brake_block_fraction,
         accel_scale=args.accel_scale,
+        emergency_brake_fraction=args.emergency_brake_fraction,
+        ramp_s=args.ramp_s,
+        obs_noise_scale=args.obs_noise_scale,
+        process_noise_scale=args.process_noise_scale,
         active_parameters=args.params,
         fixed_mu=args.fixed_mu,
         fixed_cd=args.fixed_cd,
