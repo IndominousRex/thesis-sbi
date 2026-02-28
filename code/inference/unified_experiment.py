@@ -43,6 +43,7 @@ from utils.real_data import (
 )
 from utils.plots import (
     plot_prior_posterior_1d,
+    plot_prior_posterior_grid,
     plot_sbc_rank_hist,
     plot_training_curves,
     plot_ppc_trajectories,
@@ -242,7 +243,7 @@ def run_parameter_posterior_plots(
     device: torch.device,
     *,
     num_examples: int = 3,
-    num_prior_samples: int = 20000,
+    num_prior_samples: int = 5000,  # 5k is plenty for a histogram; was 20k
     num_posterior_samples: int = 5000,
     method=None,  # Pass method for FNPE to use its own data generation
     examples: Optional[List[Dict[str, Any]]] = None,
@@ -279,37 +280,32 @@ def run_parameter_posterior_plots(
             theta_true_np = np.asarray(ex["theta_true"], dtype=np.float32).reshape(-1)
             x_norm = ex["x_cond"]
 
-            # Sample from posterior (unified interface: normalized in, normalized out)
             print(
                 f"[DIAG] Sampling {num_posterior_samples} posterior samples...",
                 flush=True,
             )
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_norm)
 
-            # Unnormalize to physical units for plotting
             theta_post_phys = normalizer.unnormalize_theta(theta_post_norm)
             theta_post_np = theta_post_phys.detach().cpu().numpy()
             print(
-                f"[DIAG] theta_post shape: {theta_post_np.shape}, NaN count: {np.sum(np.isnan(theta_post_np))}",
+                f"[DIAG] theta_post shape: {theta_post_np.shape}, "
+                f"NaN count: {np.sum(np.isnan(theta_post_np))}",
                 flush=True,
             )
-
             if theta_post_np.ndim == 3:
                 theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
 
-            for j, pname in enumerate(param_names):
-                out_path = fig_dir / f"prior_posterior_{pname}_ex{ex_idx}.png"
-                plot_prior_posterior_1d(
-                    prior_1d=prior_pool_np[:, j],
-                    post_1d=theta_post_np[:, j],
-                    theta_ref=theta_true_np[j],
-                    param_name=pname,
-                    out_path=out_path,
-                    bins=80,
-                    example_id=f"ex{ex_idx}",
-                    theta_true_full=theta_true_np,
-                    param_names=param_names,
-                )
+            # One grid figure per example (all params) — much faster than per-param saves
+            grid_path = fig_dir / f"prior_posterior_grid_ex{ex_idx}.png"
+            plot_prior_posterior_grid(
+                prior_np=prior_pool_np,
+                post_np=theta_post_np,
+                theta_true_np=theta_true_np,
+                param_names=param_names,
+                out_path=grid_path,
+                example_id=f"ex{ex_idx}",
+            )
         return
 
     # Standard path for NPE/NPSE
@@ -333,7 +329,6 @@ def run_parameter_posterior_plots(
         with torch.no_grad():
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
 
-        # Handle different return types
         if isinstance(theta_post_norm, np.ndarray):
             theta_post_np = theta_post_norm
         else:
@@ -344,19 +339,16 @@ def run_parameter_posterior_plots(
         if theta_post_np.ndim == 3:
             theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
 
-        for j, pname in enumerate(param_names):
-            out_path = fig_dir / f"prior_posterior_{pname}_ex{ex_idx}.png"
-            plot_prior_posterior_1d(
-                prior_1d=prior_pool_np[:, j],
-                post_1d=theta_post_np[:, j],
-                theta_ref=theta_true_np[j],
-                param_name=pname,
-                out_path=out_path,
-                bins=80,
-                example_id=f"ex{ex_idx}",
-                theta_true_full=theta_true_np,
-                param_names=param_names,
-            )
+        # One grid figure per example (all params) — much faster than per-param saves
+        grid_path = fig_dir / f"prior_posterior_grid_ex{ex_idx}.png"
+        plot_prior_posterior_grid(
+            prior_np=prior_pool_np,
+            post_np=theta_post_np,
+            theta_true_np=theta_true_np,
+            param_names=param_names,
+            out_path=grid_path,
+            example_id=f"ex{ex_idx}",
+        )
 
 
 def run_sbc_diagnostic(

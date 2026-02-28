@@ -609,6 +609,124 @@ def plot_prior_posterior_1d(
     print(f"[plots] Saved 1D prior/posterior plot to {out_path}")
 
 
+def plot_prior_posterior_grid(
+    prior_np: np.ndarray,
+    post_np: np.ndarray,
+    theta_true_np: Optional[np.ndarray],
+    param_names: List[str],
+    out_path: Path,
+    *,
+    bins: int = 50,
+    example_id: Optional[str] = None,
+    ncols: int = 4,
+) -> None:
+    """
+    Plot all parameter prior/posterior marginals in a single grid figure.
+
+    Much faster than calling plot_prior_posterior_1d once per parameter because
+    it creates only one figure, pre-computes all histograms with numpy before any
+    matplotlib rendering, and saves/closes only once.
+
+    Args:
+        prior_np  : (N_prior, d) array of prior samples.
+        post_np   : (N_post,  d) array of posterior samples.
+        theta_true_np: optional (d,) true values; vertical dashed lines.
+        param_names: length-d list of parameter names.
+        out_path  : destination PNG path.
+        bins      : number of histogram bins (default 50 is plenty for display).
+        example_id: label suffix added to the figure title.
+        ncols     : number of subplot columns.
+    """
+    _ensure_dir(out_path)
+    d = len(param_names)
+    nrows = (d + ncols - 1) // ncols
+
+    # --- Pre-compute all histograms with numpy (fast, no matplotlib overhead) ---
+    prior_hists, post_hists, bin_edges = [], [], []
+    for j in range(d):
+        pv = prior_np[:, j]
+        qv = post_np[:, j]
+        pv = pv[np.isfinite(pv)]
+        qv = qv[np.isfinite(qv)]
+        if len(pv) == 0 or len(qv) == 0:
+            prior_hists.append(None)
+            post_hists.append(None)
+            bin_edges.append(None)
+            continue
+        lo = min(pv.min(), qv.min())
+        hi = max(pv.max(), qv.max())
+        edges = np.linspace(lo, hi, bins + 1)
+        ph, _ = np.histogram(pv, bins=edges, density=True)
+        qh, _ = np.histogram(qv, bins=edges, density=True)
+        prior_hists.append(ph)
+        post_hists.append(qh)
+        bin_edges.append(edges)
+
+    # Pre-compute sample counts (after NaN filtering) for labels
+    post_counts = []
+    for j in range(d):
+        qv = post_np[:, j]
+        post_counts.append(int(np.sum(np.isfinite(qv))))
+
+    # Build figure suptitle (example_id + full theta_true vector, matching original title)
+    suptitle = "Prior vs Posterior"
+    if example_id:
+        suptitle += f" ({example_id})"
+    if theta_true_np is not None:
+        suptitle += f"\n{_format_theta_true(theta_true_np, param_names)}"
+
+    # --- Single figure, one pass through matplotlib ---
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows))
+    axes = np.array(axes).flatten()
+
+    for j, pname in enumerate(param_names):
+        ax = axes[j]
+        if prior_hists[j] is None:
+            ax.set_visible(False)
+            continue
+        edges = bin_edges[j]
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        width = edges[1] - edges[0]
+
+        ax.bar(
+            centers, prior_hists[j], width=width, alpha=0.35, color="C0", label="Prior"
+        )
+        ax.step(
+            edges[:-1],
+            post_hists[j],
+            where="post",
+            color="C1",
+            linewidth=1.8,
+            label=f"Posterior ({post_counts[j]} samples)",
+        )
+
+        if theta_true_np is not None and j < len(theta_true_np):
+            val = float(theta_true_np[j])
+            ax.axvline(
+                val,
+                color="black",
+                linestyle="--",
+                linewidth=1.5,
+                label=f"θ_true={val:.6g}",
+            )
+
+        ax.set_title(f"Prior vs posterior for {pname}", fontsize=9)
+        ax.set_xlabel(pname, fontsize=8)
+        ax.set_ylabel("Density", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.legend(fontsize=7)
+
+    # Hide any spare axes
+    for ax in axes[d:]:
+        ax.set_visible(False)
+
+    fig.suptitle(suptitle, fontsize=11)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[plots] Saved prior/posterior grid to {out_path}")
+
+
 # ---------------------------------------------------------------------
 # 7) Pairplot visualization (from markovsbi notebooks)
 # ---------------------------------------------------------------------
