@@ -313,6 +313,18 @@ def parse_args():
         default="../data/measurements/Jeversen_2022_10_12_110132.csv",
         help="Path to real-data CSV for evaluation (set to empty string to disable)",
     )
+    real.add_argument(
+        "--real-data-dir",
+        type=str,
+        default="../data/measurements",
+        help="Directory containing all real CSVs for multi-trajectory PPC",
+    )
+    real.add_argument(
+        "--k-ppc",
+        type=int,
+        default=300,
+        help="Number of posterior predictive trajectory samples per PPC plot (default: 300)",
+    )
 
     # ==========================================================================
     # Output
@@ -401,6 +413,8 @@ def main():
         no_plots=args.no_plots,
         # Real data
         real_data_csv=args.real_data_csv,
+        real_data_dir=args.real_data_dir,
+        K_ppc=args.k_ppc,
         # Output
         results_root=args.results_root,
         # Execution mode

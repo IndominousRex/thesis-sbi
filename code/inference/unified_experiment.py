@@ -1574,7 +1574,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 normalizer,
                 device,
                 num_examples=num_ex,
-                num_posterior_samples=5000 if cfg.method == "npe" else 2000,
+                num_posterior_samples=5000,
                 method=method,  # Pass method for FNPE
                 examples=shared_examples[:num_ex],
             )
@@ -1705,8 +1705,26 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             normalizer=normalizer,
             device=device,
             T_event=T_event,
-            K_ppc=300,
+            K_ppc=cfg.K_ppc,
         )
+
+        # Multi-trajectory PPC over all CSVs in the measurements directory
+        try:
+            multi_ppc_metrics = run_multi_trajectory_ppc(
+                cfg=cfg,
+                exp_dir=exp_dir,
+                fig_dir=fig_dir,
+                posterior=posterior,
+                normalizer=normalizer,
+                device=device,
+                T_event=T_event,
+                data_dir=cfg.real_data_dir,
+                K_ppc=cfg.K_ppc,
+            )
+            if multi_ppc_metrics:
+                metrics["multi_traj_ppc"] = multi_ppc_metrics.get("aggregate", {})
+        except Exception as _e:
+            print(f"[EVAL] Multi-trajectory PPC failed: {_e}")
         if real_metrics:
             metrics["real_metrics"] = real_metrics
 

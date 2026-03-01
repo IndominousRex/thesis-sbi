@@ -174,6 +174,10 @@ class ExperimentConfig:
     # --- Real data eval ---
     # Default path to real measurement data for evaluation
     real_data_csv: Optional[str] = "../data/measurements/Jeversen_2022_10_12_110132.csv"
+    # Directory containing all real measurement CSVs for multi-trajectory PPC
+    real_data_dir: str = "../data/measurements"
+    # Number of posterior predictive samples per trajectory in PPC plots
+    K_ppc: int = 300
 
     # --- Logging / saving ---
     results_root: str = "experiments"
