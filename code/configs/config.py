@@ -178,6 +178,8 @@ class ExperimentConfig:
     real_data_dir: str = "../data/measurements"
     # Number of posterior predictive samples per trajectory in PPC plots
     K_ppc: int = 300
+    # Window selection: prefer windows with low brake pressure
+    prefer_low_brake: bool = False
 
     # --- Logging / saving ---
     results_root: str = "experiments"

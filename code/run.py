@@ -325,6 +325,11 @@ def parse_args():
         default=300,
         help="Number of posterior predictive trajectory samples per PPC plot (default: 300)",
     )
+    real.add_argument(
+        "--prefer-low-brake",
+        action="store_true",
+        help="If set, pick real-data windows that avoid heavy braking. Default: off (use last window)",
+    )
 
     # ==========================================================================
     # Output
@@ -415,6 +420,7 @@ def main():
         real_data_csv=args.real_data_csv,
         real_data_dir=args.real_data_dir,
         K_ppc=args.k_ppc,
+        prefer_low_brake=args.prefer_low_brake,
         # Output
         results_root=args.results_root,
         # Execution mode

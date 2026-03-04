@@ -189,7 +189,8 @@ def pick_start_idx_len_safe(
 
     If prefer_low_brake=True, pick the window with the most 'low brake'
     samples (Break_Pressure < thresh) as long as the fraction of
-    violations is <= max_viol_frac. Otherwise fall back to the last window.
+    violations is <= max_viol_frac.
+    Otherwise pick a uniformly random window.
 
     Raises a clear error if df has fewer than T_raw rows.
     """
@@ -208,7 +209,9 @@ def pick_start_idx_len_safe(
         if violations <= int(max_viol_frac * T_raw):
             return best_idx
 
-    return N - T_raw
+    # Random window from the valid range
+    max_start = N - T_raw
+    return int(np.random.randint(0, max_start + 1))
 
 
 def simulate_y_batch_for_thetas(
