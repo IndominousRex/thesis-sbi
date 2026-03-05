@@ -120,30 +120,39 @@ DEFAULTS = {
     "mu": 0.8,
 }
 
-# --- Bounds (relaxed: previous run had 12/16 params stuck at boundaries) ---
+# --- Bounds (relaxed again: 10/16 params and mu still stuck at boundaries after second run) ---
 GLOBAL_BOUNDS = {
     "mass": (800, 4000),
-    "Inertia_z": (500, 6000),
-    "Inertia_tire": (5, 200),
-    "Inertia_engine": (0.05, 1.0),
-    "air_resistance": (0.1, 2.0),
+    "Inertia_z": (100, 6000),
+    "Inertia_tire": (1, 200),
+    "Inertia_engine": (0.01, 1.0),
+    "air_resistance": (0.1, 5.0),
     "c_1y": (5e5, 2e7),
-    "c_2y": (1e4, 2e6),
-    "C_y": (0.5, 5.0),
-    "E_y": (-3.0, 3.0),
+    "c_2y": (1e4, 1e7),
+    "C_y": (0.5, 10.0),
+    "E_y": (-6.0, 3.0),
     "C_roll1": (0.0005, 0.1),
-    "C_roll2": (1e-5, 0.05),
+    "C_roll2": (1e-7, 0.05),
     "radius_tire": (0.25, 0.45),
-    "c_1x": (5e5, 5e8),
+    "c_1x": (5e5, 5e9),
     "c_2x": (5e4, 5e7),
-    "C_x": (0.5, 5.0),
+    "C_x": (0.5, 10.0),
     "E_x": (-25.0, 5.0),
 }
 
 PER_TRAJ_BOUNDS = {
-    "mu": (0.3, 1.2),
+    "mu": (0.3, 1.6),
 }
 
+
+# --- Fixed physical reference scales for each observation channel ---
+# Channels: [yaw_rate, v_x, v_y, a_x, a_y, tire_FL, tire_FR, tire_RL, tire_RR]
+# These are typical signal amplitudes, not trajectory-specific stds.
+# Using fixed scales avoids pathological blow-up on near-zero channels
+# (yaw_rate, v_y are ~0 in straight-line braking — trajectory std ≈ noise floor).
+OBS_REF_SCALES = np.array(
+    [0.05, 10.0, 0.5, 5.0, 2.0, 30.0, 30.0, 30.0, 30.0], dtype=np.float32
+)
 
 # --- Parameters to optimize in log scale ---
 LOG_SCALE_PARAMS = ["mass", "Inertia_z", "Inertia_tire", "c_1y", "c_2y", "c_1x", "c_2x"]
@@ -444,13 +453,13 @@ def make_objective(prepared_data):
                     total_error += 1e6  # completely diverged
                     continue
 
-                # Normalized RMSE: each channel scaled by its std in the real data
+                # Normalized RMSE with fixed physical reference scales
                 y_real_valid = tc["y_real"][~nan_mask]
                 y_sim_valid = y_sim[~nan_mask]
-                channel_std = np.std(y_real_valid, axis=0)
-                channel_std = np.where(channel_std < 1e-8, 1.0, channel_std)  # avoid /0
                 nrmse = float(
-                    np.sqrt(np.mean(((y_sim_valid - y_real_valid) / channel_std) ** 2))
+                    np.sqrt(
+                        np.mean(((y_sim_valid - y_real_valid) / OBS_REF_SCALES) ** 2)
+                    )
                 )
                 divergence_penalty = (1.0 - n_valid / tc["T"]) * 1e4
                 total_error += nrmse + divergence_penalty
@@ -1001,8 +1010,7 @@ def main():
                 global_opt["radius_tire"],
             )
         )
-        channel_std = np.std(data["y_real"], axis=0)
-        channel_std = np.where(channel_std < 1e-8, 1.0, channel_std)
+        channel_std = OBS_REF_SCALES
         nrmse = float(np.sqrt(np.mean(((y_sim - data["y_real"]) / channel_std) ** 2)))
         print(f"  Traj {i+1} [{data['surface']:10s}]: NRMSE = {nrmse:.6f}")
 
