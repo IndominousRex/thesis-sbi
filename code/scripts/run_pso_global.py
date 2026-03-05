@@ -677,7 +677,15 @@ def advanced_pso(
                     continue  # never reinit the global best particle
                 positions[idx] = rng.uniform(0, 1, ndim)
                 velocities[idx] = rng.uniform(-vmax * 0.1, vmax * 0.1, ndim)
-                # keep pbest memory (partial reset: reset position & velocity only)
+                # Full reset: also reset pbest so cognitive attraction
+                # doesn't pull the particle back to the old basin
+                new_fit = obj(positions[idx])
+                pbest_pos[idx] = positions[idx].copy()
+                pbest_fit[idx] = new_fit
+                if new_fit < gbest_fit:
+                    gbest_fit = new_fit
+                    gbest_pos = positions[idx].copy()
+                    gbest_idx = idx
                 reinited += 1
             stagnation_count = 0
             print(
@@ -749,6 +757,12 @@ def parse_args():
         action="store_true",
         help="Optimise selected parameters in log scale (mass, inertia, c_1x, c_2x, etc.)",
     )
+    p.add_argument(
+        "--warm-start",
+        type=str,
+        default=None,
+        help="Path to a previous PSO results JSON to seed the first particle from",
+    )
     return p.parse_args()
 
 
@@ -779,6 +793,7 @@ def main():
     )
     print(f"  Local polish     : {'off' if args.no_polish else 'Powell'}")
     print(f"  Log scale        : {args.log_scale}")
+    print(f"  Warm-start       : {args.warm_start or 'none'}")
     print(f"  Seed             : {args.seed}")
     print(f"  JAX backend      : {jax.default_backend()}")
     print("=" * 70)
@@ -861,9 +876,34 @@ def main():
     lhs_01 = lhs_sampler.random(n=args.swarm_size)
     init_positions = lb + lhs_01 * (ub - lb)
     init_positions[0] = x_default  # first particle = known-good defaults
+
+    # ---- Warm-start from previous run ----
+    if args.warm_start:
+        ws_path = Path(args.warm_start)
+        if not ws_path.is_absolute():
+            ws_path = (PROJECT_ROOT / ws_path).resolve()
+        with open(ws_path) as f:
+            ws_data = json.load(f)
+        ws_x = np.zeros(total_params)
+        ws_gp = ws_data["global_params"]
+        for i, name in enumerate(GLOBAL_PARAMS):
+            val = ws_gp[name]
+            if args.log_scale and name in LOG_SCALE_PARAMS:
+                val = np.log(val)
+            ws_x[i] = val
+        for traj_idx, tp in enumerate(ws_data["trajectory_params"][:num_traj]):
+            offset = NUM_GLOBAL + traj_idx * NUM_PER_TRAJ
+            for j, pname in enumerate(PER_TRAJ_PARAMS):
+                ws_x[offset + j] = tp["params"][pname]
+        ws_x = np.clip(ws_x, lb, ub)
+        init_positions[0] = ws_x  # override default seed with previous best
+        print(f"[WARM-START] Loaded previous best from {ws_path}")
+        print(f"[WARM-START] Previous error: {ws_data.get('final_error', 'N/A')}")
+
+    n_seeded = "warm-start" if args.warm_start else "default seed"
     print(
         f"[INIT] {args.swarm_size} particles "
-        f"({args.swarm_size - 1} LHS + 1 default seed)"
+        f"({args.swarm_size - 1} LHS + 1 {n_seeded})"
     )
 
     # ---- Iteration callback for logging ----
@@ -1039,6 +1079,7 @@ def main():
         "reinit_fraction": args.reinit_fraction,
         "local_polish": not args.no_polish,
         "seed": args.seed,
+        "warm_start": args.warm_start,
         "T_seg": args.T_seg,
         "start_idx": args.start_idx,
         "num_trajectories": num_traj,

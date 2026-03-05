@@ -10,10 +10,11 @@
 #
 # Usage:
 #   sbatch scripts/run_pso_global.sh                       # all defaults
-#   sbatch scripts/run_pso_global.sh 500 50                # custom iter/swarm
-#   sbatch scripts/run_pso_global.sh 500 50 yes            # + log-scale
-#   sbatch scripts/run_pso_global.sh 500 50 yes 42         # + seed
-#   sbatch scripts/run_pso_global.sh 500 50 yes 42 yes     # + skip polish
+#   sbatch scripts/run_pso_global.sh 3000 200              # custom iter/swarm
+#   sbatch scripts/run_pso_global.sh 3000 200 yes          # + log-scale
+#   sbatch scripts/run_pso_global.sh 3000 200 yes 42       # + seed
+#   sbatch scripts/run_pso_global.sh 3000 200 yes 42 yes   # + skip polish
+#   sbatch scripts/run_pso_global.sh 3000 200 yes 42 no path/to/prev.json  # warm-start
 # ==============================================================================
 
 #SBATCH --job-name=pso_global
@@ -30,11 +31,14 @@
 # ==============================================================================
 # Arguments
 # ==============================================================================
-MAX_ITER=${1:-500}
-SWARM_SIZE=${2:-50}
-LOG_SCALE=${3:-no}        # "yes" to optimise selected params in log space
+MAX_ITER=${1:-3000}
+SWARM_SIZE=${2:-200}
+LOG_SCALE=${3:-yes}       # "yes" to optimise selected params in log space
 SEED=${4:-42}             # random seed for LHS + PSO
 NO_POLISH=${5:-no}        # "yes" to skip local Powell polish
+WARM_START=${6:-}         # path to previous results JSON for warm-start (empty = none)
+STAGNATION_LIMIT=${7:-30}
+REINIT_FRACTION=${8:-0.5}
 
 # ==============================================================================
 # Environment
@@ -52,6 +56,9 @@ echo "Swarm size:  ${SWARM_SIZE}"
 echo "Log scale:   ${LOG_SCALE}"
 echo "Seed:        ${SEED}"
 echo "No polish:   ${NO_POLISH}"
+echo "Warm-start:  ${WARM_START:-none}"
+echo "Stag. limit: ${STAGNATION_LIMIT}"
+echo "Reinit frac: ${REINIT_FRACTION}"
 echo "=================================================="
 
 cd /bigwork/nhkbarit/thesis-code/code
@@ -79,6 +86,12 @@ else
     POLISH_FLAG=""
 fi
 
+if [ -n "${WARM_START}" ]; then
+    WARM_START_FLAG="--warm-start ${WARM_START}"
+else
+    WARM_START_FLAG=""
+fi
+
 # ==============================================================================
 # Run
 # ==============================================================================
@@ -88,9 +101,12 @@ srun python scripts/run_pso_global.py \
     --swarm-size ${SWARM_SIZE} \
     --seed ${SEED} \
     --T-seg 800 \
+    --stagnation-limit ${STAGNATION_LIMIT} \
+    --reinit-fraction ${REINIT_FRACTION} \
     --output ${OUTPUT_PATH} \
     ${LOG_SCALE_FLAG} \
-    ${POLISH_FLAG}
+    ${POLISH_FLAG} \
+    ${WARM_START_FLAG}
 
 echo "=================================================="
 echo "[$(date)] Completed"
