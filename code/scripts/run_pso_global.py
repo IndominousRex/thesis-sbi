@@ -150,8 +150,10 @@ PER_TRAJ_BOUNDS = {
 # These are typical signal amplitudes, not trajectory-specific stds.
 # Using fixed scales avoids pathological blow-up on near-zero channels
 # (yaw_rate, v_y are ~0 in straight-line braking — trajectory std ≈ noise floor).
+# Tire scales raised to 100 (real range 0–100 rad/s); 30 was too small,
+# inflating tire error contributions and drowning out v_x/a_x.
 OBS_REF_SCALES = np.array(
-    [0.05, 10.0, 0.5, 5.0, 2.0, 30.0, 30.0, 30.0, 30.0], dtype=np.float32
+    [0.05, 10.0, 0.5, 5.0, 2.0, 100.0, 100.0, 100.0, 100.0], dtype=np.float32
 )
 
 # --- Parameters to optimize in log scale ---
@@ -453,14 +455,15 @@ def make_objective(prepared_data):
                     total_error += 1e6  # completely diverged
                     continue
 
-                # Normalized RMSE with fixed physical reference scales
+                # Per-channel NRMSE: RMSE per channel, normalise, then average.
+                # This gives each channel equal 1/9 weight instead of letting
+                # high-dimensional tire channels (4 of 9) dominate pooled MSE.
                 y_real_valid = tc["y_real"][~nan_mask]
                 y_sim_valid = y_sim[~nan_mask]
-                nrmse = float(
-                    np.sqrt(
-                        np.mean(((y_sim_valid - y_real_valid) / OBS_REF_SCALES) ** 2)
-                    )
-                )
+                per_ch_rmse = np.sqrt(
+                    np.mean((y_sim_valid - y_real_valid) ** 2, axis=0)
+                )  # (9,)
+                nrmse = float(np.mean(per_ch_rmse / OBS_REF_SCALES))
                 divergence_penalty = (1.0 - n_valid / tc["T"]) * 1e4
                 total_error += nrmse + divergence_penalty
             except Exception:
@@ -1050,8 +1053,8 @@ def main():
                 global_opt["radius_tire"],
             )
         )
-        channel_std = OBS_REF_SCALES
-        nrmse = float(np.sqrt(np.mean(((y_sim - data["y_real"]) / channel_std) ** 2)))
+        per_ch_rmse = np.sqrt(np.mean((y_sim - data["y_real"]) ** 2, axis=0))
+        nrmse = float(np.mean(per_ch_rmse / OBS_REF_SCALES))
         print(f"  Traj {i+1} [{data['surface']:10s}]: NRMSE = {nrmse:.6f}")
 
     # ---- Save results ----
