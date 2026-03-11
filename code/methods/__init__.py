@@ -10,15 +10,19 @@ Provides unified interfaces for different inference methods:
 from .base import BaseMethod, TrainedMethod
 from .npe_method import NPEMethod
 from .npse_method import NPSEMethod
-from .fnpe_method import FNPEMethod
-from .simformer_method import SimformerMethod
 
+# Lazy imports for JAX-based methods to avoid import errors when JAX/probjax
+# are not available in the current environment.
+_LAZY_METHODS = {
+    "fnpe": (".fnpe_method", "FNPEMethod"),
+    "simformer": (".simformer_method", "SimformerMethod"),
+}
 
 AVAILABLE_METHODS = {
     "npe": NPEMethod,
     "npse": NPSEMethod,
-    "fnpe": FNPEMethod,
-    "simformer": SimformerMethod,
+    "fnpe": "lazy",
+    "simformer": "lazy",
 }
 
 
@@ -27,7 +31,7 @@ def get_method_class(method_name: str) -> type:
     Get method class by name.
 
     Args:
-        method_name: One of 'npe', 'npse', 'fnpe'
+        method_name: One of 'npe', 'npse', 'fnpe', 'simformer'
 
     Returns:
         Method class
@@ -38,7 +42,15 @@ def get_method_class(method_name: str) -> type:
             f"Unknown method '{method_name}'. "
             f"Available: {list(AVAILABLE_METHODS.keys())}"
         )
-    return AVAILABLE_METHODS[method_name]
+    cls = AVAILABLE_METHODS[method_name]
+    if cls == "lazy":
+        module_name, class_name = _LAZY_METHODS[method_name]
+        import importlib
+
+        mod = importlib.import_module(module_name, package=__name__)
+        cls = getattr(mod, class_name)
+        AVAILABLE_METHODS[method_name] = cls  # cache for next call
+    return cls
 
 
 def build_method(method_name: str, cfg, prior, device, **method_kwargs) -> BaseMethod:
@@ -64,8 +76,6 @@ __all__ = [
     "TrainedMethod",
     "NPEMethod",
     "NPSEMethod",
-    "FNPEMethod",
-    "SimformerMethod",
     "AVAILABLE_METHODS",
     "get_method_class",
     "build_method",

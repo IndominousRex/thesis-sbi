@@ -241,7 +241,7 @@ class ExperimentConfig:
             self.train_seed = self.random_seed
 
         # --- Validate method ---
-        valid_methods = {"npe", "npse", "fnpe"}
+        valid_methods = {"npe", "npse", "fnpe", "simformer"}
         if self.method.lower() not in valid_methods:
             raise ValueError(
                 f"Unknown method '{self.method}'. Valid options: {valid_methods}"
