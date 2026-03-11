@@ -25,6 +25,7 @@ from utils.metrics import (
     sliced_wasserstein_prior_vs_dap,
     one_step_rmse_observation,
     real_data_trajectory_metrics,
+    wasserstein2_posterior_vs_true,
 )
 from utils.normalization import (
     fit_normalizer,
@@ -756,6 +757,79 @@ def run_swd_diagnostic(
     return swd_val
 
 
+def run_w2_posterior_diagnostic(
+    cfg: ExperimentConfig,
+    theta_test: torch.Tensor,
+    x_test: torch.Tensor,
+    posterior,
+    normalizer: Normalizer,
+    device: torch.device,
+    *,
+    num_cases: int = 100,
+    num_posterior_samples: int = 500,
+) -> Dict[str, Any]:
+    """
+    Compute Wasserstein-style metrics comparing posterior to ground truth theta.
+
+    This is particularly useful for simulation-only experiments where we have
+    true theta values for each observation.
+    """
+    # Reduce samples for slower methods
+    if cfg.method in ["npse", "fnpe", "simformer"]:
+        num_cases = min(num_cases, 50)
+        num_posterior_samples = min(num_posterior_samples, 200)
+
+    print(f"[W2-POST] Computing posterior vs true theta metrics ({num_cases} cases)...")
+
+    # Select subset
+    N = min(num_cases, theta_test.shape[0])
+    theta_sub = theta_test[:N]  # (N, d)
+    x_sub = x_test[:N]  # (N, T, D)
+
+    # Sample from posterior for each observation
+    all_samples = []
+    for i in range(N):
+        x_i = x_sub[i : i + 1]  # (1, T, D) or (T, D)
+        try:
+            samples_i = posterior.sample((num_posterior_samples,), x=x_i)
+            # Unnormalize if needed
+            if hasattr(normalizer, "unnormalize_theta"):
+                samples_i = normalizer.unnormalize_theta(samples_i.to(device))
+            all_samples.append(samples_i.cpu())
+        except Exception as e:
+            print(f"[W2-POST] Warning: Failed to sample for case {i}: {e}")
+            continue
+
+    if len(all_samples) == 0:
+        print("[W2-POST] No successful samples, skipping metric.")
+        return {}
+
+    # Stack samples: (N_success, K, d)
+    theta_samples = torch.stack(all_samples, dim=0)
+    N_success = theta_samples.shape[0]
+    theta_true_sub = theta_sub[:N_success]
+
+    # Unnormalize true thetas if needed
+    if hasattr(normalizer, "unnormalize_theta"):
+        theta_true_sub = normalizer.unnormalize_theta(theta_true_sub.to(device)).cpu()
+
+    # Compute metrics
+    w2_results = wasserstein2_posterior_vs_true(
+        theta_true_sub,
+        theta_samples,
+        num_projections=cfg.num_swd_projections,
+        seed=cfg.random_seed,
+    )
+
+    print(f"[W2-POST] Results:")
+    print(f"  - L2 error (mean): {w2_results['l2_error_mean']:.4f}")
+    print(f"  - Coverage 90%: {w2_results['coverage_90']:.2%}")
+    print(f"  - Coverage 50%: {w2_results['coverage_50']:.2%}")
+    print(f"  - SWD posterior vs true: {w2_results['swd_posterior_vs_true']:.4f}")
+
+    return w2_results
+
+
 def run_one_step_rmse_diagnostic(
     cfg: ExperimentConfig,
     prior,
@@ -1375,6 +1449,31 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     method_kwargs = {}
     if cfg.method == "npse":
         method_kwargs["sde_type"] = cfg.sde_type
+    elif cfg.method == "simformer":
+        method_kwargs.update(
+            {
+                "token_dim": cfg.simformer_token_dim,
+                "condition_token_dim": cfg.simformer_condition_token_dim,
+                "time_embedding_dim": cfg.simformer_time_embedding_dim,
+                "num_heads": cfg.simformer_num_heads,
+                "num_layers": cfg.simformer_num_layers,
+                "attn_size": cfg.simformer_attn_size,
+                "widening_factor": cfg.simformer_widening_factor,
+                "sigma_min": cfg.simformer_sigma_min,
+                "sigma_max": cfg.simformer_sigma_max,
+                "T_min": cfg.simformer_t_min,
+                "T_max": cfg.simformer_t_max,
+                "num_diffusion_steps": cfg.simformer_num_diffusion_steps,
+                "learning_rate": cfg.simformer_learning_rate,
+                "num_train_steps": cfg.simformer_num_train_steps,
+                "batch_size": cfg.simformer_batch_size,
+            }
+        )
+        print(
+            f"[Simformer] layers={cfg.simformer_num_layers}, heads={cfg.simformer_num_heads}, "
+            f"train_steps={cfg.simformer_num_train_steps}",
+            flush=True,
+        )
     elif cfg.method == "fnpe":
         method_kwargs.update(
             {
@@ -1621,6 +1720,27 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     json.dump(one_step_results, f, indent=2)
             except Exception as e:
                 print(f"[DIAG] 1-step RMSE failed: {e}")
+
+        # W2 Posterior vs True (simulation-only diagnostic)
+        print("\n[DIAG] Running W2 posterior vs true theta...")
+        try:
+            w2_post_results = run_w2_posterior_diagnostic(
+                cfg,
+                theta_test=theta_train,  # Use training data as test (known ground truth)
+                x_test=x_train,
+                posterior=posterior,
+                normalizer=normalizer,
+                device=device,
+                num_cases=100,
+                num_posterior_samples=500,
+            )
+            if w2_post_results:
+                metrics["w2_posterior_vs_true"] = w2_post_results
+                # Save separately
+                with (exp_dir / "w2_posterior_metrics.json").open("w") as f:
+                    json.dump(w2_post_results, f, indent=2)
+        except Exception as e:
+            print(f"[DIAG] W2 posterior diagnostic failed: {e}")
 
         # Pairplot visualization (markovsbi-style)
         if shared_examples is not None:

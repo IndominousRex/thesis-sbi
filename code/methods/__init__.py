@@ -11,12 +11,14 @@ from .base import BaseMethod, TrainedMethod
 from .npe_method import NPEMethod
 from .npse_method import NPSEMethod
 from .fnpe_method import FNPEMethod
+from .simformer_method import SimformerMethod
 
 
 AVAILABLE_METHODS = {
     "npe": NPEMethod,
     "npse": NPSEMethod,
     "fnpe": FNPEMethod,
+    "simformer": SimformerMethod,
 }
 
 
@@ -63,6 +65,7 @@ __all__ = [
     "NPEMethod",
     "NPSEMethod",
     "FNPEMethod",
+    "SimformerMethod",
     "AVAILABLE_METHODS",
     "get_method_class",
     "build_method",

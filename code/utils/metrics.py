@@ -238,3 +238,107 @@ def real_data_trajectory_metrics(
         "w2": w2_val,
         "w2_mean_per_sample": w2_mean_per_sample,
     }
+
+
+def wasserstein2_posterior_vs_true(
+    theta_true: torch.Tensor,
+    theta_samples: torch.Tensor,
+    num_projections: int = 1000,
+    seed: int = 0,
+) -> dict:
+    """
+    Compute Wasserstein-2 style metrics between posterior samples and true theta.
+    
+    This measures how well the posterior captures the true parameter value.
+    For simulation-based experiments where we know θ_true.
+    
+    Args:
+        theta_true: (N, d) true parameter values
+        theta_samples: (N, K, d) posterior samples for each observation
+        num_projections: number of projections for sliced W2
+        seed: random seed for projections
+        
+    Returns:
+        dict with:
+          - w2_mean: average W2 distance to true theta
+          - w2_per_dim: (d,) per-dimension W2 distances
+          - coverage_90: fraction of true thetas within 90% credible region
+          - coverage_50: fraction of true thetas within 50% credible region
+    """
+    assert theta_true.ndim == 2
+    assert theta_samples.ndim == 3
+    N, K, d = theta_samples.shape
+    assert theta_true.shape == (N, d)
+    
+    # Convert to numpy
+    theta_true_np = theta_true.detach().cpu().numpy()
+    theta_samples_np = theta_samples.detach().cpu().numpy()
+    
+    # 1. Simple L2 distance from posterior mean to true
+    posterior_mean = theta_samples_np.mean(axis=1)  # (N, d)
+    l2_errors = np.sqrt(np.sum((posterior_mean - theta_true_np) ** 2, axis=1))  # (N,)
+    
+    # 2. Per-dimension Wasserstein-1 (sorted quantile matching)
+    # For each dimension, compare sorted posterior samples to replicated true value
+    w1_per_dim = np.zeros(d)
+    for dim in range(d):
+        w1_vals = []
+        for i in range(N):
+            samples_sorted = np.sort(theta_samples_np[i, :, dim])
+            # W1 to point mass at true value = mean |sample - true|
+            w1_vals.append(np.mean(np.abs(samples_sorted - theta_true_np[i, dim])))
+        w1_per_dim[dim] = np.mean(w1_vals)
+    
+    # 3. Coverage metrics (does true value fall within credible interval?)
+    coverage_90 = _compute_coverage(theta_true_np, theta_samples_np, level=0.90)
+    coverage_50 = _compute_coverage(theta_true_np, theta_samples_np, level=0.50)
+    
+    # 4. Sliced Wasserstein between aggregated posteriors and true point mass
+    # (This gives a distributional distance measure)
+    rng = jax.random.PRNGKey(seed)
+    all_posterior_samples = theta_samples_np.reshape(-1, d)  # (N*K, d)
+    # Replicate true thetas K times to match
+    true_replicated = np.repeat(theta_true_np, K, axis=0)  # (N*K, d)
+    swd = sliced_wasserstein_distance(
+        rng, 
+        jnp.array(true_replicated), 
+        jnp.array(all_posterior_samples),
+        num_projections=num_projections
+    )
+    
+    return {
+        "w2_mean": float(np.mean(l2_errors)),
+        "w1_per_dim": w1_per_dim.tolist(),
+        "swd_posterior_vs_true": float(swd),
+        "coverage_90": float(coverage_90),
+        "coverage_50": float(coverage_50),
+        "l2_error_mean": float(np.mean(l2_errors)),
+        "l2_error_std": float(np.std(l2_errors)),
+    }
+
+
+def _compute_coverage(theta_true: np.ndarray, theta_samples: np.ndarray, level: float) -> float:
+    """
+    Compute empirical coverage: fraction of true values within credible interval.
+    
+    Args:
+        theta_true: (N, d) true values
+        theta_samples: (N, K, d) posterior samples
+        level: credible level (e.g., 0.90 for 90%)
+        
+    Returns:
+        Fraction of true values covered (averaged over dimensions)
+    """
+    N, K, d = theta_samples.shape
+    alpha = 1 - level
+    lower_q = alpha / 2
+    upper_q = 1 - alpha / 2
+    
+    covered_per_dim = np.zeros(d)
+    for dim in range(d):
+        lower = np.quantile(theta_samples[:, :, dim], lower_q, axis=1)  # (N,)
+        upper = np.quantile(theta_samples[:, :, dim], upper_q, axis=1)  # (N,)
+        covered = (theta_true[:, dim] >= lower) & (theta_true[:, dim] <= upper)
+        covered_per_dim[dim] = np.mean(covered)
+    
+    return np.mean(covered_per_dim)

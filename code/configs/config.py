@@ -147,6 +147,23 @@ class ExperimentConfig:
     # Precision scale for GaussCorrectedScoreFn (None = auto-estimate).
     fnpe_gauss_precision_scale: Optional[float] = None
 
+    # --- Simformer-specific ---
+    simformer_token_dim: int = 40  # Token dimension for value embedding
+    simformer_condition_token_dim: int = 10  # Dimension for condition mask embedding
+    simformer_time_embedding_dim: int = 128  # Time embedding dimension
+    simformer_num_heads: int = 4  # Transformer attention heads
+    simformer_num_layers: int = 6  # Transformer layers
+    simformer_attn_size: int = 10  # Attention size per head
+    simformer_widening_factor: int = 3  # MLP widening factor in transformer
+    simformer_sigma_min: float = 0.01  # VESDE minimum noise
+    simformer_sigma_max: float = 15.0  # VESDE maximum noise
+    simformer_t_min: float = 0.02  # Minimum diffusion time
+    simformer_t_max: float = 1.0  # Maximum diffusion time (not too large)
+    simformer_num_diffusion_steps: int = 500  # Reverse SDE sampling steps
+    simformer_learning_rate: float = 1e-3  # Training learning rate
+    simformer_num_train_steps: int = 50000  # Number of training steps
+    simformer_batch_size: int = 1024  # Training batch size
+
     # --- Training ---
     learning_rate: float = 5e-4  # Lower LR for complex data (MarkovSBI large uses 5e-4)
     training_batch_size: int = 512  # Larger batch for stability
