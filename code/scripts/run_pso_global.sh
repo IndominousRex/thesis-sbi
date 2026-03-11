@@ -9,12 +9,14 @@
 #           stagnation reinit, [0,1] internal normalisation, Powell polish.
 #
 # Usage:
-#   sbatch scripts/run_pso_global.sh                       # all defaults
-#   sbatch scripts/run_pso_global.sh 3000 200              # custom iter/swarm
-#   sbatch scripts/run_pso_global.sh 3000 200 yes          # + log-scale
-#   sbatch scripts/run_pso_global.sh 3000 200 yes 42       # + seed
-#   sbatch scripts/run_pso_global.sh 3000 200 yes 42 yes   # + skip polish
+#   sbatch scripts/run_pso_global.sh                              # all defaults
+#   sbatch scripts/run_pso_global.sh 3000 200                     # custom iter/swarm
+#   sbatch scripts/run_pso_global.sh 3000 200 yes                 # + log-scale
+#   sbatch scripts/run_pso_global.sh 3000 200 yes 42              # + seed
+#   sbatch scripts/run_pso_global.sh 3000 200 yes 42 yes          # + skip polish
 #   sbatch scripts/run_pso_global.sh 3000 200 yes 42 no path/to/prev.json  # warm-start
+#   sbatch scripts/run_pso_global.sh 3000 200 yes 42 no "" 30 0.5 0.5  # tire_weight=0.5 (default)
+# $9=TIRE_WEIGHT: tire channel weight relative to physics (1.0). 0=exclude, 0.5=default, 1.0=equal
 # ==============================================================================
 
 #SBATCH --job-name=pso_global
@@ -39,6 +41,7 @@ NO_POLISH=${5:-no}        # "yes" to skip local Powell polish
 WARM_START=${6:-}         # path to previous results JSON for warm-start (empty = none)
 STAGNATION_LIMIT=${7:-30}
 REINIT_FRACTION=${8:-0.5}
+TIRE_WEIGHT=${9:-0.5}     # tire channel weight: 0=exclude, 0.5=default, 1.0=equal to physics
 
 # ==============================================================================
 # Environment
@@ -59,6 +62,7 @@ echo "No polish:   ${NO_POLISH}"
 echo "Warm-start:  ${WARM_START:-none}"
 echo "Stag. limit: ${STAGNATION_LIMIT}"
 echo "Reinit frac: ${REINIT_FRACTION}"
+echo "Tire weight: ${TIRE_WEIGHT}"
 echo "=================================================="
 
 cd /bigwork/nhkbarit/thesis-code/code
@@ -92,6 +96,8 @@ else
     WARM_START_FLAG=""
 fi
 
+TIRE_FLAG="--tire-weight ${TIRE_WEIGHT}"
+
 # ==============================================================================
 # Run
 # ==============================================================================
@@ -106,7 +112,9 @@ srun python scripts/run_pso_global.py \
     --output ${OUTPUT_PATH} \
     ${LOG_SCALE_FLAG} \
     ${POLISH_FLAG} \
-    ${WARM_START_FLAG}
+    ${WARM_START_FLAG} \
+    ${TIRE_FLAG}
+
 
 echo "=================================================="
 echo "[$(date)] Completed"

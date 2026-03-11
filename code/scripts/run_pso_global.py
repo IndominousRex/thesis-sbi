@@ -120,24 +120,26 @@ DEFAULTS = {
     "mu": 0.8,
 }
 
-# --- Bounds (relaxed again: 10/16 params and mu still stuck at boundaries after second run) ---
+# --- Bounds (physically motivated — prevents drift to unrealistic values) ---
+# Tightened around plausible vehicle dynamics ranges; DEFAULTS (above) are
+# representative of the 1720 kg test vehicle.
 GLOBAL_BOUNDS = {
-    "mass": (800, 4000),
-    "Inertia_z": (100, 6000),
-    "Inertia_tire": (1, 200),
-    "Inertia_engine": (0.01, 1.0),
-    "air_resistance": (0.1, 5.0),
+    "mass": (1200, 2500),  # real ≈ 1720 kg
+    "Inertia_z": (800, 4000),  # real ≈ 2066 kg·m²
+    "Inertia_tire": (5, 100),  # real ≈ 28.6 kg·m²
+    "Inertia_engine": (0.05, 0.5),  # real ≈ 0.197 kg·m²
+    "air_resistance": (0.1, 1.0),  # real ≈ 0.27 (Cd·A product)
     "c_1y": (5e5, 2e7),
     "c_2y": (1e4, 1e7),
-    "C_y": (0.5, 10.0),
-    "E_y": (-6.0, 3.0),
-    "C_roll1": (0.0005, 0.1),
-    "C_roll2": (1e-7, 0.05),
-    "radius_tire": (0.25, 0.45),
+    "C_y": (0.5, 5.0),
+    "E_y": (-3.0, 3.0),
+    "C_roll1": (0.001, 0.05),  # real ≈ 0.0083
+    "C_roll2": (1e-5, 0.01),  # real ≈ 0.0005
+    "radius_tire": (0.28, 0.35),  # real ≈ 0.3116 m
     "c_1x": (5e5, 5e9),
     "c_2x": (5e4, 5e7),
-    "C_x": (0.5, 10.0),
-    "E_x": (-25.0, 5.0),
+    "C_x": (0.5, 5.0),
+    "E_x": (-15.0, 5.0),
 }
 
 PER_TRAJ_BOUNDS = {
@@ -150,11 +152,27 @@ PER_TRAJ_BOUNDS = {
 # These are typical signal amplitudes, not trajectory-specific stds.
 # Using fixed scales avoids pathological blow-up on near-zero channels
 # (yaw_rate, v_y are ~0 in straight-line braking — trajectory std ≈ noise floor).
-# Tire scales raised to 100 (real range 0–100 rad/s); 30 was too small,
-# inflating tire error contributions and drowning out v_x/a_x.
+# Tire scales = 100 (real range 0–100 rad/s).
 OBS_REF_SCALES = np.array(
     [0.05, 10.0, 0.5, 5.0, 2.0, 100.0, 100.0, 100.0, 100.0], dtype=np.float32
 )
+
+# --- Channel names & weights ---
+# All 9 channels are used by default.  Tire channels get a reduced weight
+# (--tire-weight, default 0.5) because ABS lock/release oscillations create
+# irreducible modelling error that can bias physical parameters.
+OBS_CHANNEL_NAMES = [
+    "yaw_rate",
+    "v_x",
+    "v_y",
+    "a_x",
+    "a_y",
+    "tire_FL",
+    "tire_FR",
+    "tire_RL",
+    "tire_RR",
+]
+DEFAULT_TIRE_WEIGHT = 0.5  # overridden by --tire-weight CLI
 
 # --- Parameters to optimize in log scale ---
 LOG_SCALE_PARAMS = ["mass", "Inertia_z", "Inertia_tire", "c_1y", "c_2y", "c_1x", "c_2x"]
@@ -367,18 +385,29 @@ def decode_params(x, num_trajectories):
 # ============================================================================
 
 
-def make_objective(prepared_data):
+def make_objective(prepared_data, channel_weights):
     """
     Build the objective closure over prepared trajectory data.
 
     Returns a function  f(x) → float  suitable for pyswarm.pso.
+
+    Parameters
+    ----------
+    channel_weights : (9,) float array
+        Per-channel weight (0 = excluded).  Loss is the weighted mean of
+        per-channel (RMSE / scale) values.
     """
     num_traj = len(prepared_data)
 
-    # Pre-build per-trajectory JAX arrays that don't change between evaluations
+    # Resolve active channels and pre-compute constants
+    active = channel_weights > 0
+    w_active = channel_weights[active]
+    w_sum = float(w_active.sum())
+    scales_active = OBS_REF_SCALES[active]
+
     traj_cache = []
     for data in prepared_data:
-        T = data["T"]
+        T = data["y_real"].shape[0]
         y0 = data["y_real"][0]
         state0 = jnp.array(
             [0.0, 0.0, 0.0, y0[0], y0[1], y0[2], y0[5], y0[6], y0[7], y0[8]],
@@ -455,15 +484,13 @@ def make_objective(prepared_data):
                     total_error += 1e6  # completely diverged
                     continue
 
-                # Per-channel NRMSE: RMSE per channel, normalise, then average.
-                # This gives each channel equal 1/9 weight instead of letting
-                # high-dimensional tire channels (4 of 9) dominate pooled MSE.
-                y_real_valid = tc["y_real"][~nan_mask]
-                y_sim_valid = y_sim[~nan_mask]
+                # Weighted per-channel NRMSE on active channels.
+                y_real_valid = tc["y_real"][~nan_mask][:, active]
+                y_sim_valid = y_sim[~nan_mask][:, active]
                 per_ch_rmse = np.sqrt(
                     np.mean((y_sim_valid - y_real_valid) ** 2, axis=0)
-                )  # (9,)
-                nrmse = float(np.mean(per_ch_rmse / OBS_REF_SCALES))
+                )  # (n_active,)
+                nrmse = float(np.sum(w_active * per_ch_rmse / scales_active) / w_sum)
                 divergence_penalty = (1.0 - n_valid / tc["T"]) * 1e4
                 total_error += nrmse + divergence_penalty
             except Exception:
@@ -766,6 +793,13 @@ def parse_args():
         default=None,
         help="Path to a previous PSO results JSON to seed the first particle from",
     )
+    p.add_argument(
+        "--tire-weight",
+        type=float,
+        default=DEFAULT_TIRE_WEIGHT,
+        help=f"Weight for tire channels relative to physics channels (1.0). "
+        f"0=exclude tires, {DEFAULT_TIRE_WEIGHT}=default, 1.0=equal weight.",
+    )
     return p.parse_args()
 
 
@@ -797,6 +831,7 @@ def main():
     print(f"  Local polish     : {'off' if args.no_polish else 'Powell'}")
     print(f"  Log scale        : {args.log_scale}")
     print(f"  Warm-start       : {args.warm_start or 'none'}")
+    print(f"  Tire weight      : {args.tire_weight}")
     print(f"  Seed             : {args.seed}")
     print(f"  JAX backend      : {jax.default_backend()}")
     print("=" * 70)
@@ -856,8 +891,18 @@ def main():
 
     decode_params = decode_params_log if args.log_scale else decode_params_linear
 
+    # ---- Channel weights ----
+    tw = args.tire_weight
+    channel_weights = np.array(
+        [1.0, 1.0, 1.0, 1.0, 1.0, tw, tw, tw, tw], dtype=np.float32
+    )
+    active_names = [OBS_CHANNEL_NAMES[i] for i in range(9) if channel_weights[i] > 0]
+    print(
+        f"[CHANNELS] {len(active_names)} active: {active_names}  " f"(tire weight={tw})"
+    )
+
     # ---- Build objective ----
-    objective = make_objective(prepared_data)
+    objective = make_objective(prepared_data, channel_weights=channel_weights)
 
     # ---- Warm-up JIT (first call is slow) ----
     print("[JIT] Warm-up call …")
@@ -1054,7 +1099,12 @@ def main():
             )
         )
         per_ch_rmse = np.sqrt(np.mean((y_sim - data["y_real"]) ** 2, axis=0))
-        nrmse = float(np.mean(per_ch_rmse / OBS_REF_SCALES))
+        active = channel_weights > 0
+        w_active = channel_weights[active]
+        nrmse = float(
+            np.sum(w_active * per_ch_rmse[active] / OBS_REF_SCALES[active])
+            / w_active.sum()
+        )
         print(f"  Traj {i+1} [{data['surface']:10s}]: NRMSE = {nrmse:.6f}")
 
     # ---- Save results ----
@@ -1069,6 +1119,9 @@ def main():
             "LHS init, stagnation reinit, Powell polish"
         ),
         "log_scale": args.log_scale,
+        "tire_weight": args.tire_weight,
+        "active_channels": active_names,
+        "channel_weights": channel_weights.tolist(),
         "timestamp": datetime.now().isoformat(),
         "final_error": float(best_fit),
         "approx_function_evaluations": total_evals,
