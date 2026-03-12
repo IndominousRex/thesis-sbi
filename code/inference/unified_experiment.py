@@ -369,6 +369,10 @@ def run_sbc_diagnostic(
     if cfg.method in ["npse", "fnpe"]:
         num_sbc = min(num_sbc, 100)
         num_post = min(num_post, 500)
+    elif cfg.method == "simformer":
+        # Simformer uses JAX SDE integration (slow on CPU fallback); keep small
+        num_sbc = min(num_sbc, 50)
+        num_post = min(num_post, 500)
 
     print(f"[SBC] Running with {num_sbc} samples, {num_post} posterior samples each...")
 
@@ -377,16 +381,24 @@ def run_sbc_diagnostic(
     x_sbc_phys = simulator_for_sbi(theta_sbc_phys)
     x_sbc_norm = normalizer.normalize_x(x_sbc_phys, cfg.obs_dim)
 
+    # sbi's run_sbc / check_sbc require all tensors on the same device.
+    # Our SimformerPosterior.sample() returns CPU tensors (via JAX → numpy →
+    # torch.from_numpy), so move thetas and xs to CPU here.  For NPE/NPSE the
+    # posterior is sbi-native and handles device internally, but .cpu() is a
+    # no-op when they're already on CPU, so this is safe for all methods.
+    theta_sbc_cpu = theta_sbc_norm.cpu()
+    x_sbc_cpu = x_sbc_norm.cpu()
+
     ranks, dap_samples_norm = run_sbc(
-        thetas=theta_sbc_norm,
-        xs=x_sbc_norm,
+        thetas=theta_sbc_cpu,
+        xs=x_sbc_cpu,
         posterior=posterior,
         num_posterior_samples=num_post,
         num_workers=1,  # Use 1 worker to avoid multiprocessing issues with JAX
         use_batched_sampling=False,  # FNPE doesn't support batched sampling
     )
 
-    check_stats = check_sbc(ranks, theta_sbc_norm, dap_samples_norm, num_post)
+    check_stats = check_sbc(ranks, theta_sbc_cpu, dap_samples_norm, num_post)
     print("SBC check statistics:", check_stats)
 
     if not cfg.no_plots:
