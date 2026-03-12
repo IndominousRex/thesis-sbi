@@ -46,6 +46,8 @@ class Normalizer:
             x_phys: (N, T, D_in) tensor in physical units.
             obs_dim: number of observation channels (front slice of D_in).
         """
+        # Ensure x_phys is on the same device as the normalizer stats
+        x_phys = x_phys.to(self.obs_mean.device)
         obs = x_phys[..., :obs_dim]
         ctrls = x_phys[..., obs_dim:]
 
@@ -62,6 +64,8 @@ class Normalizer:
             x_norm: (N, T, D_in) tensor in normalized units.
             obs_dim: number of observation channels (front slice of D_in).
         """
+        # Ensure x_norm is on the same device as the normalizer stats
+        x_norm = x_norm.to(self.obs_mean.device)
         obs_n = x_norm[..., :obs_dim]
         ctrl_n = x_norm[..., obs_dim:]
 
@@ -71,9 +75,14 @@ class Normalizer:
         return torch.cat([obs, ctrls], dim=-1)
 
     def normalize_theta(self, theta_phys: torch.Tensor) -> torch.Tensor:
+        # Ensure theta_phys is on the same device as the normalizer stats
+        theta_phys = theta_phys.to(self.theta_mean.device)
         return (theta_phys - self.theta_mean) / (self.theta_std + self.eps)
 
     def unnormalize_theta(self, theta_norm: torch.Tensor) -> torch.Tensor:
+        # Ensure theta_norm is on the same device as the normalizer stats
+        # (which are stored on CPU by default)
+        theta_norm = theta_norm.to(self.theta_mean.device)
         return theta_norm * (self.theta_std + self.eps) + self.theta_mean
 
     def to_jsonable(self) -> Dict[str, Any]:
