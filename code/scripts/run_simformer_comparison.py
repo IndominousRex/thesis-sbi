@@ -146,17 +146,37 @@ def create_config(
     if quick and not smoke:
         cfg_kwargs.update(
             {
-                "num_simulations": min(500, num_simulations),
-                "num_sbc_samples": 50,
-                "num_epochs": 50,
-                "stop_after_epochs": 10,
+                "num_simulations": min(128, num_simulations),
+                "batch_sim": min(128, num_simulations),
+                "training_batch_size": 64,
+                "num_sbc_samples": 20,
+                "num_posterior_samples_sbc": 200,
+                "num_epochs": 20,
+                "stop_after_epochs": 5,
+                "run_posterior_plots": False,
+                "run_lc2st": False,
+                "no_plots": True,
             }
         )
         if method == "simformer":
-            cfg_kwargs["simformer_num_train_steps"] = 5000
+            cfg_kwargs.update(
+                {
+                    "simformer_token_dim": 16,
+                    "simformer_condition_token_dim": 8,
+                    "simformer_time_embedding_dim": 64,
+                    "simformer_num_layers": 2,
+                    "simformer_num_heads": 2,
+                    "simformer_attn_size": 8,
+                    "simformer_num_train_steps": 250,
+                    "simformer_batch_size": 64,
+                    "simformer_num_diffusion_steps": 50,
+                }
+            )
         elif method == "fnpe":
-            cfg_kwargs["fnpe_num_simulations"] = min(10000, num_simulations * 5)
-            cfg_kwargs["fnpe_max_epochs"] = 500
+            cfg_kwargs["fnpe_num_simulations"] = min(
+                2000, max(256, num_simulations * 4)
+            )
+            cfg_kwargs["fnpe_max_epochs"] = 20
 
     # Method-specific overrides
     if method == "simformer":
@@ -176,13 +196,7 @@ def create_config(
             )
         # Use smaller model for faster training if quick mode
         elif quick:
-            cfg_kwargs.update(
-                {
-                    "simformer_num_layers": 4,
-                    "simformer_num_heads": 4,
-                    "simformer_num_train_steps": 10000,
-                }
-            )
+            pass
     elif method == "fnpe":
         # FNPE generates its own data
         if smoke:
@@ -190,7 +204,9 @@ def create_config(
             cfg_kwargs["fnpe_max_epochs"] = 5
         else:
             cfg_kwargs["fnpe_num_simulations"] = (
-                num_simulations * 10 if not quick else 10000
+                num_simulations * 10
+                if not quick
+                else cfg_kwargs.get("fnpe_num_simulations", 2000)
             )
 
     return ExperimentConfig(**cfg_kwargs)

@@ -88,6 +88,13 @@ def tensor_to_python(x):
     return x
 
 
+def _sample_theta_from_prior_cpu(prior_cpu, seed: int) -> torch.Tensor:
+    """Sample one physical-theta draw deterministically on CPU."""
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(int(seed))
+        return prior_cpu.sample((1,))
+
+
 # =============================================================================
 # Dataset Management (with caching for fair comparisons)
 # =============================================================================
@@ -214,26 +221,106 @@ def build_shared_diagnostic_examples(
         return examples
 
     # Standard path for NPE/NPSE (torch prior + simulator)
-    for ex_idx in range(int(num_examples)):
-        with torch.no_grad():
-            theta_true = prior.sample((1,)).to(device)
-        theta_true_np = theta_true.detach().cpu().numpy()[0].astype(np.float32)
+    prior_cpu = build_prior(cfg, torch.device("cpu"))
+    old_batch_idx = getattr(simulator, "_batch_idx", 0)
+    simulator._batch_idx = int(seed_offset)
+    try:
+        for ex_idx in range(int(num_examples)):
+            theta_true = _sample_theta_from_prior_cpu(
+                prior_cpu, int(cfg.random_seed) + int(seed_offset) + ex_idx
+            ).to(device)
+            theta_true_np = theta_true.detach().cpu().numpy()[0].astype(np.float32)
 
-        sim_out = simulator(theta_true)
-        x_sim = sim_out[0] if isinstance(sim_out, tuple) else sim_out
-        x_phys_t = x_sim.to(device)
-        x_cond = normalizer.normalize_x(x_phys_t, int(cfg.obs_dim)).to(device)
+            sim_out = simulator(theta_true)
+            x_sim = sim_out[0] if isinstance(sim_out, tuple) else sim_out
+            x_phys_t = x_sim.to(device)
+            x_cond = normalizer.normalize_x(x_phys_t, int(cfg.obs_dim)).to(device)
 
-        examples.append(
-            {
-                "ex_idx": ex_idx,
-                "theta_true": theta_true_np,
-                "x_phys": x_phys_t.detach().cpu().numpy()[0].astype(np.float32),
-                "x_cond": x_cond,
-            }
-        )
+            examples.append(
+                {
+                    "ex_idx": ex_idx,
+                    "theta_true": theta_true_np,
+                    "x_phys": x_phys_t.detach().cpu().numpy()[0].astype(np.float32),
+                    "x_cond": x_cond,
+                }
+            )
+    finally:
+        simulator._batch_idx = old_batch_idx
 
     return examples
+
+
+def build_shared_eval_dataset(
+    cfg: ExperimentConfig,
+    *,
+    prior,
+    simulator,
+    normalizer: Normalizer,
+    device: torch.device,
+    num_cases: int,
+    seed_offset: int = 3000,
+    method=None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Build a deterministic synthetic holdout set shared across methods.
+
+    Returns:
+        theta_eval_phys: (N, d_theta) in physical units on CPU
+        x_eval_norm:     (N, T, D_in) normalized conditioning inputs on CPU
+    """
+    theta_items: List[torch.Tensor] = []
+    x_items: List[torch.Tensor] = []
+
+    if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
+        import jax
+
+        task = method.task
+        jax_prior = task.get_prior()
+        simulator_fn = task.get_simulator()
+        key = jax.random.PRNGKey(int(cfg.random_seed) + int(seed_offset))
+
+        for _ in range(int(num_cases)):
+            key, key_theta, key_sim = jax.random.split(key, 3)
+            theta_true_jax = jax_prior.sample(key_theta, (1,))[0]
+            theta_true_np = np.array(theta_true_jax).astype(np.float32)
+            x_phys_jax = simulator_fn(key_sim, theta_true_jax, int(cfg.T_seg))
+            x_phys_np = np.array(x_phys_jax).astype(np.float32)
+
+            x_phys_t = torch.tensor(x_phys_np, dtype=torch.float32, device=device)
+            if x_phys_t.ndim == 2:
+                x_phys_t = x_phys_t.unsqueeze(0)
+
+            D = int(x_phys_t.shape[-1])
+            if D == int(cfg.obs_dim):
+                x_norm = (x_phys_t - normalizer.obs_mean) / (
+                    normalizer.obs_std + normalizer.eps
+                )
+            else:
+                x_norm = normalizer.normalize_x(x_phys_t, int(cfg.obs_dim))
+
+            theta_items.append(torch.tensor(theta_true_np, dtype=torch.float32))
+            x_items.append(x_norm.squeeze(0).detach().cpu())
+
+        return torch.stack(theta_items, dim=0), torch.stack(x_items, dim=0)
+
+    prior_cpu = build_prior(cfg, torch.device("cpu"))
+    old_batch_idx = getattr(simulator, "_batch_idx", 0)
+    simulator._batch_idx = int(seed_offset)
+    try:
+        for idx in range(int(num_cases)):
+            theta_true = _sample_theta_from_prior_cpu(
+                prior_cpu, int(cfg.random_seed) + int(seed_offset) + idx
+            ).to(device)
+            sim_out = simulator(theta_true)
+            x_phys_t = sim_out[0] if isinstance(sim_out, tuple) else sim_out
+            x_norm = normalizer.normalize_x(x_phys_t.to(device), int(cfg.obs_dim))
+
+            theta_items.append(theta_true.squeeze(0).detach().cpu())
+            x_items.append(x_norm.squeeze(0).detach().cpu())
+    finally:
+        simulator._batch_idx = old_batch_idx
+
+    return torch.stack(theta_items, dim=0), torch.stack(x_items, dim=0)
 
 
 def run_parameter_posterior_plots(
@@ -359,6 +446,7 @@ def run_sbc_diagnostic(
     fig_dir: Path,
     prior_norm,
     posterior,
+    simulator,
     simulator_for_sbi,
     normalizer: Normalizer,
     device: torch.device,
@@ -368,7 +456,10 @@ def run_sbc_diagnostic(
     num_sbc = cfg.num_sbc_samples
     num_post = cfg.num_posterior_samples_sbc
 
-    if cfg.method in ["npse", "fnpe"]:
+    if cfg.method == "fnpe":
+        num_sbc = min(num_sbc, 10)
+        num_post = min(num_post, 50)
+    elif cfg.method == "npse":
         num_sbc = min(num_sbc, 100)
         num_post = min(num_post, 500)
     elif cfg.method == "simformer":
@@ -378,30 +469,52 @@ def run_sbc_diagnostic(
 
     print(f"[SBC] Running with {num_sbc} samples, {num_post} posterior samples each...")
 
-    theta_sbc_norm = prior_norm.sample((num_sbc,)).to(device)
-    theta_sbc_phys = normalizer.unnormalize_theta(theta_sbc_norm)
-    x_sbc_phys = simulator_for_sbi(theta_sbc_phys)
-    x_sbc_norm = normalizer.normalize_x(x_sbc_phys, cfg.obs_dim)
+    sbc_device = torch.device("cpu") if cfg.method == "simformer" else device
+    if hasattr(posterior, "to"):
+        posterior.to(sbc_device)
 
-    # sbi's run_sbc / check_sbc require all tensors on the same device.
-    # Our SimformerPosterior.sample() returns CPU tensors (via JAX → numpy →
-    # torch.from_numpy), so move thetas and xs to CPU here.  For NPE/NPSE the
-    # posterior is sbi-native and handles device internally, but .cpu() is a
-    # no-op when they're already on CPU, so this is safe for all methods.
-    theta_sbc_cpu = theta_sbc_norm.cpu()
-    x_sbc_cpu = x_sbc_norm.cpu()
+    cuda_devices = []
+    if sbc_device.type == "cuda":
+        cuda_devices = [
+            sbc_device.index
+            if sbc_device.index is not None
+            else torch.cuda.current_device()
+        ]
+
+    with torch.random.fork_rng(devices=cuda_devices):
+        torch.manual_seed(int(cfg.random_seed) + 9000)
+        if sbc_device.type == "cuda":
+            torch.cuda.manual_seed_all(int(cfg.random_seed) + 9000)
+        if cfg.method == "fnpe":
+            theta_sbc_phys = prior_norm.sample((num_sbc,)).to(device)
+            theta_sbc_eval = normalizer.normalize_theta(theta_sbc_phys).to(sbc_device)
+        else:
+            theta_sbc_eval = prior_norm.sample((num_sbc,)).to(sbc_device)
+            theta_sbc_phys = normalizer.unnormalize_theta(theta_sbc_eval)
+
+    old_batch_idx = getattr(simulator, "_batch_idx", 0)
+    simulator._batch_idx = 9000
+    try:
+        x_sbc_phys = simulator_for_sbi(theta_sbc_phys)
+    finally:
+        simulator._batch_idx = old_batch_idx
+    x_sbc_norm = normalizer.normalize_x(x_sbc_phys, cfg.obs_dim)
+    x_sbc_eval = x_sbc_norm.to(sbc_device)
 
     ranks, dap_samples_norm = run_sbc(
-        thetas=theta_sbc_cpu,
-        xs=x_sbc_cpu,
+        thetas=theta_sbc_eval,
+        xs=x_sbc_eval,
         posterior=posterior,
         num_posterior_samples=num_post,
         num_workers=1,  # Use 1 worker to avoid multiprocessing issues with JAX
         use_batched_sampling=False,  # FNPE doesn't support batched sampling
     )
 
-    check_stats = check_sbc(ranks, theta_sbc_cpu, dap_samples_norm, num_post)
+    check_stats = check_sbc(ranks, theta_sbc_eval, dap_samples_norm, num_post)
     print("SBC check statistics:", check_stats)
+
+    if hasattr(posterior, "to") and sbc_device != device:
+        posterior.to(device)
 
     if not cfg.no_plots:
         sbc_fig_path = fig_dir / "sbc_rank_hist.png"
@@ -774,8 +887,8 @@ def run_swd_diagnostic(
 def run_w2_posterior_diagnostic(
     cfg: ExperimentConfig,
     fig_dir: Path,
-    theta_test: torch.Tensor,
-    x_test: torch.Tensor,
+    theta_test_phys: torch.Tensor,
+    x_test_norm: torch.Tensor,
     posterior,
     normalizer: Normalizer,
     device: torch.device,
@@ -797,9 +910,9 @@ def run_w2_posterior_diagnostic(
     print(f"[W2-POST] Computing posterior vs true theta metrics ({num_cases} cases)...")
 
     # Select subset
-    N = min(num_cases, theta_test.shape[0])
-    theta_sub = theta_test[:N]  # (N, d)
-    x_sub = x_test[:N]  # (N, T, D)
+    N = min(num_cases, theta_test_phys.shape[0])
+    theta_sub_phys = theta_test_phys[:N]  # (N, d) in physical units
+    x_sub = x_test_norm[:N]  # (N, T, D) normalized
 
     # Sample from posterior for each observation
     all_samples = []
@@ -808,11 +921,11 @@ def run_w2_posterior_diagnostic(
         x_i = x_sub[i : i + 1]  # (1, T, D) or (T, D)
         try:
             t0 = time.time()
-            samples_i = posterior.sample((num_posterior_samples,), x=x_i)
+            samples_i = posterior.sample((num_posterior_samples,), x=x_i.to(device))
             sample_times_s.append(time.time() - t0)
-            # Unnormalize if needed
-            if hasattr(normalizer, "unnormalize_theta"):
-                samples_i = normalizer.unnormalize_theta(samples_i.to(device))
+            if isinstance(samples_i, np.ndarray):
+                samples_i = torch.from_numpy(samples_i).float()
+            samples_i = normalizer.unnormalize_theta(samples_i.to(device))
             all_samples.append(samples_i.cpu())
         except Exception as e:
             print(f"[W2-POST] Warning: Failed to sample for case {i}: {e}")
@@ -825,11 +938,7 @@ def run_w2_posterior_diagnostic(
     # Stack samples: (N_success, K, d)
     theta_samples = torch.stack(all_samples, dim=0)
     N_success = theta_samples.shape[0]
-    theta_true_sub = theta_sub[:N_success]
-
-    # Unnormalize true thetas if needed
-    if hasattr(normalizer, "unnormalize_theta"):
-        theta_true_sub = normalizer.unnormalize_theta(theta_true_sub.to(device)).cpu()
+    theta_true_sub = theta_sub_phys[:N_success].cpu()
 
     # Compute metrics
     w2_results = wasserstein2_posterior_vs_true(
@@ -891,54 +1000,60 @@ def run_one_step_rmse_diagnostic(
 
     all_true_next = []
     all_pred_next = []
+    prior_cpu = build_prior(cfg, torch.device("cpu"))
+    old_batch_idx = getattr(simulator, "_batch_idx", 0)
+    simulator._batch_idx = 8000
+    try:
+        for i in range(num_cases):
+            theta_true = _sample_theta_from_prior_cpu(
+                prior_cpu, int(cfg.random_seed) + 8000 + i
+            ).to(device)
 
-    for i in range(num_cases):
-        with torch.no_grad():
-            theta_true = prior.sample((1,)).to(device)
+            sim_out = simulator(theta_true)
+            if not isinstance(sim_out, tuple):
+                print(f"[1-STEP] Skipping - simulator doesn't return controls")
+                return {"rmse_overall": None, "rmse_per_dim": None}
 
-        sim_out = simulator(theta_true)
-        if not isinstance(sim_out, tuple):
-            print(f"[1-STEP] Skipping - simulator doesn't return controls")
-            return {"rmse_overall": None, "rmse_per_dim": None}
+            x_sim, controls_sim = sim_out
+            x_np = x_sim[0].detach().cpu().numpy()
+            y_seq = x_np[:, :obs_dim]
 
-        x_sim, controls_sim = sim_out
-        x_np = x_sim[0].detach().cpu().numpy()
-        y_seq = x_np[:, :obs_dim]
+            if y_seq.shape[0] < 2:
+                continue
 
-        if y_seq.shape[0] < 2:
-            continue
+            y_next_true = y_seq[1].astype(np.float32)
+            # Use full trajectory for conditioning (posterior expects full T_seg shape)
+            x_cond = normalizer.normalize_x(x_sim, cfg.obs_dim).to(device)
 
-        y_next_true = y_seq[1].astype(np.float32)
-        # Use full trajectory for conditioning (posterior expects full T_seg shape)
-        x_cond = normalizer.normalize_x(x_sim, cfg.obs_dim).to(device)
+            with torch.no_grad():
+                theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
 
-        with torch.no_grad():
-            theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
+            if isinstance(theta_post_norm, np.ndarray):
+                theta_post_np = theta_post_norm
+            else:
+                theta_post_np = (
+                    normalizer.unnormalize_theta(theta_post_norm).detach().cpu().numpy()
+                )
 
-        if isinstance(theta_post_norm, np.ndarray):
-            theta_post_np = theta_post_norm
-        else:
-            theta_post_np = (
-                normalizer.unnormalize_theta(theta_post_norm).detach().cpu().numpy()
+            if theta_post_np.ndim == 3:
+                theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
+
+            controls_2 = {k: v[:2] for k, v in controls_sim.items()}
+            state0 = initial_state_from_obs(y_seq[0])
+
+            y_pred_batch = simulate_y_batch_for_thetas(
+                theta_batch_np=theta_post_np.astype(np.float32),
+                controls=controls_2,
+                state_dim=state_dim,
+                cfg=cfg,
+                state0=state0,
             )
 
-        if theta_post_np.ndim == 3:
-            theta_post_np = theta_post_np.reshape(-1, theta_post_np.shape[-1])
-
-        controls_2 = {k: v[:2] for k, v in controls_sim.items()}
-        state0 = initial_state_from_obs(y_seq[0])
-
-        y_pred_batch = simulate_y_batch_for_thetas(
-            theta_batch_np=theta_post_np.astype(np.float32),
-            controls=controls_2,
-            state_dim=state_dim,
-            cfg=cfg,
-            state0=state0,
-        )
-
-        y_pred_next = y_pred_batch[:, 1, :]
-        all_true_next.append(y_next_true)
-        all_pred_next.append(y_pred_next)
+            y_pred_next = y_pred_batch[:, 1, :]
+            all_true_next.append(y_next_true)
+            all_pred_next.append(y_pred_next)
+    finally:
+        simulator._batch_idx = old_batch_idx
 
     if not all_true_next:
         return {"rmse_overall": None, "rmse_per_dim": None}
@@ -1684,6 +1799,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         # (theta_true, x_cond) across all diagnostics.
         # ---------------------------------------------------------------------
         shared_examples: Optional[List[Dict[str, Any]]] = None
+        shared_eval_theta_phys: Optional[torch.Tensor] = None
+        shared_eval_x_norm: Optional[torch.Tensor] = None
         try:
             shared_examples = build_shared_diagnostic_examples(
                 cfg,
@@ -1698,6 +1815,22 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         except Exception as e:
             print(f"[DIAG] Failed to build shared diagnostic examples: {e}")
             shared_examples = None
+
+        try:
+            shared_eval_theta_phys, shared_eval_x_norm = build_shared_eval_dataset(
+                cfg,
+                prior=prior_phys,
+                simulator=simulator,
+                normalizer=normalizer,
+                device=device,
+                num_cases=100,
+                seed_offset=3000,
+                method=method,
+            )
+        except Exception as e:
+            print(f"[DIAG] Failed to build shared evaluation dataset: {e}")
+            shared_eval_theta_phys = None
+            shared_eval_x_norm = None
 
         # Posterior plots
         if cfg.run_posterior_plots and shared_examples is not None:
@@ -1719,14 +1852,15 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         elif cfg.run_posterior_plots:
             print("[DIAG] Skipping posterior plots - no shared examples available")
 
-        # SBC (skip for FNPE - GAUSS score is too slow for many samples)
-        if cfg.run_sbc and cfg.method != "fnpe":
+        # SBC
+        if cfg.run_sbc:
             print("\n[DIAG] Running SBC...")
             sbc_results = run_sbc_diagnostic(
                 cfg,
                 fig_dir,
                 prior_norm,
                 posterior,
+                simulator,
                 simulator_for_sbi,
                 normalizer,
                 device,
@@ -1756,11 +1890,13 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         # W2 Posterior vs True (simulation-only diagnostic)
         print("\n[DIAG] Running W2 posterior vs true theta...")
         try:
+            if shared_eval_theta_phys is None or shared_eval_x_norm is None:
+                raise RuntimeError("shared evaluation dataset unavailable")
             w2_post_results = run_w2_posterior_diagnostic(
                 cfg,
                 fig_dir=fig_dir,
-                theta_test=theta_train,  # Use training data as test (known ground truth)
-                x_test=x_train,
+                theta_test_phys=shared_eval_theta_phys,
+                x_test_norm=shared_eval_x_norm,
                 posterior=posterior,
                 normalizer=normalizer,
                 device=device,
