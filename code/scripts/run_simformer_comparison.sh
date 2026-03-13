@@ -7,14 +7,15 @@
 #
 # Usage:
 #   sbatch run_simformer_comparison.sh                          # defaults
-#   sbatch run_simformer_comparison.sh 5000 1000 sim_cmp        # custom sims, T_seg, name
-#   sbatch run_simformer_comparison.sh 500 1000 quick_test yes  # quick mode
+#   sbatch run_simformer_comparison.sh 5000 1000 sim_cmp           # custom sims, T_seg, name
+#   sbatch run_simformer_comparison.sh 500 1000 quick_test yes     # quick mode
+#   sbatch run_simformer_comparison.sh 20000 3000 cmp_smoke smoke  # minimal smoke test
 #
 # Positional args:
 #   $1  NUM_SIMULATIONS  (default: 2000)
 #   $2  T_SEG            (default: 1000)
 #   $3  EXP_NAME         (default: simformer_compare)
-#   $4  QUICK            (default: no)   set "yes" for quick sanity check
+#   $4  MODE             (default: no)   one of: no | yes | smoke
 #   $5  METHODS          (default: "npe npse simformer")  space-separated in quotes
 #   $6  SEED             (default: 42)
 # ==============================================================================
@@ -36,16 +37,18 @@
 NUM_SIMULATIONS=${1:-2000}
 T_SEG=${2:-1000}
 EXP_NAME=${3:-simformer_compare}
-QUICK=${4:-no}
+MODE=${4:-no}
 METHODS=${5:-"npe npse simformer"}
 SEED=${6:-42}
 
 # ==============================================================================
 # Build flags
 # ==============================================================================
-QUICK_FLAG=""
-if [ "${QUICK}" = "yes" ]; then
-    QUICK_FLAG="--quick"
+MODE_FLAG=""
+if [ "${MODE}" = "yes" ]; then
+    MODE_FLAG="--quick"
+elif [ "${MODE}" = "smoke" ]; then
+    MODE_FLAG="--smoke"
 fi
 
 # ==============================================================================
@@ -62,7 +65,7 @@ echo "Job ID:          ${SLURM_JOB_ID:-local}"
 echo "Num Simulations: ${NUM_SIMULATIONS}"
 echo "T_seg:           ${T_SEG}"
 echo "Exp Name:        ${EXP_NAME}"
-echo "Quick Mode:      ${QUICK}"
+echo "Mode:            ${MODE}"
 echo "Methods:         ${METHODS}"
 echo "Seed:            ${SEED}"
 echo "=================================================="
@@ -88,7 +91,7 @@ srun python scripts/run_simformer_comparison.py \
     --device cuda \
     --methods ${METHODS} \
     --seed ${SEED} \
-    ${QUICK_FLAG}
+    ${MODE_FLAG}
 
 echo "=================================================="
 echo "[$(date)] Comparison completed"

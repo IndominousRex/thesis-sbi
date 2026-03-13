@@ -66,6 +66,14 @@ def parse_args():
         help="Quick mode: fewer simulations and training steps",
     )
     parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help=(
+            "Minimal orchestration smoke test: tiny shared dataset, tiny models, "
+            "no evaluation diagnostics"
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -82,6 +90,7 @@ def create_config(
     device: str,
     seed: int,
     quick: bool = False,
+    smoke: bool = False,
     dataset_id: str = None,  # type: ignore
     reuse_dataset: bool = False,
 ) -> ExperimentConfig:
@@ -111,8 +120,30 @@ def create_config(
         "real_data_csv": None,
     }
 
+    if smoke:
+        cfg_kwargs.update(
+            {
+                "num_simulations": min(32, num_simulations),
+                "T_seg": min(128, T_seg),
+                "batch_sim": min(32, num_simulations),
+                "training_batch_size": 32,
+                "num_epochs": 2,
+                "stop_after_epochs": 1,
+                "encoder_hidden": 8,
+                "embedding_output_dim": 16,
+                "maf_hidden_features": 32,
+                "maf_num_transforms": 2,
+                "run_sbc": False,
+                "run_one_step_rmse": False,
+                "run_posterior_plots": False,
+                "run_lc2st": False,
+                "no_plots": True,
+                "do_eval": False,
+            }
+        )
+
     # Quick mode settings
-    if quick:
+    if quick and not smoke:
         cfg_kwargs.update(
             {
                 "num_simulations": min(500, num_simulations),
@@ -129,8 +160,22 @@ def create_config(
 
     # Method-specific overrides
     if method == "simformer":
+        if smoke:
+            cfg_kwargs.update(
+                {
+                    "simformer_token_dim": 16,
+                    "simformer_condition_token_dim": 8,
+                    "simformer_time_embedding_dim": 32,
+                    "simformer_num_layers": 2,
+                    "simformer_num_heads": 2,
+                    "simformer_attn_size": 8,
+                    "simformer_num_train_steps": 25,
+                    "simformer_batch_size": 32,
+                    "simformer_num_diffusion_steps": 20,
+                }
+            )
         # Use smaller model for faster training if quick mode
-        if quick:
+        elif quick:
             cfg_kwargs.update(
                 {
                     "simformer_num_layers": 4,
@@ -140,15 +185,22 @@ def create_config(
             )
     elif method == "fnpe":
         # FNPE generates its own data
-        cfg_kwargs["fnpe_num_simulations"] = (
-            num_simulations * 10 if not quick else 10000
-        )
+        if smoke:
+            cfg_kwargs["fnpe_num_simulations"] = 128
+            cfg_kwargs["fnpe_max_epochs"] = 5
+        else:
+            cfg_kwargs["fnpe_num_simulations"] = (
+                num_simulations * 10 if not quick else 10000
+            )
 
     return ExperimentConfig(**cfg_kwargs)
 
 
 def run_comparison(args):
     """Run comparison experiments."""
+    if args.quick and args.smoke:
+        raise ValueError("Use either --quick or --smoke, not both.")
+
     results = {}
     dataset_id = None
 
@@ -156,7 +208,7 @@ def run_comparison(args):
     print(f"SBI Method Comparison: {args.exp_name}")
     print(f"Methods: {args.methods}")
     print(f"Simulations: {args.num_simulations}, T_seg: {args.T_seg}")
-    print(f"Device: {args.device}, Quick: {args.quick}")
+    print(f"Device: {args.device}, Quick: {args.quick}, Smoke: {args.smoke}")
     if "fnpe" in args.methods:
         print(
             "[WARN] FNPE uses its own simulator/training-data pipeline; "
@@ -181,6 +233,7 @@ def run_comparison(args):
             device=args.device,
             seed=args.seed,
             quick=args.quick,
+            smoke=args.smoke,
             dataset_id=dataset_id,
             reuse_dataset=reuse,
         )
