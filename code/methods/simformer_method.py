@@ -80,6 +80,7 @@ from probjax.utils.sdeint import sdeint
 
 from .base import BaseMethod
 from models.models import build_embedding
+from utils.normalization import Normalizer
 
 
 class EmbeddingWrapperJAX:
@@ -126,8 +127,8 @@ class SimformerPosterior:
         embedding_dim: int,
         T_min: float,
         T_max: float,
-        prior_bounds: Dict[str, tuple],
-        active_parameters: tuple,
+        clip_low: Optional[Array] = None,
+        clip_high: Optional[Array] = None,
         num_steps: int = 500,
     ):
         self.params = params
@@ -139,8 +140,6 @@ class SimformerPosterior:
         self.T_min = T_min
         self.T_max = T_max
         self.num_steps = num_steps
-        self.prior_bounds = prior_bounds
-        self.active_parameters = active_parameters
 
         # Total nodes = theta_dim + embedding_dim
         self.total_nodes = theta_dim + embedding_dim
@@ -155,9 +154,14 @@ class SimformerPosterior:
         self.marginal_end_std = jnp.squeeze(sde.marginal_stddev(jnp.array([T_max])))
         self.marginal_end_mean = jnp.squeeze(sde.marginal_mean(jnp.array([T_max])))
 
-        # Build prior bounds as JAX arrays for clipping
-        self._prior_low = jnp.array([prior_bounds[p][0] for p in active_parameters])
-        self._prior_high = jnp.array([prior_bounds[p][1] for p in active_parameters])
+        # Posterior samples are returned in normalized theta-space, so clipping
+        # must use normalized bounds as well.
+        self._clip_low = (
+            None if clip_low is None else jnp.asarray(clip_low, dtype=jnp.float32)
+        )
+        self._clip_high = (
+            None if clip_high is None else jnp.asarray(clip_high, dtype=jnp.float32)
+        )
 
     def _init_backward_sde(self, x_o_embedded: Array):
         """Initialize backward SDE for sampling."""
@@ -262,8 +266,8 @@ class SimformerPosterior:
 
         theta_samples = self._sample_jax(num_samples, x_o_embedded, key, self.num_steps)
 
-        # Clip to prior bounds
-        theta_samples = jnp.clip(theta_samples, self._prior_low, self._prior_high)
+        if self._clip_low is not None and self._clip_high is not None:
+            theta_samples = jnp.clip(theta_samples, self._clip_low, self._clip_high)
 
         # Convert to PyTorch
         return torch.from_numpy(np.array(theta_samples)).float()
@@ -566,10 +570,41 @@ class SimformerMethod(BaseMethod):
         )
         return self._training_summary
 
-    def build_posterior(self) -> SimformerPosterior:
+    def _compute_normalized_clip_bounds(
+        self, normalizer: Normalizer
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Convert physical parameter bounds into normalized theta-space."""
+        bounds = self.cfg.param_bounds()
+        low_phys = torch.tensor(
+            [bounds[name][0] for name in self.cfg.active_parameters],
+            dtype=torch.float32,
+            device=normalizer.theta_mean.device,
+        )
+        high_phys = torch.tensor(
+            [bounds[name][1] for name in self.cfg.active_parameters],
+            dtype=torch.float32,
+            device=normalizer.theta_mean.device,
+        )
+        clip_low = normalizer.normalize_theta(low_phys).detach().cpu().numpy()
+        clip_high = normalizer.normalize_theta(high_phys).detach().cpu().numpy()
+        return clip_low.astype(np.float32), clip_high.astype(np.float32)
+
+    def build_posterior(
+        self, normalizer: Optional[Normalizer] = None
+    ) -> SimformerPosterior:
         """Build posterior object for sampling."""
         if self.params is None:
             raise RuntimeError("Model not trained. Call train() first.")
+
+        clip_low = None
+        clip_high = None
+        if normalizer is not None:
+            clip_low, clip_high = self._compute_normalized_clip_bounds(normalizer)
+        else:
+            print(
+                "[Simformer] Warning: building posterior without a normalizer; "
+                "normalized-space clipping is disabled."
+            )
 
         self.posterior = SimformerPosterior(
             params=self.params,
@@ -580,8 +615,8 @@ class SimformerMethod(BaseMethod):
             embedding_dim=self.embedding_dim,
             T_min=self.T_min,
             T_max=self.T_max,
-            prior_bounds=self.cfg.param_bounds(),
-            active_parameters=self.cfg.active_parameters,
+            clip_low=clip_low,
+            clip_high=clip_high,
             num_steps=self.num_diffusion_steps,
         )
         return self.posterior

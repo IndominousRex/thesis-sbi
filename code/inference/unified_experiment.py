@@ -1655,8 +1655,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 print(f"[NORM] Created normalizer from FNPE task stats")
 
     # --- Build posterior ---
-    # For FNPE, pass the normalizer so it can match NPE/NPSE interface
-    if cfg.method == "fnpe":
+    # Methods that return samples in normalized theta-space need the
+    # normalizer to build a consistent posterior interface.
+    if cfg.method in {"fnpe", "simformer"}:
         posterior = method.build_posterior(normalizer=normalizer)
     else:
         posterior = method.build_posterior()

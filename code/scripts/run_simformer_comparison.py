@@ -2,8 +2,9 @@
 """
 Run comparison experiments for all SBI methods (NPE, NPSE, FNPE, Simformer).
 
-This script runs all four methods on the same simulation dataset and compares metrics.
-For fair comparison, the dataset is cached and reused across all methods.
+NPE, NPSE, and Simformer reuse the same cached simulation dataset for a fair
+comparison. FNPE keeps its own task-specific simulation pipeline, so including
+it is useful for a broader benchmark but not a strict shared-dataset study.
 
 Usage:
     python scripts/run_simformer_comparison.py --exp-name sim_compare --num-simulations 2000
@@ -156,6 +157,11 @@ def run_comparison(args):
     print(f"Methods: {args.methods}")
     print(f"Simulations: {args.num_simulations}, T_seg: {args.T_seg}")
     print(f"Device: {args.device}, Quick: {args.quick}")
+    if "fnpe" in args.methods:
+        print(
+            "[WARN] FNPE uses its own simulator/training-data pipeline; "
+            "only NPE/NPSE/Simformer are strict shared-dataset comparisons."
+        )
     print("=" * 70)
 
     # Run each method
@@ -179,15 +185,17 @@ def run_comparison(args):
             reuse_dataset=reuse,
         )
 
+        # All non-FNPE methods should share the same cached dataset for an
+        # apples-to-apples comparison. Capture the deterministic dataset ID
+        # from the first config so later runs can explicitly set reuse_dataset.
+        if dataset_id is None:
+            dataset_id = cfg.dataset_id
+            print(f"[INFO] Shared dataset ID: {dataset_id}")
+
         try:
             # Run experiment
             exp_results = run_experiment(cfg)
             results[method] = exp_results
-
-            # Capture dataset_id from first successful run
-            if dataset_id is None and "dataset_id" in exp_results:
-                dataset_id = exp_results["dataset_id"]
-                print(f"[INFO] Cached dataset ID: {dataset_id}")
 
         except Exception as e:
             print(f"[ERROR] {method} failed: {e}")

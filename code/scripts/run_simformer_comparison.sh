@@ -2,7 +2,8 @@
 # ==============================================================================
 # SLURM script for Simformer comparison experiments
 #
-# Runs multi-method comparison (NPE, NPSE, Simformer) on the same cached dataset.
+# Runs a multi-method comparison. NPE, NPSE, and Simformer share the same
+# cached dataset; FNPE keeps its own task-specific simulation path.
 #
 # Usage:
 #   sbatch run_simformer_comparison.sh                          # defaults
