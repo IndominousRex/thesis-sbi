@@ -299,7 +299,11 @@ def parse_args():
     diag.add_argument("--num-sbc-samples", type=int, default=200)
     diag.add_argument("--num-lc2st-samples", type=int, default=None)
     diag.add_argument("--no-sbc", action="store_true")
-    diag.add_argument("--no-swd", action="store_true")
+    diag.add_argument(
+        "--no-swd",
+        action="store_true",
+        help="Deprecated (kept for compatibility). Prior-vs-DAP SWD is disabled.",
+    )
     diag.add_argument("--no-one-step", action="store_true")
     diag.add_argument("--no-plots", action="store_true")
 
@@ -310,8 +314,8 @@ def parse_args():
     real.add_argument(
         "--real-data-csv",
         type=str,
-        default="../data/measurements/Jeversen_2022_10_12_110132.csv",
-        help="Path to real-data CSV for evaluation (set to empty string to disable)",
+        default="",
+        help="Path to real-data CSV for evaluation (disabled by default)",
     )
     real.add_argument(
         "--real-data-dir",
@@ -413,11 +417,11 @@ def main():
         num_sbc_samples=args.num_sbc_samples,
         num_lc2st_samples=args.num_lc2st_samples,
         run_sbc=not args.no_sbc,
-        run_swd=not args.no_swd,
+        run_swd=False,
         run_one_step_rmse=not args.no_one_step,
         no_plots=args.no_plots,
         # Real data
-        real_data_csv=args.real_data_csv,
+        real_data_csv=(args.real_data_csv if args.real_data_csv else None),
         real_data_dir=args.real_data_dir,
         K_ppc=args.k_ppc,
         prefer_low_brake=args.prefer_low_brake,

@@ -46,6 +46,7 @@ from utils.plots import (
     plot_prior_posterior_1d,
     plot_prior_posterior_grid,
     plot_sbc_rank_hist,
+    plot_expected_coverage_curve,
     plot_training_curves,
     plot_ppc_trajectories,
     plot_obs_1d_hist_custom,
@@ -771,6 +772,7 @@ def run_swd_diagnostic(
 
 def run_w2_posterior_diagnostic(
     cfg: ExperimentConfig,
+    fig_dir: Path,
     theta_test: torch.Tensor,
     x_test: torch.Tensor,
     posterior,
@@ -800,10 +802,13 @@ def run_w2_posterior_diagnostic(
 
     # Sample from posterior for each observation
     all_samples = []
+    sample_times_s = []
     for i in range(N):
         x_i = x_sub[i : i + 1]  # (1, T, D) or (T, D)
         try:
+            t0 = time.time()
             samples_i = posterior.sample((num_posterior_samples,), x=x_i)
+            sample_times_s.append(time.time() - t0)
             # Unnormalize if needed
             if hasattr(normalizer, "unnormalize_theta"):
                 samples_i = normalizer.unnormalize_theta(samples_i.to(device))
@@ -832,12 +837,32 @@ def run_w2_posterior_diagnostic(
         num_projections=cfg.num_swd_projections,
         seed=cfg.random_seed,
     )
+    if sample_times_s:
+        w2_results["sampling_time_mean_s"] = float(np.mean(sample_times_s))
+        w2_results["sampling_time_std_s"] = float(np.std(sample_times_s))
+
+    if (
+        not cfg.no_plots
+        and "coverage_curve_alpha" in w2_results
+        and "coverage_curve_empirical" in w2_results
+    ):
+        cov_path = fig_dir / "expected_coverage_simulated.png"
+        plot_expected_coverage_curve(
+            w2_results["coverage_curve_alpha"],
+            w2_results["coverage_curve_empirical"],
+            cov_path,
+            title="Expected Coverage (Posterior vs Ground Truth)",
+        )
 
     print(f"[W2-POST] Results:")
-    print(f"  - L2 error (mean): {w2_results['l2_error_mean']:.4f}")
+    print(f"  - W2 to ground truth (mean): {w2_results['w2_mean']:.4f}")
+    print(f"  - L2 error of posterior mean: {w2_results['l2_error_mean']:.4f}")
     print(f"  - Coverage 90%: {w2_results['coverage_90']:.2%}")
     print(f"  - Coverage 50%: {w2_results['coverage_50']:.2%}")
+    print(f"  - Coverage curve MAE: {w2_results['coverage_curve_mae']:.4f}")
     print(f"  - SWD posterior vs true: {w2_results['swd_posterior_vs_true']:.4f}")
+    if "sampling_time_mean_s" in w2_results:
+        print(f"  - Sampling time / case: {w2_results['sampling_time_mean_s']:.4f}s")
 
     return w2_results
 
@@ -855,7 +880,7 @@ def run_one_step_rmse_diagnostic(
 ) -> Dict[str, Any]:
     """1-step-ahead RMSE diagnostic."""
     # Reduce samples for slower methods
-    if cfg.method in ["npse", "fnpe"]:
+    if cfg.method in ["npse", "fnpe", "simformer"]:
         num_posterior_samples = min(num_posterior_samples, 50)
 
     print(f"[1-STEP] Running RMSE diagnostic ({num_cases} cases)...")
@@ -1706,13 +1731,6 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             )
             metrics["sbc_check_stats"] = sbc_results["check_stats"]
 
-            # SWD
-            if cfg.run_swd:
-                swd_val = run_swd_diagnostic(
-                    cfg, prior_phys, sbc_results["dap_samples_norm"], normalizer
-                )
-                metrics["swd_prior_vs_dap"] = float(swd_val)
-
         # 1-step RMSE
         if cfg.run_one_step_rmse:
             print("\n[DIAG] Running 1-step RMSE...")
@@ -1738,6 +1756,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         try:
             w2_post_results = run_w2_posterior_diagnostic(
                 cfg,
+                fig_dir=fig_dir,
                 theta_test=theta_train,  # Use training data as test (known ground truth)
                 x_test=x_train,
                 posterior=posterior,
@@ -1825,7 +1844,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             print("[DIAG] Skipping diffusion traces - no shared examples available")
 
     # --- Real data eval (inline) ---
-    if cfg.real_data_csv and cfg.do_eval:
+    # Simformer/comparison runs are simulation-only; skip real-data inference.
+    if cfg.real_data_csv and cfg.do_eval and cfg.method != "simformer":
         print("\n[EVAL] Running real-data evaluation (inline)...")
         real_metrics = run_real_data_evaluation(
             cfg=cfg,
@@ -1859,6 +1879,10 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             print(f"[EVAL] Multi-trajectory PPC failed: {_e}")
         if real_metrics:
             metrics["real_metrics"] = real_metrics
+    elif cfg.real_data_csv and cfg.do_eval and cfg.method == "simformer":
+        print(
+            "[EVAL] Skipping real-data evaluation for Simformer (simulation-only mode)."
+        )
 
     # --- Save config and metrics ---
     cfg.save(str(exp_dir / "config.json"))

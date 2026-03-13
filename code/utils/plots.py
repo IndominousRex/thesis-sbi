@@ -191,6 +191,40 @@ def plot_lc2st_pp_plot(
     print(f"[plots] Saved LC2ST-NF PP-plot to {out_path}")
 
 
+def plot_expected_coverage_curve(
+    alphas: Sequence[float],
+    coverages: Sequence[float],
+    out_path: Path,
+    *,
+    title: str = "Expected Coverage (Simulated)",
+):
+    """
+    Plot expected coverage curve: empirical coverage vs nominal alpha.
+
+    Ideal calibration follows the diagonal y = x.
+    """
+    a = np.asarray(alphas, dtype=float)
+    c = np.asarray(coverages, dtype=float)
+    if a.size == 0 or c.size == 0:
+        return
+
+    _ensure_dir(out_path)
+    plt.figure(figsize=(5, 4))
+    plt.plot(a, c, lw=2, label="Empirical")
+    plt.plot([0, 1], [0, 1], "--", color="black", lw=1, alpha=0.7, label="Ideal")
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.xlabel("Nominal coverage")
+    plt.ylabel("Empirical coverage")
+    plt.title(title)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"[plots] Saved expected coverage curve to {out_path}")
+
+
 # ---------------------------------------------------------------------
 # 3) Posterior predictive trajectories (time series)
 # ---------------------------------------------------------------------

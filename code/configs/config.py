@@ -184,13 +184,13 @@ class ExperimentConfig:
     # --- Diagnostic options ---
     run_sbc: bool = True
     run_lc2st: bool = True  # Only for NPE
-    run_swd: bool = True
+    run_swd: bool = False  # Deprecated: prior-vs-DAP SWD removed from eval pipeline
     run_one_step_rmse: bool = True
     run_posterior_plots: bool = True
 
     # --- Real data eval ---
-    # Default path to real measurement data for evaluation
-    real_data_csv: Optional[str] = "../data/measurements/Jeversen_2022_10_12_110132.csv"
+    # Disabled by default. Set explicitly to enable real-data evaluation.
+    real_data_csv: Optional[str] = None
     # Directory containing all real measurement CSVs for multi-trajectory PPC
     real_data_dir: str = "../data/measurements"
     # Number of posterior predictive samples per trajectory in PPC plots

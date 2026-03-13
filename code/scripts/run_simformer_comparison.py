@@ -85,7 +85,7 @@ def create_config(
     reuse_dataset: bool = False,
 ) -> ExperimentConfig:
     """Create experiment config for a method."""
-    
+
     # Base config
     cfg_kwargs = {
         "method": method,
@@ -102,39 +102,47 @@ def create_config(
         "reuse_dataset": reuse_dataset,
         # Diagnostics
         "run_sbc": True,
-        "run_swd": True,
+        "run_swd": False,
         "run_one_step_rmse": True,
         "run_posterior_plots": True,
         "run_lc2st": method == "npe",  # Only for NPE
+        # Simulated-data-only runs
+        "real_data_csv": None,
     }
-    
+
     # Quick mode settings
     if quick:
-        cfg_kwargs.update({
-            "num_simulations": min(500, num_simulations),
-            "num_sbc_samples": 50,
-            "num_epochs": 50,
-            "stop_after_epochs": 10,
-        })
+        cfg_kwargs.update(
+            {
+                "num_simulations": min(500, num_simulations),
+                "num_sbc_samples": 50,
+                "num_epochs": 50,
+                "stop_after_epochs": 10,
+            }
+        )
         if method == "simformer":
             cfg_kwargs["simformer_num_train_steps"] = 5000
         elif method == "fnpe":
             cfg_kwargs["fnpe_num_simulations"] = min(10000, num_simulations * 5)
             cfg_kwargs["fnpe_max_epochs"] = 500
-    
+
     # Method-specific overrides
     if method == "simformer":
         # Use smaller model for faster training if quick mode
         if quick:
-            cfg_kwargs.update({
-                "simformer_num_layers": 4,
-                "simformer_num_heads": 4,
-                "simformer_num_train_steps": 10000,
-            })
+            cfg_kwargs.update(
+                {
+                    "simformer_num_layers": 4,
+                    "simformer_num_heads": 4,
+                    "simformer_num_train_steps": 10000,
+                }
+            )
     elif method == "fnpe":
         # FNPE generates its own data
-        cfg_kwargs["fnpe_num_simulations"] = num_simulations * 10 if not quick else 10000
-    
+        cfg_kwargs["fnpe_num_simulations"] = (
+            num_simulations * 10 if not quick else 10000
+        )
+
     return ExperimentConfig(**cfg_kwargs)
 
 
@@ -142,23 +150,23 @@ def run_comparison(args):
     """Run comparison experiments."""
     results = {}
     dataset_id = None
-    
+
     print("=" * 70)
     print(f"SBI Method Comparison: {args.exp_name}")
     print(f"Methods: {args.methods}")
     print(f"Simulations: {args.num_simulations}, T_seg: {args.T_seg}")
     print(f"Device: {args.device}, Quick: {args.quick}")
     print("=" * 70)
-    
+
     # Run each method
     for i, method in enumerate(args.methods):
         print(f"\n{'='*70}")
         print(f"Running {method.upper()} ({i+1}/{len(args.methods)})")
         print("=" * 70)
-        
+
         # First method generates dataset, others reuse it
         reuse = i > 0 and dataset_id is not None
-        
+
         cfg = create_config(
             method=method,
             exp_name=args.exp_name,
@@ -170,92 +178,105 @@ def run_comparison(args):
             dataset_id=dataset_id,
             reuse_dataset=reuse,
         )
-        
+
         try:
             # Run experiment
             exp_results = run_experiment(cfg)
             results[method] = exp_results
-            
+
             # Capture dataset_id from first successful run
             if dataset_id is None and "dataset_id" in exp_results:
                 dataset_id = exp_results["dataset_id"]
                 print(f"[INFO] Cached dataset ID: {dataset_id}")
-        
+
         except Exception as e:
             print(f"[ERROR] {method} failed: {e}")
             import traceback
+
             traceback.print_exc()
             results[method] = {"error": str(e)}
-    
+
     # Print summary
     print("\n" + "=" * 70)
     print("COMPARISON SUMMARY")
     print("=" * 70)
-    
+
     summary_metrics = {}
     for method, res in results.items():
         if "error" in res:
             print(f"\n{method.upper()}: FAILED - {res['error']}")
             continue
-        
+
         print(f"\n{method.upper()}:")
         summary = {"method": method}
-        
+
+        metrics = res.get("metrics", {})
+
         # Training summary
-        if "training_summary" in res:
-            train = res["training_summary"]
+        train = metrics.get("training_summary", {})
+        if train:
             if "final_loss" in train:
                 print(f"  Final loss: {train['final_loss']:.4f}")
                 summary["final_loss"] = train["final_loss"]
             if "train_time_s" in train:
                 print(f"  Training time: {train['train_time_s']:.1f}s")
                 summary["train_time_s"] = train["train_time_s"]
-        
+
         # SBC
-        if "sbc_check_stats" in res:
-            sbc = res["sbc_check_stats"]
+        if "sbc_check_stats" in metrics:
+            sbc = metrics["sbc_check_stats"]
             if "c2st_accuracy" in sbc:
                 print(f"  SBC C2ST accuracy: {sbc['c2st_accuracy']:.3f}")
                 summary["sbc_c2st"] = sbc["c2st_accuracy"]
-        
-        # SWD
-        if "swd_prior_vs_dap" in res:
-            print(f"  SWD (prior vs DAP): {res['swd_prior_vs_dap']:.4f}")
-            summary["swd_prior_dap"] = res["swd_prior_vs_dap"]
-        
+
         # W2 posterior
-        if "w2_posterior_vs_true" in res:
-            w2 = res["w2_posterior_vs_true"]
+        if "w2_posterior_vs_true" in metrics:
+            w2 = metrics["w2_posterior_vs_true"]
+            print(f"  W2 to ground truth (mean): {w2.get('w2_mean', 'N/A')}")
             print(f"  L2 error (mean): {w2.get('l2_error_mean', 'N/A')}")
-            print(f"  Coverage 90%: {w2.get('coverage_90', 'N/A'):.2%}" if isinstance(w2.get('coverage_90'), (int, float)) else f"  Coverage 90%: N/A")
-            print(f"  Coverage 50%: {w2.get('coverage_50', 'N/A'):.2%}" if isinstance(w2.get('coverage_50'), (int, float)) else f"  Coverage 50%: N/A")
+            print(
+                f"  Coverage 90%: {w2.get('coverage_90', 'N/A'):.2%}"
+                if isinstance(w2.get("coverage_90"), (int, float))
+                else f"  Coverage 90%: N/A"
+            )
+            print(
+                f"  Coverage 50%: {w2.get('coverage_50', 'N/A'):.2%}"
+                if isinstance(w2.get("coverage_50"), (int, float))
+                else f"  Coverage 50%: N/A"
+            )
+            if isinstance(w2.get("coverage_curve_mae"), (int, float)):
+                print(f"  Coverage curve MAE: {w2['coverage_curve_mae']:.4f}")
+                summary["coverage_curve_mae"] = w2["coverage_curve_mae"]
+            summary["w2_mean"] = w2.get("w2_mean")
             summary["l2_error"] = w2.get("l2_error_mean")
             summary["coverage_90"] = w2.get("coverage_90")
             summary["coverage_50"] = w2.get("coverage_50")
-        
+
         # C2ST
-        if "c2st" in res:
-            c2st = res["c2st"]
-            if "mean_c2st" in c2st:
-                print(f"  C2ST mean: {c2st['mean_c2st']:.3f}")
-                summary["c2st_mean"] = c2st["mean_c2st"]
-        
+        if "c2st" in metrics:
+            c2st = metrics["c2st"]
+            vals = [float(v) for v in c2st.values() if isinstance(v, (int, float))]
+            if vals:
+                c2st_mean = float(sum(vals) / len(vals))
+                print(f"  C2ST mean: {c2st_mean:.3f}")
+                summary["c2st_mean"] = c2st_mean
+
         # 1-step RMSE
-        if "one_step_rmse" in res:
-            rmse = res["one_step_rmse"]
+        if "one_step_rmse" in metrics:
+            rmse = metrics["one_step_rmse"]
             if "rmse_overall" in rmse and rmse["rmse_overall"] is not None:
                 print(f"  1-step RMSE: {rmse['rmse_overall']:.4f}")
                 summary["one_step_rmse"] = rmse["rmse_overall"]
-        
+
         summary_metrics[method] = summary
-    
+
     # Save summary to file
     summary_path = Path("experiments") / f"{args.exp_name}_summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     with open(summary_path, "w") as f:
         json.dump(summary_metrics, f, indent=2)
     print(f"\n[INFO] Summary saved to {summary_path}")
-    
+
     return results
 
 
