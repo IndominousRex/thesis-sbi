@@ -452,20 +452,20 @@ def run_sbc_diagnostic(
     device: torch.device,
 ) -> Dict[str, Any]:
     """Run Simulation-Based Calibration diagnostic."""
-    # Reduce samples for slower methods
     num_sbc = cfg.num_sbc_samples
     num_post = cfg.num_posterior_samples_sbc
 
-    if cfg.method == "fnpe":
-        num_sbc = min(num_sbc, 10)
-        num_post = min(num_post, 50)
-    elif cfg.method == "npse":
-        num_sbc = min(num_sbc, 100)
-        num_post = min(num_post, 500)
-    elif cfg.method == "simformer":
-        # Simformer uses JAX SDE integration (slow on CPU fallback); keep small
-        num_sbc = min(num_sbc, 50)
-        num_post = min(num_post, 500)
+    if not getattr(cfg, "unify_eval_budgets", False):
+        if cfg.method == "fnpe":
+            num_sbc = min(num_sbc, 10)
+            num_post = min(num_post, 50)
+        elif cfg.method == "npse":
+            num_sbc = min(num_sbc, 100)
+            num_post = min(num_post, 500)
+        elif cfg.method == "simformer":
+            # Simformer uses JAX SDE integration (slow on CPU fallback); keep small
+            num_sbc = min(num_sbc, 50)
+            num_post = min(num_post, 500)
 
     print(f"[SBC] Running with {num_sbc} samples, {num_post} posterior samples each...")
 
@@ -564,8 +564,8 @@ def run_pairplot_diagnostic(
 
     param_names = list(cfg.active_parameters)
 
-    # Reduce samples for slower methods
-    if cfg.method in ["npse", "fnpe"]:
+    # Outside strict comparison mode, keep slower methods lighter.
+    if not getattr(cfg, "unify_eval_budgets", False) and cfg.method in ["npse", "fnpe"]:
         num_posterior_samples = min(num_posterior_samples, 500)
         num_examples = min(num_examples, 2)
 
@@ -685,8 +685,8 @@ def run_c2st_diagnostic(
     param_names = list(cfg.active_parameters)
     c2st_results = {}
 
-    # Reduce samples for slower methods
-    if cfg.method in ["npse", "fnpe"]:
+    # Outside strict comparison mode, keep slower methods lighter.
+    if not getattr(cfg, "unify_eval_budgets", False) and cfg.method in ["npse", "fnpe"]:
         num_posterior_samples = min(num_posterior_samples, 500)
         num_examples = min(num_examples, 2)
 
@@ -902,8 +902,11 @@ def run_w2_posterior_diagnostic(
     This is particularly useful for simulation-only experiments where we have
     true theta values for each observation.
     """
-    # Reduce samples for slower methods
-    if cfg.method in ["npse", "fnpe", "simformer"]:
+    # Outside strict comparison mode, keep slower methods lighter.
+    if (
+        not getattr(cfg, "unify_eval_budgets", False)
+        and cfg.method in ["npse", "fnpe", "simformer"]
+    ):
         num_cases = min(num_cases, 50)
         num_posterior_samples = min(num_posterior_samples, 200)
 
@@ -989,8 +992,11 @@ def run_one_step_rmse_diagnostic(
     num_posterior_samples: int = 100,
 ) -> Dict[str, Any]:
     """1-step-ahead RMSE diagnostic."""
-    # Reduce samples for slower methods
-    if cfg.method in ["npse", "fnpe", "simformer"]:
+    # Outside strict comparison mode, keep slower methods lighter.
+    if (
+        not getattr(cfg, "unify_eval_budgets", False)
+        and cfg.method in ["npse", "fnpe", "simformer"]
+    ):
         num_posterior_samples = min(num_posterior_samples, 50)
 
     print(f"[1-STEP] Running RMSE diagnostic ({num_cases} cases)...")
@@ -1794,6 +1800,27 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     }
 
     if cfg.do_eval:
+        if getattr(cfg, "unify_eval_budgets", False):
+            posterior_plot_examples = 2
+            pairplot_examples = 2
+            pairplot_posterior_samples = 500
+            c2st_examples = 2
+            c2st_posterior_samples = 500
+            one_step_cases = 20
+            one_step_posterior_samples = 50
+            w2_cases = 50
+            w2_posterior_samples = 200
+        else:
+            posterior_plot_examples = 3 if cfg.method == "npe" else 2
+            pairplot_examples = 3 if cfg.method == "npe" else 2
+            pairplot_posterior_samples = 1000 if cfg.method == "npe" else 500
+            c2st_examples = 3 if cfg.method == "npe" else 2
+            c2st_posterior_samples = 1000 if cfg.method == "npe" else 500
+            one_step_cases = 20
+            one_step_posterior_samples = 100
+            w2_cases = 100
+            w2_posterior_samples = 500
+
         # ---------------------------------------------------------------------
         # Build shared synthetic examples so ex_idx refers to the same
         # (theta_true, x_cond) across all diagnostics.
@@ -1835,7 +1862,6 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         # Posterior plots
         if cfg.run_posterior_plots and shared_examples is not None:
             print("\n[DIAG] Generating posterior plots...")
-            num_ex = 3 if cfg.method == "npe" else 2
             run_parameter_posterior_plots(
                 cfg,
                 fig_dir,
@@ -1844,10 +1870,10 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 simulator,
                 normalizer,
                 device,
-                num_examples=num_ex,
+                num_examples=posterior_plot_examples,
                 num_posterior_samples=5000,
                 method=method,  # Pass method for FNPE
-                examples=shared_examples[:num_ex],
+                examples=shared_examples[:posterior_plot_examples],
             )
         elif cfg.run_posterior_plots:
             print("[DIAG] Skipping posterior plots - no shared examples available")
@@ -1878,6 +1904,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     simulator,
                     normalizer,
                     device,
+                    num_cases=one_step_cases,
+                    num_posterior_samples=one_step_posterior_samples,
                 )
                 metrics["one_step_rmse"] = one_step_results
 
@@ -1900,8 +1928,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 posterior=posterior,
                 normalizer=normalizer,
                 device=device,
-                num_cases=100,
-                num_posterior_samples=500,
+                num_cases=w2_cases,
+                num_posterior_samples=w2_posterior_samples,
             )
             if w2_post_results:
                 metrics["w2_posterior_vs_true"] = w2_post_results
@@ -1915,7 +1943,6 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         if shared_examples is not None:
             print("\n[DIAG] Running pairplot diagnostics...")
             try:
-                num_ex = 3 if cfg.method == "npe" else 2
                 run_pairplot_diagnostic(
                     cfg,
                     fig_dir,
@@ -1924,10 +1951,10 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     simulator,
                     normalizer,
                     device,
-                    num_posterior_samples=1000 if cfg.method == "npe" else 500,
-                    num_examples=num_ex,
+                    num_posterior_samples=pairplot_posterior_samples,
+                    num_examples=pairplot_examples,
                     method=method,
-                    examples=shared_examples[:num_ex],
+                    examples=shared_examples[:pairplot_examples],
                 )
             except Exception as e:
                 print(f"[DIAG] Pairplot failed: {e}")
@@ -1938,7 +1965,6 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         if shared_examples is not None:
             print("\n[DIAG] Running C2ST diagnostics...")
             try:
-                num_ex = 3 if cfg.method == "npe" else 2
                 c2st_results = run_c2st_diagnostic(
                     cfg,
                     fig_dir,
@@ -1947,10 +1973,10 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     simulator,
                     normalizer,
                     device,
-                    num_posterior_samples=1000 if cfg.method == "npe" else 500,
-                    num_examples=num_ex,
+                    num_posterior_samples=c2st_posterior_samples,
+                    num_examples=c2st_examples,
                     method=method,
-                    examples=shared_examples[:num_ex],
+                    examples=shared_examples[:c2st_examples],
                 )
                 if c2st_results:
                     metrics["c2st"] = c2st_results

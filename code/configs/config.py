@@ -187,6 +187,7 @@ class ExperimentConfig:
     run_swd: bool = False  # Deprecated: prior-vs-DAP SWD removed from eval pipeline
     run_one_step_rmse: bool = True
     run_posterior_plots: bool = True
+    unify_eval_budgets: bool = True  # Use identical evaluation budgets across methods
 
     # --- Real data eval ---
     # Disabled by default. Set explicitly to enable real-data evaluation.

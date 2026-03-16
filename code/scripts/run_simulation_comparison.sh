@@ -6,10 +6,10 @@
 # cached dataset; FNPE keeps its own task-specific simulation path.
 #
 # Usage:
-#   sbatch run_simformer_comparison.sh                          # defaults
-#   sbatch run_simformer_comparison.sh 5000 1000 sim_cmp           # custom sims, T_seg, name
-#   sbatch run_simformer_comparison.sh 500 1000 quick_test yes     # quick mode
-#   sbatch run_simformer_comparison.sh 20000 3000 cmp_smoke smoke  # minimal smoke test
+#   sbatch run_simulation_comparison.sh                          # defaults
+#   sbatch run_simulation_comparison.sh 5000 1000 sim_cmp           # custom sims, T_seg, name
+#   sbatch run_simulation_comparison.sh 500 1000 quick_test yes     # quick mode
+#   sbatch run_simulation_comparison.sh 20000 3000 cmp_smoke smoke  # minimal smoke test
 #
 # Positional args:
 #   $1  NUM_SIMULATIONS  (default: 2000)
@@ -27,7 +27,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=48:00:00
+#SBATCH --time=72:00:00
 #SBATCH --output=simformer_cmp_%j.out
 #SBATCH --error=simformer_cmp_%j.err
 
@@ -84,7 +84,7 @@ export JAX_PLATFORM_NAME=cpu
 # ==============================================================================
 # Run comparison
 # ==============================================================================
-srun python scripts/run_simformer_comparison.py \
+srun python scripts/run_simulation_comparison.py \
     --exp-name "${EXP_NAME}" \
     --num-simulations ${NUM_SIMULATIONS} \
     --T-seg ${T_SEG} \

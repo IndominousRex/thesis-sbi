@@ -116,6 +116,9 @@ def create_config(
         "run_one_step_rmse": True,
         "run_posterior_plots": True,
         "run_lc2st": method == "npe",  # Only for NPE
+        "unify_eval_budgets": True,
+        "num_sbc_samples": 50,
+        "num_posterior_samples_sbc": 200,
         # Simulated-data-only runs
         "real_data_csv": None,
     }
@@ -203,8 +206,11 @@ def create_config(
             cfg_kwargs["fnpe_num_simulations"] = 128
             cfg_kwargs["fnpe_max_epochs"] = 5
         else:
+            # For comparison runs, align FNPE to the same nominal simulation budget
+            # as the shared-data methods. FNPE still differs in training windows and
+            # optimization dynamics, but it should not silently get 10x more data.
             cfg_kwargs["fnpe_num_simulations"] = (
-                num_simulations * 10
+                num_simulations
                 if not quick
                 else cfg_kwargs.get("fnpe_num_simulations", 2000)
             )
@@ -218,6 +224,7 @@ def run_comparison(args):
         raise ValueError("Use either --quick or --smoke, not both.")
 
     results = {}
+    configs_used = {}
     dataset_id = None
 
     print("=" * 70)
@@ -253,6 +260,7 @@ def run_comparison(args):
             dataset_id=dataset_id,
             reuse_dataset=reuse,
         )
+        configs_used[method] = cfg
 
         # All non-FNPE methods should share the same cached dataset for an
         # apples-to-apples comparison. Capture the deterministic dataset ID
@@ -286,6 +294,17 @@ def run_comparison(args):
 
         print(f"\n{method.upper()}:")
         summary = {"method": method}
+        cfg_used = configs_used.get(method)
+        if cfg_used is not None:
+            summary["configured_num_simulations"] = cfg_used.num_simulations
+            summary["training_num_simulations"] = (
+                cfg_used.fnpe_num_simulations
+                if method == "fnpe"
+                else cfg_used.num_simulations
+            )
+            summary["T_seg"] = cfg_used.T_seg
+            if method == "fnpe":
+                summary["fnpe_steps_per_epoch"] = cfg_used.fnpe_steps_per_epoch
 
         metrics = res.get("metrics", {})
 
@@ -309,8 +328,25 @@ def run_comparison(args):
         # W2 posterior
         if "w2_posterior_vs_true" in metrics:
             w2 = metrics["w2_posterior_vs_true"]
+            posterior_vs_true = {
+                "w2_mean": w2.get("w2_mean"),
+                "w2_std": w2.get("w2_std"),
+                "l2_error_mean": w2.get("l2_error_mean"),
+                "l2_error_std": w2.get("l2_error_std"),
+                "swd_posterior_vs_true": w2.get("swd_posterior_vs_true"),
+                "coverage_90": w2.get("coverage_90"),
+                "coverage_50": w2.get("coverage_50"),
+                "coverage_curve_mae": w2.get("coverage_curve_mae"),
+                "w1_per_dim": w2.get("w1_per_dim"),
+                "sampling_time_mean_s": w2.get("sampling_time_mean_s"),
+                "sampling_time_std_s": w2.get("sampling_time_std_s"),
+            }
             print(f"  W2 to ground truth (mean): {w2.get('w2_mean', 'N/A')}")
+            print(f"  W2 to ground truth (std): {w2.get('w2_std', 'N/A')}")
             print(f"  L2 error (mean): {w2.get('l2_error_mean', 'N/A')}")
+            print(f"  L2 error (std): {w2.get('l2_error_std', 'N/A')}")
+            if isinstance(w2.get("swd_posterior_vs_true"), (int, float)):
+                print(f"  SWD posterior vs true: {w2['swd_posterior_vs_true']:.4f}")
             print(
                 f"  Coverage 90%: {w2.get('coverage_90', 'N/A'):.2%}"
                 if isinstance(w2.get("coverage_90"), (int, float))
@@ -323,11 +359,20 @@ def run_comparison(args):
             )
             if isinstance(w2.get("coverage_curve_mae"), (int, float)):
                 print(f"  Coverage curve MAE: {w2['coverage_curve_mae']:.4f}")
-                summary["coverage_curve_mae"] = w2["coverage_curve_mae"]
+            if isinstance(w2.get("sampling_time_mean_s"), (int, float)):
+                print(f"  Sampling time / case: {w2['sampling_time_mean_s']:.4f}s")
+            summary["posterior_vs_true"] = posterior_vs_true
             summary["w2_mean"] = w2.get("w2_mean")
+            summary["w2_std"] = w2.get("w2_std")
             summary["l2_error"] = w2.get("l2_error_mean")
+            summary["l2_error_std"] = w2.get("l2_error_std")
+            summary["swd_posterior_vs_true"] = w2.get("swd_posterior_vs_true")
             summary["coverage_90"] = w2.get("coverage_90")
             summary["coverage_50"] = w2.get("coverage_50")
+            summary["coverage_curve_mae"] = w2.get("coverage_curve_mae")
+            summary["w1_per_dim"] = w2.get("w1_per_dim")
+            summary["sampling_time_mean_s"] = w2.get("sampling_time_mean_s")
+            summary["sampling_time_std_s"] = w2.get("sampling_time_std_s")
 
         # C2ST
         if "c2st" in metrics:
