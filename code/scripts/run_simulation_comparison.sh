@@ -6,10 +6,11 @@
 # cached dataset; FNPE keeps its own task-specific simulation path.
 #
 # Usage:
-#   sbatch run_simulation_comparison.sh                          # defaults
-#   sbatch run_simulation_comparison.sh 5000 1000 sim_cmp           # custom sims, T_seg, name
-#   sbatch run_simulation_comparison.sh 500 1000 quick_test yes     # quick mode
-#   sbatch run_simulation_comparison.sh 20000 3000 cmp_smoke smoke  # minimal smoke test
+#   sbatch run_simulation_comparison.sh                              # defaults
+#   sbatch run_simulation_comparison.sh 5000 1000 sim_cmp            # custom sims, T_seg, name
+#   sbatch run_simulation_comparison.sh 500 1000 quick_test yes      # quick mode
+#   sbatch run_simulation_comparison.sh 20000 3000 cmp_smoke smoke   # minimal smoke test
+#   sbatch --gres=gpu:4 run_simulation_comparison.sh ...             # parallel model runs on 4 visible GPUs
 #
 # Positional args:
 #   $1  NUM_SIMULATIONS  (default: 2000)
@@ -27,7 +28,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=72:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=simformer_cmp_%j.out
 #SBATCH --error=simformer_cmp_%j.err
 
@@ -68,6 +69,7 @@ echo "Exp Name:        ${EXP_NAME}"
 echo "Mode:            ${MODE}"
 echo "Methods:         ${METHODS}"
 echo "Seed:            ${SEED}"
+echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<not set>}"
 echo "=================================================="
 
 # --- Go to code directory ---
@@ -84,6 +86,7 @@ export JAX_PLATFORM_NAME=cpu
 # ==============================================================================
 # Run comparison
 # ==============================================================================
+# Parallel model execution is automatic when multiple GPUs are visible to the job.
 srun python scripts/run_simulation_comparison.py \
     --exp-name "${EXP_NAME}" \
     --num-simulations ${NUM_SIMULATIONS} \

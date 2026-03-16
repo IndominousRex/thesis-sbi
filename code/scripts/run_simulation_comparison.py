@@ -7,20 +7,27 @@ comparison. FNPE keeps its own task-specific simulation pipeline, so including
 it is useful for a broader benchmark but not a strict shared-dataset study.
 
 Usage:
-    python scripts/run_simformer_comparison.py --exp-name sim_compare --num-simulations 2000
+    python scripts/run_simulation_comparison.py --exp-name sim_compare --num-simulations 2000
 """
 
 import argparse
 import json
+import multiprocessing as mp
+import os
 import sys
+import traceback
 from pathlib import Path
 from datetime import datetime
+from contextlib import redirect_stdout, redirect_stderr
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from configs.config import ExperimentConfig
-from inference.unified_experiment import run_experiment
+from inference.unified_experiment import run_experiment, get_or_generate_dataset
+from utils.env_utils import setup_environment, get_device
+from simulation.simulation import init_simulation_from_config, make_simulator
+from models.models import build_prior
 
 
 def parse_args():
@@ -218,15 +225,229 @@ def create_config(
     return ExperimentConfig(**cfg_kwargs)
 
 
-def run_comparison(args):
-    """Run comparison experiments."""
-    if args.quick and args.smoke:
-        raise ValueError("Use either --quick or --smoke, not both.")
+def _json_default(obj):
+    if isinstance(obj, Path):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
-    results = {}
-    configs_used = {}
-    dataset_id = None
 
+def _visible_gpu_ids() -> list[str]:
+    cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    if cuda_visible:
+        return [tok.strip() for tok in cuda_visible.split(",") if tok.strip()]
+
+    try:
+        import torch
+
+        return [str(i) for i in range(torch.cuda.device_count())]
+    except Exception:
+        return []
+
+
+def _prepare_shared_dataset(cfg: ExperimentConfig) -> None:
+    """Materialize the shared cached dataset before launching parallel workers."""
+    print(f"[DATA] Preparing shared dataset cache: {cfg.get_dataset_cache_path()}")
+    setup_environment(cfg.sim_seed)
+    device = get_device(cfg.device)
+    init_simulation_from_config(cfg)
+    prior_phys = build_prior(cfg, device)
+    simulator = make_simulator(cfg, device)
+    get_or_generate_dataset(cfg, prior_phys, simulator, device)
+    try:
+        import torch
+
+        del prior_phys, simulator
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def _run_method_worker(
+    cfg_dict: dict,
+    gpu_id: str | None,
+    result_path: str,
+    log_path: str,
+) -> None:
+    """Worker process for a single method run."""
+    if gpu_id is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+
+    cfg = ExperimentConfig.from_dict(cfg_dict)
+    result_payload = {
+        "method": cfg.method,
+        "gpu_id": gpu_id,
+        "exp_name": cfg.exp_name,
+    }
+
+    result_file = Path(result_path)
+    log_file = Path(log_path)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    result_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with log_file.open("w", encoding="utf-8") as log:
+        with redirect_stdout(log), redirect_stderr(log):
+            print(
+                f"[WORKER] Starting {cfg.method} on "
+                f"{'gpu ' + str(gpu_id) if gpu_id is not None else 'default device'}",
+                flush=True,
+            )
+            try:
+                exp_results = run_experiment(cfg)
+                result_payload.update(
+                    {
+                        "exp_dir": str(exp_results.get("exp_dir")),
+                        "metrics": exp_results.get("metrics", {}),
+                    }
+                )
+            except Exception as exc:  # pragma: no cover - defensive worker wrapper
+                traceback.print_exc()
+                result_payload["error"] = str(exc)
+                result_payload["traceback"] = traceback.format_exc()
+
+    with result_file.open("w", encoding="utf-8") as f:
+        json.dump(result_payload, f, indent=2, default=_json_default)
+
+
+def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | None]:
+    """Create all per-method configs and return shared dataset ID if applicable."""
+    configs_used: dict[str, ExperimentConfig] = {}
+    shared_methods = [m for m in args.methods if m != "fnpe"]
+    shared_dataset_id = None
+
+    if shared_methods:
+        seed_cfg = create_config(
+            method=shared_methods[0],
+            exp_name=args.exp_name,
+            num_simulations=args.num_simulations,
+            T_seg=args.T_seg,
+            device=args.device,
+            seed=args.seed,
+            quick=args.quick,
+            smoke=args.smoke,
+            dataset_id=None,
+            reuse_dataset=True,
+        )
+        shared_dataset_id = seed_cfg.dataset_id
+
+    for method in args.methods:
+        cfg = create_config(
+            method=method,
+            exp_name=args.exp_name,
+            num_simulations=args.num_simulations,
+            T_seg=args.T_seg,
+            device=args.device,
+            seed=args.seed,
+            quick=args.quick,
+            smoke=args.smoke,
+            dataset_id=shared_dataset_id,
+            reuse_dataset=method != "fnpe" and shared_dataset_id is not None,
+        )
+        configs_used[method] = cfg
+
+    return configs_used, shared_dataset_id
+
+
+def _launch_parallel_runs(
+    args,
+    configs_used: dict[str, ExperimentConfig],
+    gpu_ids: list[str],
+) -> dict[str, dict]:
+    """Launch methods in parallel, one per visible GPU, and collect results."""
+    methods = list(args.methods)
+    results: dict[str, dict] = {}
+    run_root = Path("experiments") / "_comparison_runs" / args.exp_name
+    run_root.mkdir(parents=True, exist_ok=True)
+    ctx = mp.get_context("spawn")
+
+    pending = methods.copy()
+    active: list[dict] = []
+    free_gpu_ids = gpu_ids.copy()
+
+    while pending or active:
+        while pending and free_gpu_ids:
+            method = pending.pop(0)
+            gpu_id = free_gpu_ids.pop(0)
+            cfg = configs_used[method]
+            result_path = run_root / f"{method}_result.json"
+            log_path = run_root / f"{method}.log"
+            print(
+                f"[LAUNCH] {method.upper()} on GPU {gpu_id} "
+                f"(log: {log_path})"
+            )
+            proc = ctx.Process(
+                target=_run_method_worker,
+                args=(cfg.to_dict(), gpu_id, str(result_path), str(log_path)),
+                name=f"compare-{method}",
+            )
+            proc.start()
+            active.append(
+                {
+                    "method": method,
+                    "gpu_id": gpu_id,
+                    "proc": proc,
+                    "result_path": result_path,
+                    "log_path": log_path,
+                }
+            )
+
+        if not active:
+            break
+
+        still_active: list[dict] = []
+        for entry in active:
+            proc = entry["proc"]
+            proc.join(timeout=0.2)
+            if proc.is_alive():
+                still_active.append(entry)
+                continue
+
+            method = entry["method"]
+            gpu_id = entry["gpu_id"]
+            free_gpu_ids.append(gpu_id)
+            result_path = entry["result_path"]
+            if result_path.exists():
+                with result_path.open("r", encoding="utf-8") as f:
+                    results[method] = json.load(f)
+            else:
+                results[method] = {
+                    "method": method,
+                    "gpu_id": gpu_id,
+                    "error": f"Worker exited with code {proc.exitcode} without result file",
+                }
+
+        active = still_active
+
+    return results
+
+
+def _run_serial(
+    args,
+    configs_used: dict[str, ExperimentConfig],
+) -> dict[str, dict]:
+    """Fallback serial execution path."""
+    results: dict[str, dict] = {}
+    for i, method in enumerate(args.methods):
+        print(f"\n{'='*70}")
+        print(f"Running {method.upper()} ({i+1}/{len(args.methods)})")
+        print("=" * 70)
+        cfg = configs_used[method]
+        try:
+            exp_results = run_experiment(cfg)
+            results[method] = {
+                "method": method,
+                "exp_dir": str(exp_results.get("exp_dir")),
+                "metrics": exp_results.get("metrics", {}),
+            }
+        except Exception as e:
+            print(f"[ERROR] {method} failed: {e}")
+            traceback.print_exc()
+            results[method] = {"method": method, "error": str(e)}
+    return results
+
+
+def _print_and_save_summary(args, results, configs_used):
+    """Print comparison summary and save it to disk."""
     print("=" * 70)
     print(f"SBI Method Comparison: {args.exp_name}")
     print(f"Methods: {args.methods}")
@@ -239,55 +460,14 @@ def run_comparison(args):
         )
     print("=" * 70)
 
-    # Run each method
-    for i, method in enumerate(args.methods):
-        print(f"\n{'='*70}")
-        print(f"Running {method.upper()} ({i+1}/{len(args.methods)})")
-        print("=" * 70)
-
-        # First method generates dataset, others reuse it
-        reuse = i > 0 and dataset_id is not None
-
-        cfg = create_config(
-            method=method,
-            exp_name=args.exp_name,
-            num_simulations=args.num_simulations,
-            T_seg=args.T_seg,
-            device=args.device,
-            seed=args.seed,
-            quick=args.quick,
-            smoke=args.smoke,
-            dataset_id=dataset_id,
-            reuse_dataset=reuse,
-        )
-        configs_used[method] = cfg
-
-        # All non-FNPE methods should share the same cached dataset for an
-        # apples-to-apples comparison. Capture the deterministic dataset ID
-        # from the first config so later runs can explicitly set reuse_dataset.
-        if dataset_id is None:
-            dataset_id = cfg.dataset_id
-            print(f"[INFO] Shared dataset ID: {dataset_id}")
-
-        try:
-            # Run experiment
-            exp_results = run_experiment(cfg)
-            results[method] = exp_results
-
-        except Exception as e:
-            print(f"[ERROR] {method} failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            results[method] = {"error": str(e)}
-
     # Print summary
     print("\n" + "=" * 70)
     print("COMPARISON SUMMARY")
     print("=" * 70)
 
     summary_metrics = {}
-    for method, res in results.items():
+    for method in args.methods:
+        res = results.get(method, {"error": "missing result"})
         if "error" in res:
             print(f"\n{method.upper()}: FAILED - {res['error']}")
             continue
@@ -398,7 +578,49 @@ def run_comparison(args):
     with open(summary_path, "w") as f:
         json.dump(summary_metrics, f, indent=2)
     print(f"\n[INFO] Summary saved to {summary_path}")
+    return summary_metrics
 
+
+def run_comparison(args):
+    """Run comparison experiments."""
+    if args.quick and args.smoke:
+        raise ValueError("Use either --quick or --smoke, not both.")
+
+    configs_used, shared_dataset_id = _create_method_configs(args)
+
+    print("=" * 70)
+    print(f"SBI Method Comparison: {args.exp_name}")
+    print(f"Methods: {args.methods}")
+    print(f"Simulations: {args.num_simulations}, T_seg: {args.T_seg}")
+    print(f"Device: {args.device}, Quick: {args.quick}, Smoke: {args.smoke}")
+    if "fnpe" in args.methods:
+        print(
+            "[WARN] FNPE uses its own simulator/training-data pipeline; "
+            "only NPE/NPSE/Simformer are strict shared-dataset comparisons."
+        )
+    if shared_dataset_id is not None:
+        print(f"[INFO] Shared dataset ID: {shared_dataset_id}")
+        shared_cfg = next(
+            cfg for method, cfg in configs_used.items() if method != "fnpe"
+        )
+        _prepare_shared_dataset(shared_cfg)
+
+    gpu_ids = _visible_gpu_ids() if args.device in {"cuda", "auto"} else []
+    can_parallel = len(args.methods) > 1 and len(gpu_ids) > 1
+    if can_parallel:
+        print(
+            f"[PARALLEL] Launching up to {len(gpu_ids)} methods in parallel on GPUs: "
+            f"{', '.join(gpu_ids)}"
+        )
+        results = _launch_parallel_runs(args, configs_used, gpu_ids)
+    else:
+        if len(args.methods) > 1 and args.device in {"cuda", "auto"}:
+            print(
+                "[PARALLEL] Fewer than 2 visible GPUs; falling back to serial execution."
+            )
+        results = _run_serial(args, configs_used)
+
+    _print_and_save_summary(args, results, configs_used)
     return results
 
 
