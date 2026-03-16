@@ -315,12 +315,14 @@ class FNPEMethod(BaseMethod):
         batch_size: int = 512,
         num_diffusion_steps: int = 500,
         score_fn_type: str = "fnpe",
-        stop_after_epochs: int = 30,
+        stop_after_epochs: int = 20,
         validation_fraction: float = 0.1,
         proposal_type: str = "pred",  # "pred" (correct), "naive", or "trajectory" (old/wrong)
         pilot_fraction: float = 0.02,  # Fraction of num_sims for pilots (2%)
         pilot_length: int = 500,  # Length of each pilot trajectory
         proposal_noise: float = 0.03,  # Noise scale: noise = proposal_noise * std(pool)
+        ema_loss_decay: float = 0.1,
+        convergence_std_threshold: float = 2.0,
         gauss_posterior_precission_scale: Optional[float] = None,
     ):
         # Note: FNPE doesn't use torch prior/device directly
@@ -338,6 +340,8 @@ class FNPEMethod(BaseMethod):
         self.score_fn_type = score_fn_type
         self.stop_after_epochs = stop_after_epochs
         self.validation_fraction = validation_fraction
+        self.ema_loss_decay = ema_loss_decay
+        self.convergence_std_threshold = convergence_std_threshold
         # Proposal type for training data generation
         # "pred" = correct FNPE (proposal from pilot sims)
         # "naive" = sample from initial state distribution
@@ -494,19 +498,30 @@ class FNPEMethod(BaseMethod):
         # losses is now a dict with 'train' and 'val' keys
         self._training_summary = {
             "train_loss": losses.get("train", []),
+            "train_loss_ema": losses.get("train_ema", []),
             "final_train_loss": losses["train"][-1] if losses.get("train") else None,
+            "final_train_loss_ema": (
+                losses["train_ema"][-1] if losses.get("train_ema") else None
+            ),
+            "final_loss": (
+                losses["train_ema"][-1]
+                if losses.get("train_ema")
+                else (losses["train"][-1] if losses.get("train") else None)
+            ),
+            "best_train_loss_ema": losses.get("best_train_loss_ema"),
             "epochs_trained": len(losses.get("train", [])),
             "train_time_s": train_time,
             "num_simulations": num_sim,
             "T_train": t_train,  # Training window size
             "T_obs_full": self._t_obs_full,  # Full observation length for inference
             "budget_epochs": budget_epochs,
+            "early_stopped": losses.get("early_stopped", False),
         }
 
         return self._training_summary
 
     def _train_score_network(self, data: Dict, window_size: int):
-        """Internal method to train score network without validation/early stopping."""
+        """Train the FNPE score network with NPSE-style plateau detection on train loss."""
         key = self._key
         key, key_init = jax.random.split(key, 2)
 
@@ -574,8 +589,14 @@ class FNPEMethod(BaseMethod):
         _ = float(loss)  # Block until done
         print("[FNPE] JIT compilation complete.", flush=True)
 
-        # Training loop (no validation/early stopping)
+        # Training loop with NPSE-style convergence check applied to EMA-smoothed
+        # epoch training losses. FNPE has no held-out validation path here.
         train_losses = []
+        train_losses_ema = []
+        best_train_loss_ema = float("inf")
+        epochs_since_last_improvement = 0
+        best_params = params
+        early_stopped = False
 
         print(
             f"[FNPE] Starting training: {self.num_epochs} epochs, {self.steps_per_epoch} steps/epoch",
@@ -610,16 +631,58 @@ class FNPEMethod(BaseMethod):
             all_losses = jnp.stack(epoch_losses)
             epoch_train_loss = float(jnp.mean(all_losses))
             train_losses.append(epoch_train_loss)
+            if len(train_losses_ema) == 0:
+                epoch_train_loss_ema = epoch_train_loss
+            else:
+                previous_loss = train_losses_ema[-1]
+                epoch_train_loss_ema = (
+                    (1.0 - self.ema_loss_decay) * previous_loss
+                    + self.ema_loss_decay * epoch_train_loss
+                )
+            train_losses_ema.append(epoch_train_loss_ema)
 
             print(
                 f"[FNPE] Epoch {epoch+1}/{self.num_epochs}: "
-                f"Train={epoch_train_loss:.6f}",
+                f"Train={epoch_train_loss:.6f} | EMA={epoch_train_loss_ema:.6f}",
                 flush=True,
             )
 
+            if epoch == 0 or epoch_train_loss_ema < best_train_loss_ema:
+                best_train_loss_ema = epoch_train_loss_ema
+                epochs_since_last_improvement = 0
+                best_params = params
+            else:
+                if len(train_losses_ema) >= self.stop_after_epochs:
+                    recent_losses = np.asarray(
+                        train_losses_ema[-self.stop_after_epochs * 2 :], dtype=np.float32
+                    )
+                    loss_std = max(float(np.std(recent_losses)), 1e-12)
+                    diff_to_best_normalized = (
+                        epoch_train_loss_ema - best_train_loss_ema
+                    ) / loss_std
+                    if diff_to_best_normalized > self.convergence_std_threshold:
+                        epochs_since_last_improvement += 1
+                    else:
+                        epochs_since_last_improvement = 0
+
+                    if epochs_since_last_improvement > self.stop_after_epochs - 1:
+                        params = best_params
+                        early_stopped = True
+                        print(
+                            f"[FNPE] Early stopping at epoch {epoch+1} "
+                            f"(best EMA train loss={best_train_loss_ema:.6f})",
+                            flush=True,
+                        )
+                        break
+
         self._key = key
 
-        return params, score_net, {"train": train_losses}
+        return params, score_net, {
+            "train": train_losses,
+            "train_ema": train_losses_ema,
+            "best_train_loss_ema": best_train_loss_ema,
+            "early_stopped": early_stopped,
+        }
 
     def _setup_sampler(self):
         """Set up the diffusion sampler."""
@@ -697,9 +760,13 @@ class FNPEMethod(BaseMethod):
         )
 
     def _compute_budget_epochs(self, num_simulations: int) -> int:
-        """Compute FNPE epoch budget from simulation count, capped."""
-        batch_size = max(1, int(self.cfg.training_batch_size))
-        epochs = (num_simulations + batch_size - 1) // batch_size
+        """Compute FNPE epoch budget from simulation count, scaled and capped."""
+        batch_size = max(1, int(self.batch_size))
+        base_epochs = (num_simulations + batch_size - 1) // batch_size
+        budget_multiplier = float(
+            getattr(self.cfg, "fnpe_budget_epoch_multiplier", 1.0)
+        )
+        epochs = int(np.ceil(base_epochs * budget_multiplier))
         return min(int(self.cfg.fnpe_max_epochs), max(1, int(epochs)))
 
     def build_posterior(self, normalizer=None) -> FNPEPosterior:

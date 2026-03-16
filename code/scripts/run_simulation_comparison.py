@@ -179,7 +179,7 @@ def create_config(
             cfg_kwargs["fnpe_num_simulations"] = min(
                 2000, max(256, num_simulations * 4)
             )
-            cfg_kwargs["fnpe_max_epochs"] = 20
+            cfg_kwargs["fnpe_max_epochs"] = 200
 
     # Method-specific overrides
     if method == "simformer":

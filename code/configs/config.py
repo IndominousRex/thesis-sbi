@@ -117,7 +117,11 @@ class ExperimentConfig:
     fnpe_steps_per_epoch: int = 10000  # Steps per epoch (like Lotka-Volterra example)
     fnpe_num_diffusion_steps: int = 500
     fnpe_num_simulations: int = 100000  # Simulation budget for FNPE runs
-    fnpe_max_epochs: int = 5000  # Hard cap for FNPE epochs
+    fnpe_max_epochs: int = 300  # Hard cap for FNPE epochs
+    fnpe_budget_epoch_multiplier: float = 8.0  # Scale budget-derived epochs; 20k sims -> ~300 epochs before cap
+    fnpe_stop_after_epochs: int = 20  # Match sbi NPSE default patience
+    fnpe_ema_loss_decay: float = 0.1  # Match sbi NPSE default EMA decay
+    fnpe_convergence_std_threshold: float = 2.0  # Match sbi NPSE convergence threshold
     # Score composition method:
     # - "gauss_corrected" (DEFAULT): Paper GAUSS method - accurate but slow at inference
     # - "fnpe": Fast, uses (1-N)*prior + sum(scores)

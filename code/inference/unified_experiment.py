@@ -1645,12 +1645,14 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "batch_size": cfg.training_batch_size,
                 "num_diffusion_steps": cfg.fnpe_num_diffusion_steps,
                 "score_fn_type": cfg.fnpe_score_fn_type,
-                "stop_after_epochs": cfg.stop_after_epochs,
+                "stop_after_epochs": cfg.fnpe_stop_after_epochs,
                 "validation_fraction": cfg.validation_fraction,
                 "proposal_type": cfg.fnpe_proposal_type,  # "pred" (correct), "naive", or "trajectory" (old)
                 "pilot_fraction": cfg.fnpe_pilot_fraction,  # Fraction of sims for pilots (default 2%)
                 "pilot_length": cfg.fnpe_pilot_length,  # Length of pilot trajectories (default 500)
                 "proposal_noise": cfg.fnpe_proposal_noise,  # Noise scale (default 0.03 * std)
+                "ema_loss_decay": cfg.fnpe_ema_loss_decay,
+                "convergence_std_threshold": cfg.fnpe_convergence_std_threshold,
                 "gauss_posterior_precission_scale": getattr(
                     cfg, "fnpe_gauss_precision_scale", None
                 ),
