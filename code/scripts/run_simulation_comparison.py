@@ -80,6 +80,11 @@ def parse_args():
         default=42,
         help="Random seed (default: 42)",
     )
+    parser.add_argument(
+        "--no-summary",
+        action="store_true",
+        help="Do not write the comparison summary JSON.",
+    )
     return parser.parse_args()
 
 
@@ -441,7 +446,8 @@ def run_comparison(args):
         print(f"[INFO] Shared dataset ID: {shared_dataset_id}")
     results = _run_serial(args, configs_used)
 
-    _print_and_save_summary(args, results, configs_used)
+    if not args.no_summary:
+        _print_and_save_summary(args, results, configs_used)
     return results
 
 

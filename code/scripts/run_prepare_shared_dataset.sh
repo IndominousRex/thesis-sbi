@@ -1,22 +1,18 @@
 #!/bin/bash -l
 # ==============================================================================
-# SLURM job-array worker for comparison experiments.
-#
-# Submit this script with sbatch --array=... so each array task runs exactly one
-# method on exactly one GPU.
+# SLURM batch script to prepare the shared cached dataset for comparison runs.
 # ==============================================================================
 
-#SBATCH --job-name=sim_cmp
+#SBATCH --job-name=sim_cmp_prep
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=24:00:00
-#SBATCH --array=0-0
-#SBATCH --output=sim_cmp_%A_%a.out
-#SBATCH --error=sim_cmp_%A_%a.err
+#SBATCH --time=02:00:00
+#SBATCH --output=sim_cmp_prep_%j.out
+#SBATCH --error=sim_cmp_prep_%j.err
 
 set -euo pipefail
 
@@ -24,8 +20,7 @@ NUM_SIMULATIONS=${1:-2000}
 T_SEG=${2:-1000}
 EXP_NAME=${3:-simformer_compare}
 MODE=${4:-no}
-METHODS=${5:-"npe npse simformer"}
-SEED=${6:-42}
+SEED=${5:-42}
 
 MODE_FLAG=""
 if [ "${MODE}" = "yes" ]; then
@@ -39,32 +34,17 @@ fi
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CODE_DIR=$(cd "${SCRIPT_DIR}/.." && pwd)
-RUN_GROUP="${EXP_NAME}_A${SLURM_ARRAY_JOB_ID:-local}"
-
-read -r -a METHOD_ARRAY <<< "${METHODS}"
-TASK_ID=${SLURM_ARRAY_TASK_ID:-0}
-
-if [ "${TASK_ID}" -lt 0 ] || [ "${TASK_ID}" -ge "${#METHOD_ARRAY[@]}" ]; then
-    echo "Array index ${TASK_ID} is out of range for methods: ${METHODS}"
-    exit 1
-fi
-
-METHOD="${METHOD_ARRAY[${TASK_ID}]}"
 
 echo "=================================================="
-echo "Comparison Array Task"
+echo "Prepare Shared Dataset"
 echo "=================================================="
 echo "Date:            $(date)"
 echo "Node:            $(hostname)"
 echo "Job ID:          ${SLURM_JOB_ID:-local}"
-echo "Array Job ID:    ${SLURM_ARRAY_JOB_ID:-local}"
-echo "Array Task ID:   ${TASK_ID}"
-echo "Method:          ${METHOD}"
-echo "Run Group:       ${RUN_GROUP}"
 echo "Num Simulations: ${NUM_SIMULATIONS}"
 echo "T_seg:           ${T_SEG}"
+echo "Exp Name:        ${EXP_NAME}"
 echo "Mode:            ${MODE}"
-echo "Methods:         ${METHODS}"
 echo "Seed:            ${SEED}"
 echo "=================================================="
 
@@ -75,16 +55,14 @@ conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-srun python scripts/run_simulation_comparison.py \
-    --exp-name "${RUN_GROUP}" \
+srun python scripts/prepare_shared_dataset.py \
+    --exp-name "${EXP_NAME}" \
     --num-simulations "${NUM_SIMULATIONS}" \
     --T-seg "${T_SEG}" \
     --device cuda \
-    --methods "${METHOD}" \
     --seed "${SEED}" \
-    --no-summary \
     ${MODE_FLAG}
 
 echo "=================================================="
-echo "[$(date)] Task completed"
+echo "[$(date)] Shared dataset prepared"
 echo "=================================================="
