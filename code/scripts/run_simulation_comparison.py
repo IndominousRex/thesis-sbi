@@ -85,6 +85,11 @@ def parse_args():
         action="store_true",
         help="Do not write the comparison summary JSON.",
     )
+    parser.add_argument(
+        "--independent-datasets",
+        action="store_true",
+        help="Disable dataset cache/reuse so each method run generates its own data.",
+    )
     return parser.parse_args()
 
 
@@ -99,6 +104,7 @@ def create_config(
     smoke: bool = False,
     dataset_id: str = None,  # type: ignore
     reuse_dataset: bool = False,
+    independent_datasets: bool = False,
 ) -> ExperimentConfig:
     """Create experiment config for a method."""
 
@@ -115,9 +121,9 @@ def create_config(
         "sim_seed": seed,
         "train_seed": seed + 1,
         # Dataset caching
-        "cache_dataset": True,
-        "dataset_id": dataset_id,
-        "reuse_dataset": reuse_dataset,
+        "cache_dataset": not independent_datasets,
+        "dataset_id": None if independent_datasets else dataset_id,
+        "reuse_dataset": False if independent_datasets else reuse_dataset,
         # Diagnostics
         "run_sbc": True,
         "run_swd": False,
@@ -232,7 +238,7 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
     shared_methods = [m for m in args.methods if m != "fnpe"]
     shared_dataset_id = None
 
-    if shared_methods:
+    if shared_methods and not args.independent_datasets:
         seed_cfg = create_config(
             method=shared_methods[0],
             exp_name=args.exp_name,
@@ -244,6 +250,7 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             smoke=args.smoke,
             dataset_id=None,
             reuse_dataset=True,
+            independent_datasets=args.independent_datasets,
         )
         shared_dataset_id = seed_cfg.dataset_id
 
@@ -259,6 +266,7 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             smoke=args.smoke,
             dataset_id=shared_dataset_id,
             reuse_dataset=method != "fnpe" and shared_dataset_id is not None,
+            independent_datasets=args.independent_datasets,
         )
         configs_used[method] = cfg
 

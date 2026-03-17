@@ -1,9 +1,12 @@
 #!/bin/bash -l
 # ==============================================================================
-# SLURM job-array worker for comparison experiments.
+# SLURM job-array script for comparison experiments.
 #
-# Submit this script with sbatch --array=... so each array task runs exactly one
-# method on exactly one GPU.
+# Submit this script with sbatch. It is designed to run 4 array tasks in
+# parallel by default, one method per task, one GPU per task.
+#
+# The array tasks use independent datasets to avoid cache/write races. This is
+# intentional for array mode.
 # ==============================================================================
 
 #SBATCH --job-name=sim_cmp
@@ -14,7 +17,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=24:00:00
-#SBATCH --array=0-0
+#SBATCH --array=0-3%4
 #SBATCH --output=sim_cmp_%A_%a.out
 #SBATCH --error=sim_cmp_%A_%a.err
 
@@ -24,7 +27,7 @@ NUM_SIMULATIONS=${1:-2000}
 T_SEG=${2:-1000}
 EXP_NAME=${3:-simformer_compare}
 MODE=${4:-no}
-METHODS=${5:-"npe npse simformer"}
+METHODS=${5:-"npe npse fnpe simformer"}
 SEED=${6:-42}
 
 MODE_FLAG=""
@@ -43,10 +46,16 @@ RUN_GROUP="${EXP_NAME}_A${SLURM_ARRAY_JOB_ID:-local}"
 
 read -r -a METHOD_ARRAY <<< "${METHODS}"
 TASK_ID=${SLURM_ARRAY_TASK_ID:-0}
+NUM_METHODS=${#METHOD_ARRAY[@]}
 
-if [ "${TASK_ID}" -lt 0 ] || [ "${TASK_ID}" -ge "${#METHOD_ARRAY[@]}" ]; then
-    echo "Array index ${TASK_ID} is out of range for methods: ${METHODS}"
+if [ "${NUM_METHODS}" -gt 4 ]; then
+    echo "This script is fixed to 4 parallel array tasks. Got ${NUM_METHODS} methods."
     exit 1
+fi
+
+if [ "${TASK_ID}" -lt 0 ] || [ "${TASK_ID}" -ge "${NUM_METHODS}" ]; then
+    echo "No method assigned for array task ${TASK_ID}; exiting."
+    exit 0
 fi
 
 METHOD="${METHOD_ARRAY[${TASK_ID}]}"
@@ -65,6 +74,7 @@ echo "Num Simulations: ${NUM_SIMULATIONS}"
 echo "T_seg:           ${T_SEG}"
 echo "Mode:            ${MODE}"
 echo "Methods:         ${METHODS}"
+echo "Num Methods:     ${NUM_METHODS}"
 echo "Seed:            ${SEED}"
 echo "=================================================="
 
@@ -83,6 +93,7 @@ srun python scripts/run_simulation_comparison.py \
     --methods "${METHOD}" \
     --seed "${SEED}" \
     --no-summary \
+    --independent-datasets \
     ${MODE_FLAG}
 
 echo "=================================================="
