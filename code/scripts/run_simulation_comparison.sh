@@ -40,8 +40,17 @@ elif [ "${MODE}" != "no" ]; then
     exit 1
 fi
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-CODE_DIR=$(cd "${SCRIPT_DIR}/.." && pwd)
+if [ -n "${SLURM_SUBMIT_DIR:-}" ] && [ -f "${SLURM_SUBMIT_DIR}/scripts/run_simulation_comparison.py" ]; then
+    CODE_DIR="${SLURM_SUBMIT_DIR}"
+elif [ -n "${SLURM_SUBMIT_DIR:-}" ] && [ -f "${SLURM_SUBMIT_DIR}/run_simulation_comparison.py" ]; then
+    CODE_DIR=$(cd "${SLURM_SUBMIT_DIR}/.." && pwd)
+elif [ -d "/bigwork/nhkbarit/thesis-code/code" ]; then
+    CODE_DIR="/bigwork/nhkbarit/thesis-code/code"
+else
+    echo "Could not determine code directory."
+    echo "SLURM_SUBMIT_DIR=${SLURM_SUBMIT_DIR:-<unset>}"
+    exit 1
+fi
 RUN_GROUP="${EXP_NAME}_A${SLURM_ARRAY_JOB_ID:-local}"
 
 read -r -a METHOD_ARRAY <<< "${METHODS}"
