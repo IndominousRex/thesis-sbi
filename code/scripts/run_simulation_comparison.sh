@@ -29,6 +29,7 @@ EXP_NAME=${3:-simformer_compare}
 MODE=${4:-no}
 METHODS=${5:-"npe npse fnpe simformer"}
 SEED=${6:-42}
+PARAMS=${7:-"mu,cd,m"}
 
 MODE_FLAG=""
 if [ "${MODE}" = "yes" ]; then
@@ -85,6 +86,7 @@ echo "Mode:            ${MODE}"
 echo "Methods:         ${METHODS}"
 echo "Num Methods:     ${NUM_METHODS}"
 echo "Seed:            ${SEED}"
+echo "Params:          ${PARAMS}"
 echo "=================================================="
 
 cd "${CODE_DIR}"
@@ -101,6 +103,7 @@ srun python scripts/run_simulation_comparison.py \
     --device cuda \
     --methods "${METHOD}" \
     --seed "${SEED}" \
+    --params "${PARAMS}" \
     --no-summary \
     --independent-datasets \
     ${MODE_FLAG}

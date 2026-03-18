@@ -20,8 +20,27 @@ from datetime import datetime
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from configs.config import ExperimentConfig
+from configs.config import ExperimentConfig, PARAMETER_ORDER
 from inference.unified_experiment import run_experiment
+
+
+def active_param_type(value: str):
+    """Parse comma-separated parameter names (mu, cd, m)."""
+    allowed = set(PARAMETER_ORDER)
+    parts = [p.strip().lower() for p in value.split(",") if p.strip()]
+
+    if not parts:
+        return PARAMETER_ORDER
+
+    cleaned = []
+    for p in parts:
+        if p not in allowed:
+            raise argparse.ArgumentTypeError(
+                f"Unknown parameter '{p}'. Choose from {PARAMETER_ORDER}."
+            )
+        if p not in cleaned:
+            cleaned.append(p)
+    return tuple(cleaned)
 
 
 def parse_args():
@@ -81,6 +100,12 @@ def parse_args():
         help="Random seed (default: 42)",
     )
     parser.add_argument(
+        "--params",
+        type=active_param_type,
+        default=PARAMETER_ORDER,
+        help="Comma-separated parameters to infer (mu, cd, m)",
+    )
+    parser.add_argument(
         "--no-summary",
         action="store_true",
         help="Do not write the comparison summary JSON.",
@@ -100,6 +125,7 @@ def create_config(
     T_seg: int,
     device: str,
     seed: int,
+    active_parameters=PARAMETER_ORDER,
     quick: bool = False,
     smoke: bool = False,
     dataset_id: str = None,  # type: ignore
@@ -116,6 +142,7 @@ def create_config(
         "exp_name": cfg_exp_name,
         "num_simulations": num_simulations,
         "T_seg": T_seg,
+        "active_parameters": tuple(active_parameters),
         "device": device,
         "random_seed": seed,
         "sim_seed": seed,
@@ -246,6 +273,7 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             T_seg=args.T_seg,
             device=args.device,
             seed=args.seed,
+            active_parameters=args.params,
             quick=args.quick,
             smoke=args.smoke,
             dataset_id=None,
@@ -262,6 +290,7 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             T_seg=args.T_seg,
             device=args.device,
             seed=args.seed,
+            active_parameters=args.params,
             quick=args.quick,
             smoke=args.smoke,
             dataset_id=shared_dataset_id,
