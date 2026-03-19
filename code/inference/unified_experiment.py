@@ -1626,6 +1626,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "learning_rate": cfg.simformer_learning_rate,
                 "num_train_steps": cfg.simformer_num_train_steps,
                 "batch_size": cfg.simformer_batch_size,
+                "embedding_batch_size": cfg.simformer_embedding_batch_size,
             }
         )
         print(

@@ -167,6 +167,7 @@ class ExperimentConfig:
     simformer_learning_rate: float = 1e-3  # Training learning rate
     simformer_num_train_steps: int = 50000  # Number of training steps
     simformer_batch_size: int = 1024  # Training batch size
+    simformer_embedding_batch_size: int = 128  # GPU batch size for pre-embedding long sequences
 
     # --- Training ---
     learning_rate: float = 5e-4  # Lower LR for complex data (MarkovSBI large uses 5e-4)

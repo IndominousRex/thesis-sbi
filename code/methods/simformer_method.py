@@ -95,13 +95,27 @@ class EmbeddingWrapperJAX:
         self._output_dim = None
 
     @torch.no_grad()
-    def embed(self, x: torch.Tensor) -> np.ndarray:
-        """Embed observations using PyTorch network, return numpy."""
+    def embed(self, x: torch.Tensor, batch_size: Optional[int] = None) -> np.ndarray:
+        """Embed observations using PyTorch network, returning numpy on CPU."""
         self.embedding_net.eval()
-        x = x.to(self.device)
-        embedded = self.embedding_net(x)
-        self._output_dim = embedded.shape[-1]
-        return embedded.cpu().numpy()
+        if batch_size is None or x.shape[0] <= batch_size:
+            x = x.to(self.device)
+            embedded = self.embedding_net(x)
+            self._output_dim = embedded.shape[-1]
+            return embedded.cpu().numpy()
+
+        outputs = []
+        for start in range(0, x.shape[0], batch_size):
+            end = min(start + batch_size, x.shape[0])
+            x_batch = x[start:end].to(self.device, non_blocking=True)
+            embedded_batch = self.embedding_net(x_batch)
+            self._output_dim = embedded_batch.shape[-1]
+            outputs.append(embedded_batch.cpu())
+            del x_batch, embedded_batch
+
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
+        return torch.cat(outputs, dim=0).numpy()
 
     @property
     def output_dim(self) -> int:
@@ -314,6 +328,7 @@ class SimformerMethod(BaseMethod):
         learning_rate: float = 1e-3,
         num_train_steps: int = 50000,
         batch_size: int = 1024,
+        embedding_batch_size: int = 128,
     ):
         super().__init__(cfg, prior, device)
 
@@ -333,6 +348,7 @@ class SimformerMethod(BaseMethod):
         self.learning_rate = learning_rate
         self.num_train_steps = num_train_steps
         self.batch_size = batch_size
+        self.embedding_batch_size = embedding_batch_size
 
         # To be set during build
         self.embedding_net = None
@@ -448,8 +464,12 @@ class SimformerMethod(BaseMethod):
         train_start = time.time()
 
         # 1. Embed observations using PyTorch network
-        print("[Simformer] Embedding observations...")
-        x_embedded = self.embedding_wrapper.embed(x_train)  # (N, embedding_dim)
+        print(
+            f"[Simformer] Embedding observations in batches of {self.embedding_batch_size}..."
+        )
+        x_embedded = self.embedding_wrapper.embed(
+            x_train, batch_size=self.embedding_batch_size
+        )  # (N, embedding_dim)
         self.embedding_dim = x_embedded.shape[1]
         self.total_nodes = self.theta_dim + self.embedding_dim
 
@@ -642,6 +662,7 @@ class SimformerMethod(BaseMethod):
                 "T_min": self.T_min,
                 "T_max": self.T_max,
                 "num_diffusion_steps": self.num_diffusion_steps,
+                "embedding_batch_size": self.embedding_batch_size,
             },
             "dimensions": {
                 "theta_dim": self.theta_dim,
