@@ -289,6 +289,7 @@ class ExperimentConfig:
     def _generate_dataset_id(self) -> str:
         """Generate a unique dataset ID based on simulation parameters."""
         data_params = {
+            "holdout_region_version": "prior_quantile_v2",
             "sim_seed": self.sim_seed,
             "num_simulations": self.num_simulations,
             "T_seg": self.T_seg,
@@ -319,6 +320,7 @@ class ExperimentConfig:
     def _generate_test_dataset_id(self) -> str:
         """Generate a unique ID for the shared held-out synthetic test set."""
         test_params = {
+            "holdout_region_version": "prior_quantile_v2",
             "benchmark_eval_seed": self.benchmark_eval_seed,
             "num_test_simulations": self.num_test_simulations,
             "T_seg": self.T_seg,

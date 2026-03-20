@@ -134,15 +134,27 @@ def _get_test_region_metadata(cfg: ExperimentConfig) -> Dict[str, Any]:
     frac = float(cfg.test_region_theta_tail_frac)
     for name in cfg.active_parameters:
         low, high = bounds[name]
+        mean = 0.5 * (low + high)
+        std = (high - low) / 6.0
+        normal = torch.distributions.Normal(
+            torch.tensor(mean, dtype=torch.float32),
+            torch.tensor(std, dtype=torch.float32),
+        )
         if name == "mu":
+            quantile = frac
+            threshold = float(normal.icdf(torch.tensor(quantile)).item())
             theta_thresholds[name] = {
                 "direction": "lower",
-                "threshold": float(low + frac * (high - low)),
+                "quantile": float(quantile),
+                "threshold": float(np.clip(threshold, low, high)),
             }
         else:
+            quantile = 1.0 - frac
+            threshold = float(normal.icdf(torch.tensor(quantile)).item())
             theta_thresholds[name] = {
                 "direction": "upper",
-                "threshold": float(high - frac * (high - low)),
+                "quantile": float(quantile),
+                "threshold": float(np.clip(threshold, low, high)),
             }
 
     speed_threshold = float(
@@ -166,6 +178,43 @@ def _get_test_region_metadata(cfg: ExperimentConfig) -> Dict[str, Any]:
             "ctrl_brake_idx": int(cfg.obs_dim + 2),
         },
     }
+
+
+def _sample_theta_holdout_batch(
+    cfg: ExperimentConfig,
+    prior,
+    region_meta: Dict[str, Any],
+    num_samples: int,
+) -> Tuple[torch.Tensor, int]:
+    """Sample theta values from the prior conditioned on the parameter holdout region."""
+    if num_samples <= 0:
+        return torch.empty(0, cfg.active_param_dim(), dtype=torch.float32), 0
+
+    theta_items: List[torch.Tensor] = []
+    collected = 0
+    attempted = 0
+    proposal_batch = max(int(cfg.batch_sim), int(num_samples), 256)
+    max_theta_attempts = max(int(num_samples) * 5000, proposal_batch)
+
+    with torch.inference_mode():
+        while collected < num_samples and attempted < max_theta_attempts:
+            theta_prop = prior.sample((proposal_batch,)).to("cpu")
+            attempted += int(theta_prop.shape[0])
+            mask_theta = _theta_holdout_mask(cfg, theta_prop, region_meta)
+            keep_idx = mask_theta.nonzero(as_tuple=False).squeeze(-1)
+            if keep_idx.numel() == 0:
+                continue
+            take = min(int(keep_idx.numel()), num_samples - collected)
+            theta_items.append(theta_prop[keep_idx[:take]])
+            collected += take
+
+    if collected < num_samples:
+        raise RuntimeError(
+            f"Failed to sample enough theta values inside the hold-out parameter region "
+            f"({collected}/{num_samples} accepted after {attempted} theta draws)."
+        )
+
+    return torch.cat(theta_items, dim=0), attempted
 
 
 def _theta_holdout_mask(
@@ -317,12 +366,16 @@ def _generate_heldout_test_dataset(
     x_items: List[torch.Tensor] = []
     generated = 0
     attempted = 0
+    theta_attempted = 0
     max_attempts = max(N * int(cfg.benchmark_max_attempt_factor), N)
 
     with torch.inference_mode():
         while generated < N and attempted < max_attempts:
             b = min(batch, max(N - generated, batch))
-            theta_b = prior.sample((b,)).to("cpu")
+            theta_b, theta_draws = _sample_theta_holdout_batch(
+                cfg, prior, region_meta, b
+            )
+            theta_attempted += theta_draws
             x_b, _ = simulator(theta_b)
             x_b = x_b.cpu()
             mask_holdout = _joint_holdout_mask(cfg, theta_b, x_b, region_meta)
@@ -348,9 +401,17 @@ def _generate_heldout_test_dataset(
         "acceptance": {
             "accepted": generated,
             "attempted": attempted,
+            "theta_draws": theta_attempted,
             "acceptance_rate": float(generated / max(attempted, 1)),
         },
     }
+
+
+def _conditioning_x_on_device(x_cond: Any, device: torch.device) -> Any:
+    """Move conditioning observations to the active device when they are tensors."""
+    if isinstance(x_cond, torch.Tensor):
+        return x_cond.to(device)
+    return x_cond
 
 
 def get_or_generate_training_dataset(
@@ -1037,7 +1098,7 @@ def run_parameter_posterior_plots(
         print(f"[DIAG] Posterior plots: example {ex_idx+1}/{num_examples}")
 
         theta_true_np = np.asarray(ex["theta_true"], dtype=np.float32).reshape(-1)
-        x_cond = ex["x_cond"]
+        x_cond = _conditioning_x_on_device(ex["x_cond"], device)
 
         with torch.no_grad():
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
@@ -1239,7 +1300,7 @@ def run_pairplot_diagnostic(
         print(f"[PAIRPLOT] Example {ex_idx+1}/{num_examples}")
 
         theta_true_np = np.asarray(ex["theta_true"], dtype=np.float32).reshape(-1)
-        x_cond = ex["x_cond"]
+        x_cond = _conditioning_x_on_device(ex["x_cond"], device)
 
         with torch.no_grad():
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
@@ -1367,7 +1428,7 @@ def run_c2st_diagnostic(
         ex_idx = int(ex["ex_idx"])
         print(f"[C2ST] Example {ex_idx+1}/{num_examples}")
 
-        x_cond = ex["x_cond"]
+        x_cond = _conditioning_x_on_device(ex["x_cond"], device)
 
         with torch.no_grad():
             theta_post_norm = posterior.sample((num_posterior_samples,), x=x_cond)
