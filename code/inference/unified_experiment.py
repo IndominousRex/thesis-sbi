@@ -9,6 +9,7 @@ This module provides a method-agnostic experiment pipeline that:
 """
 
 import json
+import os
 import pickle
 import time
 from pathlib import Path
@@ -17,8 +18,10 @@ from typing import Dict, Any, Optional, Tuple, List
 
 import torch
 import numpy as np
+from scipy.stats import binomtest, kstest
 from sbi import utils as sbi_utils
 from sbi.diagnostics import run_sbc, check_sbc
+from tqdm.auto import tqdm
 
 from configs.config import ExperimentConfig
 from utils.env_utils import setup_environment, get_device
@@ -100,6 +103,410 @@ def _sample_theta_from_prior_cpu(prior_cpu, seed: int) -> torch.Tensor:
 # =============================================================================
 
 
+def _acquire_cache_lock(lock_path: Path, timeout_s: float = 1800.0) -> None:
+    """Acquire a simple filesystem lock using exclusive file creation."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    start = time.time()
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(str(os.getpid()))
+            return
+        except FileExistsError:
+            if time.time() - start > timeout_s:
+                raise TimeoutError(f"Timed out waiting for cache lock {lock_path}")
+            time.sleep(0.5)
+
+
+def _release_cache_lock(lock_path: Path) -> None:
+    """Release a filesystem lock created by _acquire_cache_lock."""
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _get_test_region_metadata(cfg: ExperimentConfig) -> Dict[str, Any]:
+    """Describe the held-out synthetic test region."""
+    bounds = cfg.param_bounds()
+    theta_thresholds: Dict[str, Dict[str, float | str]] = {}
+    frac = float(cfg.test_region_theta_tail_frac)
+    for name in cfg.active_parameters:
+        low, high = bounds[name]
+        if name == "mu":
+            theta_thresholds[name] = {
+                "direction": "lower",
+                "threshold": float(low + frac * (high - low)),
+            }
+        else:
+            theta_thresholds[name] = {
+                "direction": "upper",
+                "threshold": float(high - frac * (high - low)),
+            }
+
+    speed_threshold = float(
+        cfg.init_speed_center_ms + cfg.test_region_speed_margin_frac * cfg.init_speed_range_ms
+    )
+    return {
+        "theta_tail_fraction": frac,
+        "theta_thresholds": theta_thresholds,
+        "require_joint_holdout": bool(cfg.test_region_require_joint_holdout),
+        "driving_thresholds": {
+            "initial_speed_ms_min": speed_threshold,
+            "max_abs_steer_rad_min": float(
+                np.deg2rad(cfg.test_region_min_abs_steer_deg) * cfg.steer_scale
+            ),
+            "max_brake_min": float(cfg.test_region_min_brake),
+            "min_flags_required": int(cfg.test_region_min_driving_flags),
+        },
+        "channels": {
+            "obs_v_body_x_idx": 1,
+            "ctrl_steer_idx": int(cfg.obs_dim + 0),
+            "ctrl_brake_idx": int(cfg.obs_dim + 2),
+        },
+    }
+
+
+def _theta_holdout_mask(
+    cfg: ExperimentConfig,
+    theta_phys: torch.Tensor,
+    region_meta: Dict[str, Any],
+) -> torch.Tensor:
+    """Return boolean mask for the parameter-side holdout predicate."""
+    if theta_phys.ndim != 2:
+        raise ValueError(f"theta_phys must be (N,d), got {tuple(theta_phys.shape)}")
+    mask = torch.ones(theta_phys.shape[0], dtype=torch.bool)
+    theta_thresholds = region_meta["theta_thresholds"]
+    for dim_idx, name in enumerate(cfg.active_parameters):
+        spec = theta_thresholds.get(name)
+        if spec is None:
+            continue
+        threshold = float(spec["threshold"])
+        if spec["direction"] == "lower":
+            mask &= theta_phys[:, dim_idx] <= threshold
+        else:
+            mask &= theta_phys[:, dim_idx] >= threshold
+    return mask
+
+
+def _driving_holdout_mask(
+    cfg: ExperimentConfig,
+    x_phys: torch.Tensor,
+    region_meta: Dict[str, Any],
+) -> torch.Tensor:
+    """Return boolean mask for the driving-condition holdout predicate."""
+    if x_phys.ndim != 3:
+        raise ValueError(f"x_phys must be (N,T,D), got {tuple(x_phys.shape)}")
+
+    thresholds = region_meta["driving_thresholds"]
+    channels = region_meta["channels"]
+
+    initial_speed = x_phys[:, 0, channels["obs_v_body_x_idx"]]
+    max_abs_steer = x_phys[:, :, channels["ctrl_steer_idx"]].abs().amax(dim=1)
+    max_brake = x_phys[:, :, channels["ctrl_brake_idx"]].amax(dim=1)
+
+    flags = torch.stack(
+        [
+            initial_speed >= float(thresholds["initial_speed_ms_min"]),
+            max_abs_steer >= float(thresholds["max_abs_steer_rad_min"]),
+            max_brake >= float(thresholds["max_brake_min"]),
+        ],
+        dim=1,
+    )
+    return flags.sum(dim=1) >= int(thresholds["min_flags_required"])
+
+
+def _joint_holdout_mask(
+    cfg: ExperimentConfig,
+    theta_phys: torch.Tensor,
+    x_phys: torch.Tensor,
+    region_meta: Dict[str, Any],
+) -> torch.Tensor:
+    """Return the joint held-out-region mask."""
+    theta_mask = _theta_holdout_mask(cfg, theta_phys, region_meta)
+    driving_mask = _driving_holdout_mask(cfg, x_phys, region_meta)
+    if cfg.test_region_require_joint_holdout:
+        return theta_mask & driving_mask
+    return theta_mask | driving_mask
+
+
+def _generate_train_dataset_with_holdout(
+    cfg: ExperimentConfig,
+    prior,
+    simulator,
+    region_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Generate a training dataset excluding the held-out joint region."""
+    if cfg.num_simulations <= 0:
+        raise ValueError("cfg.num_simulations must be positive")
+
+    N = int(cfg.num_simulations)
+    batch = int(cfg.batch_sim)
+    theta_items: List[torch.Tensor] = []
+    x_items: List[torch.Tensor] = []
+    generated = 0
+    attempted = 0
+    max_attempts = max(N * int(cfg.benchmark_max_attempt_factor), N)
+
+    if cfg.jit_warmup:
+        theta_w = prior.sample((min(8, N),)).to("cpu")
+        _ = simulator(theta_w)
+
+    pbar = tqdm(
+        total=N,
+        unit="sims",
+        desc="Generating train split",
+        dynamic_ncols=True,
+    )
+    with torch.inference_mode():
+        while generated < N and attempted < max_attempts:
+            b = min(batch, max(N - generated, batch))
+            theta_b = prior.sample((b,)).to("cpu")
+            x_b, _ = simulator(theta_b)
+            x_b = x_b.cpu()
+            mask_holdout = _joint_holdout_mask(cfg, theta_b, x_b, region_meta)
+            keep_idx = (~mask_holdout).nonzero(as_tuple=False).squeeze(-1)
+            if keep_idx.numel() > 0:
+                take = min(int(keep_idx.numel()), N - generated)
+                keep_idx = keep_idx[:take]
+                theta_items.append(theta_b[keep_idx])
+                x_items.append(x_b[keep_idx])
+                generated += take
+                pbar.update(take)
+                pbar.set_postfix_str(f"{generated}/{N}")
+            attempted += b
+    pbar.close()
+
+    if generated < N:
+        raise RuntimeError(
+            f"Failed to generate enough training samples outside the held-out region "
+            f"({generated}/{N} accepted after {attempted} attempts)."
+        )
+
+    return {
+        "theta": torch.cat(theta_items, dim=0),
+        "x": torch.cat(x_items, dim=0),
+        "region_metadata": region_meta,
+        "acceptance": {
+            "accepted": generated,
+            "attempted": attempted,
+            "acceptance_rate": float(generated / max(attempted, 1)),
+        },
+    }
+
+
+def _generate_heldout_test_dataset(
+    cfg: ExperimentConfig,
+    prior,
+    simulator,
+    region_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Generate a held-out test dataset inside the challenge region."""
+    if cfg.num_test_simulations <= 0:
+        return {
+            "theta": torch.empty(0, cfg.active_param_dim(), dtype=torch.float32),
+            "x": torch.empty(0, cfg.T_seg, cfg.obs_dim + 4, dtype=torch.float32),
+            "region_metadata": region_meta,
+            "acceptance": {"accepted": 0, "attempted": 0, "acceptance_rate": 0.0},
+        }
+
+    N = int(cfg.num_test_simulations)
+    batch = int(cfg.batch_sim)
+    theta_items: List[torch.Tensor] = []
+    x_items: List[torch.Tensor] = []
+    generated = 0
+    attempted = 0
+    max_attempts = max(N * int(cfg.benchmark_max_attempt_factor), N)
+
+    with torch.inference_mode():
+        while generated < N and attempted < max_attempts:
+            b = min(batch, max(N - generated, batch))
+            theta_b = prior.sample((b,)).to("cpu")
+            x_b, _ = simulator(theta_b)
+            x_b = x_b.cpu()
+            mask_holdout = _joint_holdout_mask(cfg, theta_b, x_b, region_meta)
+            keep_idx = mask_holdout.nonzero(as_tuple=False).squeeze(-1)
+            if keep_idx.numel() > 0:
+                take = min(int(keep_idx.numel()), N - generated)
+                keep_idx = keep_idx[:take]
+                theta_items.append(theta_b[keep_idx])
+                x_items.append(x_b[keep_idx])
+                generated += take
+            attempted += b
+
+    if generated < N:
+        raise RuntimeError(
+            f"Failed to generate enough held-out test samples inside the hold-out region "
+            f"({generated}/{N} accepted after {attempted} attempts)."
+        )
+
+    return {
+        "theta": torch.cat(theta_items, dim=0),
+        "x": torch.cat(x_items, dim=0),
+        "region_metadata": region_meta,
+        "acceptance": {
+            "accepted": generated,
+            "attempted": attempted,
+            "acceptance_rate": float(generated / max(attempted, 1)),
+        },
+    }
+
+
+def get_or_generate_training_dataset(
+    cfg: ExperimentConfig,
+    prior,
+    simulator,
+    device: torch.device,
+) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
+    """
+    Get the shared training dataset from cache or generate a new one.
+
+    Returns:
+        theta_train: Training parameters (physical space)
+        x_train: Training observations (physical space)
+        metadata: Generation metadata including held-out-region thresholds
+    """
+    cache_path = cfg.get_dataset_cache_path()
+    lock_path = cache_path.with_suffix(cache_path.suffix + ".lock")
+    region_meta = _get_test_region_metadata(cfg)
+
+    if cfg.reuse_dataset and cache_path.exists():
+        print(f"[DATA] Loading cached dataset from {cache_path}")
+        cached = torch.load(cache_path)
+        return cached["theta"], cached["x"], cached.get("region_metadata", region_meta)
+
+    if cfg.cache_dataset or cfg.reuse_dataset:
+        _acquire_cache_lock(lock_path)
+        try:
+            if cfg.reuse_dataset and cache_path.exists():
+                print(f"[DATA] Loading cached dataset from {cache_path}")
+                cached = torch.load(cache_path)
+                return (
+                    cached["theta"],
+                    cached["x"],
+                    cached.get("region_metadata", region_meta),
+                )
+            print(f"[DATA] Generating {cfg.num_simulations} train simulations...")
+            bundle = _generate_train_dataset_with_holdout(
+                cfg, prior, simulator, region_meta
+            )
+            if cfg.cache_dataset:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                print(f"[DATA] Caching training dataset to {cache_path}")
+                torch.save(
+                    {
+                        "theta": bundle["theta"],
+                        "x": bundle["x"],
+                        "region_metadata": bundle["region_metadata"],
+                        "acceptance": bundle["acceptance"],
+                        "config_hash": cfg.dataset_id,
+                    },
+                    cache_path,
+                )
+            return bundle["theta"], bundle["x"], bundle["region_metadata"]
+        finally:
+            _release_cache_lock(lock_path)
+
+    print(f"[DATA] Generating {cfg.num_simulations} train simulations...")
+    bundle = _generate_train_dataset_with_holdout(cfg, prior, simulator, region_meta)
+    return bundle["theta"], bundle["x"], bundle["region_metadata"]
+
+
+def get_or_generate_test_dataset(
+    cfg: ExperimentConfig,
+    prior,
+    simulator,
+    device: torch.device,
+) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
+    """
+    Get the shared held-out synthetic test dataset from cache or generate it.
+
+    Returns:
+        theta_test: Held-out test parameters (physical space)
+        x_test: Held-out test observations (physical space)
+        metadata: Held-out region metadata and thresholds
+    """
+    if not cfg.run_simulated_test_eval:
+        region_meta = _get_test_region_metadata(cfg)
+        return (
+            torch.empty(0, cfg.active_param_dim(), dtype=torch.float32),
+            torch.empty(0, cfg.T_seg, cfg.obs_dim + 4, dtype=torch.float32),
+            region_meta,
+        )
+
+    cache_path = cfg.get_test_dataset_cache_path()
+    lock_path = cache_path.with_suffix(cache_path.suffix + ".lock")
+    region_meta = _get_test_region_metadata(cfg)
+
+    if cfg.reuse_dataset and cache_path.exists():
+        print(f"[DATA] Loading cached held-out test dataset from {cache_path}")
+        cached = torch.load(cache_path)
+        return cached["theta"], cached["x"], cached.get("region_metadata", region_meta)
+
+    if cfg.cache_dataset or cfg.reuse_dataset:
+        _acquire_cache_lock(lock_path)
+        try:
+            if cfg.reuse_dataset and cache_path.exists():
+                print(f"[DATA] Loading cached held-out test dataset from {cache_path}")
+                cached = torch.load(cache_path)
+                return (
+                    cached["theta"],
+                    cached["x"],
+                    cached.get("region_metadata", region_meta),
+                )
+            print(f"[DATA] Generating {cfg.num_test_simulations} held-out test simulations...")
+            original_seed = cfg.random_seed
+            original_sim_seed = cfg.sim_seed
+            original_batch_idx = getattr(simulator, "_batch_idx", 0)
+            try:
+                cfg.random_seed = cfg.benchmark_eval_seed
+                cfg.sim_seed = cfg.benchmark_eval_seed
+                setup_environment(cfg.benchmark_eval_seed)
+                simulator._batch_idx = 0
+                bundle = _generate_heldout_test_dataset(
+                    cfg, prior, simulator, region_meta
+                )
+            finally:
+                simulator._batch_idx = original_batch_idx
+                cfg.random_seed = original_seed
+                cfg.sim_seed = original_sim_seed
+                setup_environment(cfg.sim_seed)
+            if cfg.cache_dataset:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                print(f"[DATA] Caching held-out test dataset to {cache_path}")
+                torch.save(
+                    {
+                        "theta": bundle["theta"],
+                        "x": bundle["x"],
+                        "region_metadata": bundle["region_metadata"],
+                        "acceptance": bundle["acceptance"],
+                        "config_hash": cfg.test_dataset_id,
+                    },
+                    cache_path,
+                )
+            return bundle["theta"], bundle["x"], bundle["region_metadata"]
+        finally:
+            _release_cache_lock(lock_path)
+
+    original_seed = cfg.random_seed
+    original_sim_seed = cfg.sim_seed
+    original_batch_idx = getattr(simulator, "_batch_idx", 0)
+    try:
+        cfg.random_seed = cfg.benchmark_eval_seed
+        cfg.sim_seed = cfg.benchmark_eval_seed
+        setup_environment(cfg.benchmark_eval_seed)
+        simulator._batch_idx = 0
+        bundle = _generate_heldout_test_dataset(cfg, prior, simulator, region_meta)
+    finally:
+        simulator._batch_idx = original_batch_idx
+        cfg.random_seed = original_seed
+        cfg.sim_seed = original_sim_seed
+        setup_environment(cfg.sim_seed)
+
+    return bundle["theta"], bundle["x"], bundle["region_metadata"]
+
+
 def get_or_generate_dataset(
     cfg: ExperimentConfig,
     prior,
@@ -107,42 +514,12 @@ def get_or_generate_dataset(
     device: torch.device,
 ) -> Tuple[torch.Tensor, torch.Tensor, Optional[Dict]]:
     """
-    Get dataset from cache or generate new one.
-
-    Returns:
-        theta_train: Training parameters (physical space)
-        x_train: Training observations (physical space)
-        controls: Control inputs (if available)
+    Backwards-compatible wrapper around the shared training dataset cache.
     """
-    cache_path = cfg.get_dataset_cache_path()
-
-    # Try loading from cache
-    if cfg.reuse_dataset and cache_path.exists():
-        print(f"[DATA] Loading cached dataset from {cache_path}")
-        cached = torch.load(cache_path)
-        return cached["theta"], cached["x"], cached.get("controls")
-
-    # Generate new dataset
-    print(f"[DATA] Generating {cfg.num_simulations} simulations...")
-    theta_train, x_train, controls = generate_dataset(
-        cfg, prior, simulator, show_pbar=True
+    theta_train, x_train, region_metadata = get_or_generate_training_dataset(
+        cfg, prior, simulator, device
     )
-
-    # Cache if requested
-    if cfg.cache_dataset:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        print(f"[DATA] Caching dataset to {cache_path}")
-        torch.save(
-            {
-                "theta": theta_train,
-                "x": x_train,
-                "controls": controls,
-                "config_hash": cfg.dataset_id,
-            },
-            cache_path,
-        )
-
-    return theta_train, x_train, controls
+    return theta_train, x_train, region_metadata
 
 
 # =============================================================================
@@ -321,6 +698,252 @@ def build_shared_eval_dataset(
         simulator._batch_idx = old_batch_idx
 
     return torch.stack(theta_items, dim=0), torch.stack(x_items, dim=0)
+
+
+def build_examples_from_dataset(
+    theta_phys: torch.Tensor,
+    x_phys: torch.Tensor,
+    x_norm: torch.Tensor,
+    *,
+    num_examples: int,
+) -> List[Dict[str, Any]]:
+    """Build diagnostic example objects from a cached held-out dataset."""
+    examples: List[Dict[str, Any]] = []
+    total = min(int(num_examples), int(theta_phys.shape[0]), int(x_norm.shape[0]))
+    for ex_idx in range(total):
+        examples.append(
+            {
+                "ex_idx": ex_idx,
+                "theta_true": theta_phys[ex_idx].detach().cpu().numpy().astype(np.float32),
+                "x_phys": x_phys[ex_idx].detach().cpu().numpy().astype(np.float32),
+                "x_cond": x_norm[ex_idx : ex_idx + 1],
+            }
+        )
+    return examples
+
+
+def _controls_dict_from_x_case(
+    x_case_phys: torch.Tensor,
+    obs_dim: int,
+) -> Dict[str, Any]:
+    """Extract simulator-style control dict from a single [obs||ctrl] trajectory."""
+    if x_case_phys.ndim != 2:
+        raise ValueError(f"x_case_phys must be (T,D), got {tuple(x_case_phys.shape)}")
+    ctrl = x_case_phys[:, obs_dim : obs_dim + 4].detach().cpu().numpy().astype(np.float32)
+    import jax.numpy as jnp
+
+    return {
+        "steer_ang": jnp.asarray(ctrl[:, 0]),
+        "engine_torque": jnp.asarray(ctrl[:, 1]),
+        "break_torque": jnp.asarray(ctrl[:, 2]),
+        "gear_transmission": jnp.asarray(ctrl[:, 3]),
+    }
+
+
+def sample_posterior_on_dataset(
+    cfg: ExperimentConfig,
+    theta_test_phys: torch.Tensor,
+    x_test_norm: torch.Tensor,
+    posterior,
+    normalizer: Normalizer,
+    device: torch.device,
+    *,
+    num_cases: int,
+    num_posterior_samples: int,
+) -> Tuple[torch.Tensor, torch.Tensor, List[float]]:
+    """Sample posteriors for a dataset of conditioning observations."""
+    N = min(int(num_cases), int(theta_test_phys.shape[0]), int(x_test_norm.shape[0]))
+    theta_sub_phys = theta_test_phys[:N]
+    x_sub = x_test_norm[:N]
+    all_samples: List[torch.Tensor] = []
+    sample_times_s: List[float] = []
+    successful_theta: List[torch.Tensor] = []
+
+    for i in range(N):
+        x_i = x_sub[i : i + 1]
+        try:
+            t0 = time.time()
+            samples_i = posterior.sample((num_posterior_samples,), x=x_i.to(device))
+            sample_times_s.append(time.time() - t0)
+            if isinstance(samples_i, np.ndarray):
+                samples_i = torch.from_numpy(samples_i).float()
+            samples_i = normalizer.unnormalize_theta(samples_i.to(device)).cpu()
+            if samples_i.ndim == 3:
+                samples_i = samples_i.reshape(-1, samples_i.shape[-1])
+            all_samples.append(samples_i)
+            successful_theta.append(theta_sub_phys[i].detach().cpu())
+        except Exception as e:
+            print(f"[POST] Warning: Failed to sample case {i}: {e}")
+
+    if not all_samples:
+        raise RuntimeError("No successful posterior samples on held-out dataset")
+
+    return (
+        torch.stack(successful_theta, dim=0),
+        torch.stack(all_samples, dim=0),
+        sample_times_s,
+    )
+
+
+def compute_heldout_posterior_stats(
+    cfg: ExperimentConfig,
+    theta_true_phys: torch.Tensor,
+    theta_samples_phys: torch.Tensor,
+    *,
+    bootstrap_samples: int = 1000,
+) -> Dict[str, Any]:
+    """Compute formal held-out posterior statistics."""
+    theta_true_np = theta_true_phys.detach().cpu().numpy().astype(np.float64)
+    theta_samples_np = theta_samples_phys.detach().cpu().numpy().astype(np.float64)
+    N, K, d = theta_samples_np.shape
+
+    sq_dist = np.sum((theta_samples_np - theta_true_np[:, None, :]) ** 2, axis=2)
+    w2_per_case = np.sqrt(np.mean(sq_dist, axis=1))
+    posterior_mean = theta_samples_np.mean(axis=1)
+    l2_per_case = np.sqrt(np.sum((posterior_mean - theta_true_np) ** 2, axis=1))
+
+    rng = np.random.default_rng(int(cfg.random_seed))
+    boot_idx = rng.integers(0, N, size=(bootstrap_samples, N))
+    w2_boot = w2_per_case[boot_idx].mean(axis=1)
+    l2_boot = l2_per_case[boot_idx].mean(axis=1)
+
+    rank_uniformity: Dict[str, Any] = {}
+    for dim_idx, name in enumerate(cfg.active_parameters):
+        ranks = np.sum(theta_samples_np[:, :, dim_idx] < theta_true_np[:, None, dim_idx], axis=1)
+        rank_scaled = (ranks + 1.0) / (K + 1.0)
+        ks_result = kstest(rank_scaled, "uniform")
+        rank_uniformity[name] = {
+            "ks_statistic": float(ks_result.statistic),
+            "ks_pvalue": float(ks_result.pvalue),
+            "mean_rank": float(np.mean(ranks)),
+        }
+
+    coverage_tests: Dict[str, Any] = {}
+    for level in (0.5, 0.9):
+        alpha = 1.0 - level
+        lower = np.quantile(theta_samples_np, alpha / 2.0, axis=1)
+        upper = np.quantile(theta_samples_np, 1.0 - alpha / 2.0, axis=1)
+        level_key = f"coverage_{int(level * 100)}"
+        coverage_tests[level_key] = {}
+        overall_hits = []
+        for dim_idx, name in enumerate(cfg.active_parameters):
+            hits = (theta_true_np[:, dim_idx] >= lower[:, dim_idx]) & (
+                theta_true_np[:, dim_idx] <= upper[:, dim_idx]
+            )
+            overall_hits.append(hits)
+            test = binomtest(int(hits.sum()), int(hits.size), p=level)
+            coverage_tests[level_key][name] = {
+                "empirical": float(np.mean(hits)),
+                "count": int(hits.sum()),
+                "n": int(hits.size),
+                "pvalue": float(test.pvalue),
+            }
+        overall_flat = np.concatenate(overall_hits)
+        overall_test = binomtest(int(overall_flat.sum()), int(overall_flat.size), p=level)
+        coverage_tests[level_key]["overall"] = {
+            "empirical": float(np.mean(overall_flat)),
+            "count": int(overall_flat.sum()),
+            "n": int(overall_flat.size),
+            "pvalue": float(overall_test.pvalue),
+        }
+
+    return {
+        "rank_uniformity": rank_uniformity,
+        "coverage_tests": coverage_tests,
+        "bootstrap_ci": {
+            "w2_mean_95": [
+                float(np.quantile(w2_boot, 0.025)),
+                float(np.quantile(w2_boot, 0.975)),
+            ],
+            "l2_error_mean_95": [
+                float(np.quantile(l2_boot, 0.025)),
+                float(np.quantile(l2_boot, 0.975)),
+            ],
+        },
+        "num_cases": int(N),
+        "num_posterior_samples": int(K),
+    }
+
+
+def run_simulated_ppc_diagnostic(
+    cfg: ExperimentConfig,
+    fig_dir: Path,
+    posterior,
+    x_test_phys: torch.Tensor,
+    normalizer: Normalizer,
+    device: torch.device,
+    *,
+    num_examples: int,
+    num_posterior_samples: int,
+) -> Dict[str, Any]:
+    """Run simulated PPC on held-out synthetic test trajectories."""
+    total = min(int(num_examples), int(x_test_phys.shape[0]))
+    if total <= 0:
+        return {}
+
+    per_example: List[Dict[str, Any]] = []
+    for ex_idx in range(total):
+        x_case = x_test_phys[ex_idx : ex_idx + 1].to(device)
+        controls = _controls_dict_from_x_case(x_test_phys[ex_idx], cfg.obs_dim)
+        y_real, y_ppc = posterior_predictive_from_real(
+            posterior,
+            x_case,
+            controls,
+            cfg,
+            normalizer=normalizer,
+            device=device,
+            K_ppc=num_posterior_samples,
+        )
+        if not cfg.no_plots:
+            ppc_path = fig_dir / f"ppc_timeseries_simulated_test_ex{ex_idx}.png"
+            plot_ppc_trajectories(
+                y_real=y_real,
+                y_ppc=y_ppc,
+                obs_labels=OBS_LABELS,
+                dt=cfg.dt,
+                out_path=ppc_path,
+                max_trajs=20,
+                plot_all_trajs=True,
+                max_dims=cfg.obs_dim,
+                title=f"PPC on Held-out Simulated Test Case {ex_idx}",
+            )
+
+        metrics = real_data_trajectory_metrics(y_real, y_ppc, normalize_w2=True)
+        per_example.append({"example_idx": ex_idx, "metrics": metrics})
+
+    rmse_vals = [float(item["metrics"]["rmse_overall"]) for item in per_example]
+    w2_vals = [float(item["metrics"]["w2"]) for item in per_example]
+    aggregate = {
+        "num_examples": total,
+        "num_posterior_samples": int(num_posterior_samples),
+        "rmse_mean": float(np.mean(rmse_vals)),
+        "rmse_std": float(np.std(rmse_vals)),
+        "w2_mean": float(np.mean(w2_vals)),
+        "w2_std": float(np.std(w2_vals)),
+    }
+    return {"per_example": per_example, "aggregate": aggregate}
+
+
+def build_budget_metadata(cfg: ExperimentConfig) -> Dict[str, Any]:
+    """Compute benchmark budget metadata for reporting and aggregation."""
+    if cfg.method == "fnpe":
+        num_pilots = int(round(cfg.fnpe_num_simulations * cfg.fnpe_pilot_fraction))
+        total_simulation_budget_steps = int(
+            cfg.fnpe_num_simulations * cfg.fnpe_window_size
+            + num_pilots * cfg.fnpe_pilot_length
+        )
+    else:
+        total_simulation_budget_steps = int(cfg.num_simulations * cfg.T_seg)
+
+    return {
+        "method": cfg.method,
+        "num_simulations": int(cfg.num_simulations),
+        "num_test_simulations": int(cfg.num_test_simulations),
+        "T_seg": int(cfg.T_seg),
+        "active_parameters": list(cfg.active_parameters),
+        "total_simulation_budget_steps": total_simulation_budget_steps,
+        "benchmark_eval_seed": int(cfg.benchmark_eval_seed),
+    }
 
 
 def run_parameter_posterior_plots(
@@ -895,6 +1518,8 @@ def run_w2_posterior_diagnostic(
     *,
     num_cases: int = 100,
     num_posterior_samples: int = 500,
+    theta_samples_phys: Optional[torch.Tensor] = None,
+    sample_times_s: Optional[List[float]] = None,
 ) -> Dict[str, Any]:
     """
     Compute Wasserstein-style metrics comparing posterior to ground truth theta.
@@ -912,36 +1537,25 @@ def run_w2_posterior_diagnostic(
 
     print(f"[W2-POST] Computing posterior vs true theta metrics ({num_cases} cases)...")
 
-    # Select subset
-    N = min(num_cases, theta_test_phys.shape[0])
-    theta_sub_phys = theta_test_phys[:N]  # (N, d) in physical units
-    x_sub = x_test_norm[:N]  # (N, T, D) normalized
-
-    # Sample from posterior for each observation
-    all_samples = []
-    sample_times_s = []
-    for i in range(N):
-        x_i = x_sub[i : i + 1]  # (1, T, D) or (T, D)
+    if theta_samples_phys is None:
         try:
-            t0 = time.time()
-            samples_i = posterior.sample((num_posterior_samples,), x=x_i.to(device))
-            sample_times_s.append(time.time() - t0)
-            if isinstance(samples_i, np.ndarray):
-                samples_i = torch.from_numpy(samples_i).float()
-            samples_i = normalizer.unnormalize_theta(samples_i.to(device))
-            all_samples.append(samples_i.cpu())
+            theta_true_sub, theta_samples, sample_times = sample_posterior_on_dataset(
+                cfg,
+                theta_test_phys,
+                x_test_norm,
+                posterior,
+                normalizer,
+                device,
+                num_cases=num_cases,
+                num_posterior_samples=num_posterior_samples,
+            )
+            sample_times_s = sample_times
         except Exception as e:
-            print(f"[W2-POST] Warning: Failed to sample for case {i}: {e}")
-            continue
-
-    if len(all_samples) == 0:
-        print("[W2-POST] No successful samples, skipping metric.")
-        return {}
-
-    # Stack samples: (N_success, K, d)
-    theta_samples = torch.stack(all_samples, dim=0)
-    N_success = theta_samples.shape[0]
-    theta_true_sub = theta_sub_phys[:N_success].cpu()
+            print(f"[W2-POST] No successful samples, skipping metric: {e}")
+            return {}
+    else:
+        theta_samples = theta_samples_phys[: min(num_cases, theta_samples_phys.shape[0])]
+        theta_true_sub = theta_test_phys[: theta_samples.shape[0]].cpu()
 
     # Compute metrics
     w2_results = wasserstein2_posterior_vs_true(
@@ -1541,6 +2155,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     probe_theta = prior_phys.sample((1,))
     probe_x = simulator_for_sbi(probe_theta)
     _, T_event, D_in = probe_x.shape
+    simulator._batch_idx = 0
     print(
         f"[SETUP] input_dim={D_in}, T_event={T_event}, d_theta={cfg.active_param_dim()}"
     )
@@ -1552,21 +2167,30 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     print(f"[SETUP] Experiment dir: {exp_dir}")
     print(f"[SETUP] Directory exists: {exp_dir.exists()}")
 
-    # --- Get or generate dataset (skip for FNPE - it generates its own) ---
+    train_region_metadata: Dict[str, Any] | None = None
+    test_region_metadata: Dict[str, Any] | None = None
+    theta_test_phys = None
+    x_test_phys = None
+    x_test_norm = None
+
+    if cfg.run_simulated_test_eval or cfg.run_simulated_ppc:
+        theta_test_phys, x_test_phys, test_region_metadata = get_or_generate_test_dataset(
+            cfg, prior_phys, simulator, device
+        )
+
+    # --- Get or generate training dataset (skip training data for FNPE) ---
     if cfg.method == "fnpe":
         print(
-            "[DATA] Skipping dataset generation for FNPE (it generates its own data)",
+            "[DATA] Skipping training dataset generation for FNPE (it generates its own data)",
             flush=True,
         )
-        # For FNPE, we still need normalization stats, but we'll get them from the task
-        # Create dummy tensors just to set up the normalizer structure
         theta_train_phys = None
         x_train_phys = None
         normalizer = None
         theta_train = None
         x_train = None
     else:
-        theta_train_phys, x_train_phys, _ = get_or_generate_dataset(
+        theta_train_phys, x_train_phys, train_region_metadata = get_or_generate_training_dataset(
             cfg, prior_phys, simulator, device
         )
 
@@ -1584,6 +2208,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         # --- Normalize data ---
         theta_train = normalizer_cpu.normalize_theta(theta_train_phys)
         x_train = normalizer_cpu.normalize_x(x_train_phys, cfg.obs_dim)
+        if x_test_phys is not None:
+            x_test_norm = normalizer_cpu.normalize_x(x_test_phys, cfg.obs_dim)
 
     # --- Build normalized prior (skip for FNPE - uses its own task-based prior) ---
     bounds = cfg.param_bounds()
@@ -1736,6 +2362,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             # Save normalizer for consistency
             save_normalizer(normalizer, exp_dir / "stats_normalization.json")
             print(f"[NORM] Created normalizer from FNPE task stats")
+            if x_test_phys is not None:
+                x_test_norm = normalizer.normalize_x(x_test_phys, cfg.obs_dim).cpu()
         else:
             training_summary = method.train(theta_train, x_train)
 
@@ -1777,6 +2405,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     ),
                 ).to(device)
                 print(f"[NORM] Created normalizer from FNPE task stats")
+        if x_test_phys is not None and normalizer is not None:
+            x_test_norm = normalizer.normalize_x(x_test_phys, cfg.obs_dim).cpu()
 
     # --- Build posterior ---
     # Methods that return samples in normalized theta-space need the
@@ -1800,10 +2430,40 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     metrics: Dict[str, Any] = {
         "method": cfg.method,
         "training_summary": training_summary,
+        "budget_metadata": build_budget_metadata(cfg),
     }
+    if train_region_metadata is not None:
+        metrics["train_region_metadata"] = train_region_metadata
+    if test_region_metadata is not None:
+        metrics["test_region_metadata"] = test_region_metadata
 
     if cfg.do_eval:
-        if getattr(cfg, "unify_eval_budgets", False):
+        if cfg.no_plots:
+            posterior_plot_examples = 0
+            pairplot_examples = 0
+            if device.type == "cpu":
+                pairplot_posterior_samples = 0
+                c2st_examples = 0
+                c2st_posterior_samples = 0
+                if cfg.method == "fnpe":
+                    one_step_cases = min(2, int(cfg.num_test_simulations))
+                    one_step_posterior_samples = 5
+                    w2_cases = min(3, int(cfg.num_test_simulations))
+                    w2_posterior_samples = 5
+                else:
+                    one_step_cases = 5
+                    one_step_posterior_samples = 10
+                    w2_cases = min(10, int(cfg.num_test_simulations))
+                    w2_posterior_samples = 20
+            else:
+                pairplot_posterior_samples = 100
+                c2st_examples = 1
+                c2st_posterior_samples = 100
+                one_step_cases = 10
+                one_step_posterior_samples = 20
+                w2_cases = min(20, int(cfg.num_test_simulations))
+                w2_posterior_samples = 50
+        elif getattr(cfg, "unify_eval_budgets", False):
             posterior_plot_examples = 2
             pairplot_examples = 2
             pairplot_posterior_samples = 500
@@ -1824,43 +2484,45 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             w2_cases = 100
             w2_posterior_samples = 500
 
-        # ---------------------------------------------------------------------
-        # Build shared synthetic examples so ex_idx refers to the same
-        # (theta_true, x_cond) across all diagnostics.
-        # ---------------------------------------------------------------------
         shared_examples: Optional[List[Dict[str, Any]]] = None
-        shared_eval_theta_phys: Optional[torch.Tensor] = None
-        shared_eval_x_norm: Optional[torch.Tensor] = None
-        try:
-            shared_examples = build_shared_diagnostic_examples(
-                cfg,
-                prior=prior_phys,
-                simulator=simulator,
-                normalizer=normalizer,
-                device=device,
-                num_examples=3,
-                seed_offset=1000,
-                method=method,
-            )
-        except Exception as e:
-            print(f"[DIAG] Failed to build shared diagnostic examples: {e}")
-            shared_examples = None
+        shared_eval_theta_phys: Optional[torch.Tensor] = theta_test_phys
+        shared_eval_x_norm: Optional[torch.Tensor] = x_test_norm
+        shared_eval_x_phys: Optional[torch.Tensor] = x_test_phys
 
-        try:
-            shared_eval_theta_phys, shared_eval_x_norm = build_shared_eval_dataset(
-                cfg,
-                prior=prior_phys,
-                simulator=simulator,
-                normalizer=normalizer,
-                device=device,
-                num_cases=100,
-                seed_offset=3000,
-                method=method,
+        if (
+            shared_eval_theta_phys is not None
+            and shared_eval_x_norm is not None
+            and shared_eval_x_phys is not None
+            and shared_eval_theta_phys.numel() > 0
+        ):
+            shared_examples = build_examples_from_dataset(
+                shared_eval_theta_phys,
+                shared_eval_x_phys,
+                shared_eval_x_norm,
+                num_examples=max(
+                    posterior_plot_examples,
+                    pairplot_examples,
+                    c2st_examples,
+                    cfg.num_simulated_ppc_examples,
+                    2,
+                ),
             )
-        except Exception as e:
-            print(f"[DIAG] Failed to build shared evaluation dataset: {e}")
-            shared_eval_theta_phys = None
-            shared_eval_x_norm = None
+        else:
+            print("[DIAG] Held-out dataset unavailable, falling back to random diagnostic examples.")
+            try:
+                shared_examples = build_shared_diagnostic_examples(
+                    cfg,
+                    prior=prior_phys,
+                    simulator=simulator,
+                    normalizer=normalizer,
+                    device=device,
+                    num_examples=3,
+                    seed_offset=1000,
+                    method=method,
+                )
+            except Exception as e:
+                print(f"[DIAG] Failed to build shared diagnostic examples: {e}")
+                shared_examples = None
 
         # Posterior plots
         if cfg.run_posterior_plots and shared_examples is not None:
@@ -1923,27 +2585,69 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         try:
             if shared_eval_theta_phys is None or shared_eval_x_norm is None:
                 raise RuntimeError("shared evaluation dataset unavailable")
-            w2_post_results = run_w2_posterior_diagnostic(
+            theta_eval_subset, theta_eval_samples, sample_times_s = sample_posterior_on_dataset(
                 cfg,
-                fig_dir=fig_dir,
-                theta_test_phys=shared_eval_theta_phys,
-                x_test_norm=shared_eval_x_norm,
-                posterior=posterior,
-                normalizer=normalizer,
-                device=device,
+                shared_eval_theta_phys,
+                shared_eval_x_norm,
+                posterior,
+                normalizer,
+                device,
                 num_cases=w2_cases,
                 num_posterior_samples=w2_posterior_samples,
             )
+            w2_post_results = run_w2_posterior_diagnostic(
+                cfg,
+                fig_dir=fig_dir,
+                theta_test_phys=theta_eval_subset,
+                x_test_norm=shared_eval_x_norm[: theta_eval_subset.shape[0]],
+                posterior=posterior,
+                normalizer=normalizer,
+                device=device,
+                num_cases=theta_eval_subset.shape[0],
+                num_posterior_samples=w2_posterior_samples,
+                theta_samples_phys=theta_eval_samples,
+                sample_times_s=sample_times_s,
+            )
             if w2_post_results:
                 metrics["w2_posterior_vs_true"] = w2_post_results
+                metrics["heldout_test_posterior_vs_true"] = w2_post_results
                 # Save separately
                 with (exp_dir / "w2_posterior_metrics.json").open("w") as f:
                     json.dump(w2_post_results, f, indent=2)
+
+                heldout_stats = compute_heldout_posterior_stats(
+                    cfg,
+                    theta_eval_subset,
+                    theta_eval_samples,
+                )
+                metrics["heldout_test_stats"] = heldout_stats
+                with (exp_dir / "heldout_test_stats.json").open("w") as f:
+                    json.dump(heldout_stats, f, indent=2)
         except Exception as e:
             print(f"[DIAG] W2 posterior diagnostic failed: {e}")
 
+        if cfg.run_simulated_ppc and shared_eval_x_phys is not None and shared_eval_x_phys.shape[0] > 0:
+            print("\n[DIAG] Running held-out simulated PPC...")
+            try:
+                simulated_ppc = run_simulated_ppc_diagnostic(
+                    cfg,
+                    fig_dir,
+                    posterior,
+                    shared_eval_x_phys,
+                    normalizer,
+                    device,
+                    num_examples=cfg.num_simulated_ppc_examples,
+                    num_posterior_samples=cfg.simulated_test_ppc_samples,
+                )
+                if simulated_ppc:
+                    metrics["heldout_test_ppc"] = simulated_ppc
+                    with (exp_dir / "heldout_test_ppc_metrics.json").open("w") as f:
+                        json.dump(simulated_ppc, f, indent=2)
+            except Exception as e:
+                print(f"[DIAG] Held-out simulated PPC failed: {e}")
+
         # Pairplot visualization (markovsbi-style)
-        if shared_examples is not None:
+        if shared_examples is not None and pairplot_examples > 0:
             print("\n[DIAG] Running pairplot diagnostics...")
             try:
                 run_pairplot_diagnostic(
@@ -1961,11 +2665,11 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 )
             except Exception as e:
                 print(f"[DIAG] Pairplot failed: {e}")
-        else:
+        elif pairplot_examples > 0:
             print("[DIAG] Skipping pairplot - no shared examples available")
 
         # C2ST diagnostic (markovsbi-style)
-        if shared_examples is not None:
+        if shared_examples is not None and c2st_examples > 0:
             print("\n[DIAG] Running C2ST diagnostics...")
             try:
                 c2st_results = run_c2st_diagnostic(
@@ -1985,7 +2689,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     metrics["c2st"] = c2st_results
             except Exception as e:
                 print(f"[DIAG] C2ST failed: {e}")
-        else:
+        elif c2st_examples > 0:
             print("[DIAG] Skipping C2ST - no shared examples available")
 
         # Diffusion traces (FNPE only)

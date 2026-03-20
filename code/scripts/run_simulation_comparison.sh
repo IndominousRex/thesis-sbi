@@ -5,8 +5,9 @@
 # Submit this script with sbatch. It is designed to run 4 array tasks in
 # parallel by default, one method per task, one GPU per task.
 #
-# The array tasks use independent datasets to avoid cache/write races. This is
-# intentional for array mode.
+# The array tasks share cached train/test datasets for fair benchmark runs.
+# Cache creation is guarded in Python, so parallel array tasks can reuse the
+# same datasets without racing.
 # ==============================================================================
 
 #SBATCH --job-name=sim_cmp
@@ -105,7 +106,6 @@ srun python scripts/run_simulation_comparison.py \
     --seed "${SEED}" \
     --params "${PARAMS}" \
     --no-summary \
-    --independent-datasets \
     ${MODE_FLAG}
 
 echo "=================================================="

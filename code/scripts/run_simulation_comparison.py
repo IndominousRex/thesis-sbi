@@ -160,6 +160,11 @@ def create_config(
         "unify_eval_budgets": True,
         "num_sbc_samples": 50,
         "num_posterior_samples_sbc": 200,
+        "num_test_simulations": 100,
+        "run_simulated_test_eval": True,
+        "run_simulated_ppc": True,
+        "num_simulated_ppc_examples": 2,
+        "simulated_test_ppc_samples": 200,
         # Simulated-data-only runs
         "real_data_csv": None,
     }
@@ -181,6 +186,9 @@ def create_config(
                 "run_one_step_rmse": False,
                 "run_posterior_plots": False,
                 "run_lc2st": False,
+                "run_simulated_test_eval": False,
+                "run_simulated_ppc": False,
+                "num_test_simulations": 0,
                 "no_plots": True,
                 "do_eval": False,
             }
@@ -193,8 +201,11 @@ def create_config(
                 "num_simulations": min(128, num_simulations),
                 "batch_sim": min(128, num_simulations),
                 "training_batch_size": 64,
-                "num_sbc_samples": 20,
-                "num_posterior_samples_sbc": 200,
+                "num_sbc_samples": 5,
+                "num_posterior_samples_sbc": 50,
+                "num_test_simulations": 20,
+                "num_simulated_ppc_examples": 1,
+                "simulated_test_ppc_samples": 20,
                 "num_epochs": 20,
                 "stop_after_epochs": 5,
                 "run_posterior_plots": False,
@@ -221,6 +232,38 @@ def create_config(
                 2000, max(256, num_simulations * 4)
             )
             cfg_kwargs["fnpe_max_epochs"] = 200
+
+        if device == "cpu":
+            cfg_kwargs.update(
+                {
+                    "num_sbc_samples": 3,
+                    "num_posterior_samples_sbc": 20,
+                    "num_test_simulations": 10,
+                    "simulated_test_ppc_samples": 10,
+                }
+            )
+            if method == "simformer":
+                cfg_kwargs.update(
+                    {
+                        "simformer_num_train_steps": 50,
+                        "simformer_num_diffusion_steps": 20,
+                        "simformer_batch_size": 32,
+                    }
+                )
+            elif method == "fnpe":
+                cfg_kwargs.update(
+                    {
+                        "run_sbc": False,
+                        "fnpe_num_simulations": 64,
+                        "fnpe_max_epochs": 8,
+                        "fnpe_budget_epoch_multiplier": 1.0,
+                        "fnpe_steps_per_epoch": 250,
+                        "fnpe_pilot_fraction": 0.05,
+                        "fnpe_pilot_length": 256,
+                        "num_test_simulations": 3,
+                        "simulated_test_ppc_samples": 5,
+                    }
+                )
 
     # Method-specific overrides
     if method == "simformer":
@@ -368,6 +411,8 @@ def _print_and_save_summary(args, results, configs_used):
                 summary["fnpe_steps_per_epoch"] = cfg_used.fnpe_steps_per_epoch
 
         metrics = res.get("metrics", {})
+        if "budget_metadata" in metrics:
+            summary["budget_metadata"] = metrics["budget_metadata"]
 
         # Training summary
         train = metrics.get("training_summary", {})
@@ -434,6 +479,33 @@ def _print_and_save_summary(args, results, configs_used):
             summary["w1_per_dim"] = w2.get("w1_per_dim")
             summary["sampling_time_mean_s"] = w2.get("sampling_time_mean_s")
             summary["sampling_time_std_s"] = w2.get("sampling_time_std_s")
+
+        if "heldout_test_stats" in metrics:
+            heldout_stats = metrics["heldout_test_stats"]
+            summary["heldout_test_stats"] = heldout_stats
+            rank_uniformity = heldout_stats.get("rank_uniformity", {})
+            min_p = min(
+                (
+                    float(v.get("ks_pvalue"))
+                    for v in rank_uniformity.values()
+                    if isinstance(v, dict) and v.get("ks_pvalue") is not None
+                ),
+                default=None,
+            )
+            if min_p is not None:
+                print(f"  Held-out min KS p-value: {min_p:.4g}")
+                summary["heldout_min_ks_pvalue"] = min_p
+
+        if "heldout_test_ppc" in metrics:
+            heldout_ppc = metrics["heldout_test_ppc"]
+            aggregate = heldout_ppc.get("aggregate", {})
+            summary["heldout_test_ppc"] = aggregate
+            if isinstance(aggregate.get("rmse_mean"), (int, float)):
+                print(f"  Held-out PPC RMSE mean: {aggregate['rmse_mean']:.4f}")
+                summary["heldout_ppc_rmse_mean"] = aggregate["rmse_mean"]
+            if isinstance(aggregate.get("w2_mean"), (int, float)):
+                print(f"  Held-out PPC W2 mean: {aggregate['w2_mean']:.4f}")
+                summary["heldout_ppc_w2_mean"] = aggregate["w2_mean"]
 
         # C2ST
         if "c2st" in metrics:

@@ -99,7 +99,6 @@ srun python scripts/run_simulation_comparison.py \
     --seed "${SEED}" \
     --params "${PARAMS}" \
     --no-summary \
-    --independent-datasets \
     ${MODE_FLAG}
 
 echo "=================================================="

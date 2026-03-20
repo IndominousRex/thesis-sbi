@@ -80,6 +80,7 @@ class ExperimentConfig:
 
     # --- Dataset caching (for fair method comparisons) ---
     dataset_id: Optional[str] = None  # Unique ID for cached dataset
+    test_dataset_id: Optional[str] = None  # Unique ID for cached held-out test dataset
     dataset_cache_dir: str = "datasets"
     cache_dataset: bool = True  # Whether to cache generated dataset
     reuse_dataset: bool = False  # Whether to load cached dataset if available
@@ -193,6 +194,19 @@ class ExperimentConfig:
     run_one_step_rmse: bool = True
     run_posterior_plots: bool = True
     unify_eval_budgets: bool = True  # Use identical evaluation budgets across methods
+    run_simulated_test_eval: bool = True  # Run held-out synthetic test evaluation
+    run_simulated_ppc: bool = True  # Run simulated PPC on held-out synthetic cases
+    num_test_simulations: int = 100  # Size of held-out synthetic test set
+    num_simulated_ppc_examples: int = 2  # Number of held-out PPC plots to save
+    simulated_test_ppc_samples: int = 200  # PPC samples per held-out test case
+    benchmark_eval_seed: int = 314159  # Fixed seed for shared held-out test set
+    test_region_theta_tail_frac: float = 0.25  # Parameter-tail width for holdout region
+    test_region_require_joint_holdout: bool = True  # Require theta + driving holdout
+    test_region_speed_margin_frac: float = 0.25  # Margin relative to init speed range
+    test_region_min_abs_steer_deg: float = 6.0  # Steering threshold for holdout region
+    test_region_min_brake: float = 180.0  # Brake threshold for holdout region
+    test_region_min_driving_flags: int = 2  # Number of driving-condition flags required
+    benchmark_max_attempt_factor: int = 150  # Max rejection-sampling multiplier
 
     # --- Real data eval ---
     # Disabled by default. Set explicitly to enable real-data evaluation.
@@ -265,6 +279,12 @@ class ExperimentConfig:
         # --- Generate dataset_id if caching and not provided ---
         if (self.cache_dataset or self.reuse_dataset) and self.dataset_id is None:
             self.dataset_id = self._generate_dataset_id()
+        if (
+            self.run_simulated_test_eval
+            and (self.cache_dataset or self.reuse_dataset)
+            and self.test_dataset_id is None
+        ):
+            self.test_dataset_id = self._generate_test_dataset_id()
 
     def _generate_dataset_id(self) -> str:
         """Generate a unique dataset ID based on simulation parameters."""
@@ -285,10 +305,46 @@ class ExperimentConfig:
             "active_parameters": self.active_parameters,
             "prior_bounds": self.param_bounds(),
             "fixed_values": self.fixed_param_values(),
+            "test_region_theta_tail_frac": self.test_region_theta_tail_frac,
+            "test_region_require_joint_holdout": self.test_region_require_joint_holdout,
+            "test_region_speed_margin_frac": self.test_region_speed_margin_frac,
+            "test_region_min_abs_steer_deg": self.test_region_min_abs_steer_deg,
+            "test_region_min_brake": self.test_region_min_brake,
+            "test_region_min_driving_flags": self.test_region_min_driving_flags,
         }
         param_str = json.dumps(data_params, sort_keys=True)
         hash_val = hashlib.md5(param_str.encode()).hexdigest()[:12]
         return f"dataset_{hash_val}"
+
+    def _generate_test_dataset_id(self) -> str:
+        """Generate a unique ID for the shared held-out synthetic test set."""
+        test_params = {
+            "benchmark_eval_seed": self.benchmark_eval_seed,
+            "num_test_simulations": self.num_test_simulations,
+            "T_seg": self.T_seg,
+            "dt": self.dt,
+            "steer_scale": self.steer_scale,
+            "init_speed_center_ms": self.init_speed_center_ms,
+            "init_speed_range_ms": self.init_speed_range_ms,
+            "brake_block_fraction": self.brake_block_fraction,
+            "accel_scale": self.accel_scale,
+            "emergency_brake_fraction": self.emergency_brake_fraction,
+            "ramp_s": self.ramp_s,
+            "obs_noise_scale": self.obs_noise_scale,
+            "process_noise_scale": self.process_noise_scale,
+            "active_parameters": self.active_parameters,
+            "prior_bounds": self.param_bounds(),
+            "fixed_values": self.fixed_param_values(),
+            "test_region_theta_tail_frac": self.test_region_theta_tail_frac,
+            "test_region_require_joint_holdout": self.test_region_require_joint_holdout,
+            "test_region_speed_margin_frac": self.test_region_speed_margin_frac,
+            "test_region_min_abs_steer_deg": self.test_region_min_abs_steer_deg,
+            "test_region_min_brake": self.test_region_min_brake,
+            "test_region_min_driving_flags": self.test_region_min_driving_flags,
+        }
+        param_str = json.dumps(test_params, sort_keys=True)
+        hash_val = hashlib.md5(param_str.encode()).hexdigest()[:12]
+        return f"dataset_test_{hash_val}"
 
     def param_bounds(self) -> Dict[str, tuple]:
         """Bounds for each physical parameter keyed by name."""
@@ -314,6 +370,11 @@ class ExperimentConfig:
         """Get path for cached dataset."""
         cache_dir = Path(self.dataset_cache_dir)
         return cache_dir / f"{self.dataset_id}.pt"
+
+    def get_test_dataset_cache_path(self) -> Path:
+        """Get path for cached held-out test dataset."""
+        cache_dir = Path(self.dataset_cache_dir)
+        return cache_dir / f"{self.test_dataset_id}.pt"
 
     def get_experiment_name(self) -> str:
         """Generate a descriptive experiment name."""

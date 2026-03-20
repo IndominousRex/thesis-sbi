@@ -21,7 +21,9 @@ from tqdm import tqdm
 from .base import BaseMethod
 
 # MarkovSBI imports
-from markovsbi.tasks import VehicleDynamicsTask
+# Import the vehicle task directly so local validation does not pull in
+# unrelated optional tasks (e.g. Lotka-Volterra) that require extra deps.
+from markovsbi.tasks.vehicle_dynamics import VehicleDynamicsTask
 from markovsbi.utils.sde_utils import init_sde
 from markovsbi.models.simple_scoremlp import build_score_mlp, precondition_functions
 from markovsbi.models.train_utils import build_batch_sampler, build_loss_fn
