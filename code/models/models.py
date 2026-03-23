@@ -31,7 +31,17 @@ class BiGRUAttnEncoder(nn.Module):
 
     def forward(self, x):
         # x: (B, T, D_in)
-        h, _ = self.gru(x)
+        try:
+            h, _ = self.gru(x)
+        except RuntimeError as exc:
+            # Mixed JAX/PyTorch CUDA environments can trigger cuDNN RNN failures
+            # on some GPU types. Retry with the native PyTorch GRU kernel instead
+            # of failing the entire run.
+            if x.is_cuda and "CUDNN_STATUS" in str(exc).upper():
+                with torch.backends.cudnn.flags(enabled=False):
+                    h, _ = self.gru(x)
+            else:
+                raise
         a = torch.softmax(self.att(h).squeeze(-1), dim=1)  # (B,T)
         emb = (h * a.unsqueeze(-1)).sum(dim=1)
         return emb

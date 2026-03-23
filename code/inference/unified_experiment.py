@@ -434,7 +434,7 @@ def get_or_generate_training_dataset(
 
     if cfg.reuse_dataset and cache_path.exists():
         print(f"[DATA] Loading cached dataset from {cache_path}")
-        cached = torch.load(cache_path)
+        cached = torch.load(cache_path, weights_only=False)
         return cached["theta"], cached["x"], cached.get("region_metadata", region_meta)
 
     if cfg.cache_dataset or cfg.reuse_dataset:
@@ -442,7 +442,7 @@ def get_or_generate_training_dataset(
         try:
             if cfg.reuse_dataset and cache_path.exists():
                 print(f"[DATA] Loading cached dataset from {cache_path}")
-                cached = torch.load(cache_path)
+                cached = torch.load(cache_path, weights_only=False)
                 return (
                     cached["theta"],
                     cached["x"],
@@ -502,7 +502,7 @@ def get_or_generate_test_dataset(
 
     if cfg.reuse_dataset and cache_path.exists():
         print(f"[DATA] Loading cached held-out test dataset from {cache_path}")
-        cached = torch.load(cache_path)
+        cached = torch.load(cache_path, weights_only=False)
         return cached["theta"], cached["x"], cached.get("region_metadata", region_meta)
 
     if cfg.cache_dataset or cfg.reuse_dataset:
@@ -510,7 +510,7 @@ def get_or_generate_test_dataset(
         try:
             if cfg.reuse_dataset and cache_path.exists():
                 print(f"[DATA] Loading cached held-out test dataset from {cache_path}")
-                cached = torch.load(cache_path)
+                cached = torch.load(cache_path, weights_only=False)
                 return (
                     cached["theta"],
                     cached["x"],
