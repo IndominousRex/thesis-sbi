@@ -121,6 +121,22 @@ def parse_args():
         default=None,
         help="Requested total simulator-step budget for budget-driven benchmark runs.",
     )
+    parser.add_argument(
+        "--run-sbc",
+        action="store_true",
+        help="Enable SBC diagnostics. Disabled by default for benchmark runs.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Path to the experiment directory containing the saved model for eval-only runs.",
+    )
+    parser.add_argument(
+        "--eval-only",
+        action="store_true",
+        help="Skip training and evaluate from --checkpoint.",
+    )
     return parser.parse_args()
 
 
@@ -174,6 +190,9 @@ def create_config(
     quick: bool = False,
     smoke: bool = False,
     requested_budget_steps: int | None = None,
+    run_sbc: bool = False,
+    checkpoint: str | None = None,
+    do_train: bool = True,
     dataset_id: str = None,  # type: ignore
     reuse_dataset: bool = False,
     independent_datasets: bool = False,
@@ -200,7 +219,7 @@ def create_config(
         "dataset_id": None if independent_datasets else dataset_id,
         "reuse_dataset": False if independent_datasets else reuse_dataset,
         # Diagnostics
-        "run_sbc": True,
+        "run_sbc": run_sbc,
         "run_swd": False,
         "run_one_step_rmse": True,
         "run_posterior_plots": True,
@@ -215,6 +234,8 @@ def create_config(
         "simulated_test_ppc_samples": 200,
         # Simulated-data-only runs
         "real_data_csv": None,
+        "checkpoint": checkpoint,
+        "do_train": do_train,
     }
 
     if smoke:
@@ -366,6 +387,11 @@ def create_config(
 
 def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | None]:
     """Create all per-method configs and return shared dataset ID if applicable."""
+    if args.eval_only and not args.checkpoint:
+        raise ValueError("--eval-only requires --checkpoint.")
+    if args.checkpoint and len(args.methods) != 1:
+        raise ValueError("--checkpoint can only be used with a single method.")
+
     configs_used: dict[str, ExperimentConfig] = {}
     shared_methods = [m for m in args.methods if m != "fnpe"]
     shared_dataset_id = None
@@ -382,6 +408,9 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             quick=args.quick,
             smoke=args.smoke,
             requested_budget_steps=args.requested_budget_steps,
+            run_sbc=args.run_sbc,
+            checkpoint=args.checkpoint,
+            do_train=not args.eval_only,
             dataset_id=None,
             reuse_dataset=True,
             independent_datasets=args.independent_datasets,
@@ -400,6 +429,9 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             quick=args.quick,
             smoke=args.smoke,
             requested_budget_steps=args.requested_budget_steps,
+            run_sbc=args.run_sbc,
+            checkpoint=args.checkpoint,
+            do_train=not args.eval_only,
             dataset_id=shared_dataset_id,
             reuse_dataset=method != "fnpe" and shared_dataset_id is not None,
             independent_datasets=args.independent_datasets,

@@ -73,7 +73,7 @@ conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 # Let JAX use GPU if available; pyswarm runs on CPU anyway but
 # the JIT-compiled simulation can benefit from GPU XLA.
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-JAX_PLATFORM_NAME=cpu 
+unset JAX_PLATFORM_NAME || true
 
 # Build optional flags and choose output path
 if [ "${LOG_SCALE}" = "yes" ]; then

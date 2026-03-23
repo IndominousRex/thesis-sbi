@@ -43,9 +43,9 @@ cd /bigwork/nhkbarit/thesis-code/code
 module load Miniforge3
 conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 
-# --- JAX configuration (use CPU) ---
+# --- JAX configuration ---
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-export JAX_PLATFORM_NAME=cpu
+unset JAX_PLATFORM_NAME || true
 
 # ==============================================================================
 # Step 1: Run NPE (generates and caches dataset)

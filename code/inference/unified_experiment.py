@@ -1172,7 +1172,7 @@ def run_sbc_diagnostic(
 
     print(f"[SBC] Running with {num_sbc} samples, {num_post} posterior samples each...")
 
-    sbc_device = torch.device("cpu") if cfg.method == "simformer" else device
+    sbc_device = device
     if hasattr(posterior, "to"):
         posterior.to(sbc_device)
 

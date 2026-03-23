@@ -190,7 +190,7 @@ class ExperimentConfig:
     num_swd_projections: int = 1000
 
     # --- Diagnostic options ---
-    run_sbc: bool = True
+    run_sbc: bool = False
     run_lc2st: bool = True  # Only for NPE
     run_swd: bool = False  # Deprecated: prior-vs-DAP SWD removed from eval pipeline
     run_one_step_rmse: bool = True

@@ -16,7 +16,7 @@ module load Miniforge3
 conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-export JAX_PLATFORM_NAME=cpu
+unset JAX_PLATFORM_NAME || true
 
 python - <<'PY'
 from datetime import datetime

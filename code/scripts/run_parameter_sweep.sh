@@ -39,7 +39,7 @@ conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
 
 # --- JAX configuration ---
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-export JAX_PLATFORM_NAME=cpu
+unset JAX_PLATFORM_NAME || true
 
 # --- Common args ---
 COMMON_ARGS="--num-sim 5000 --T-seg 3000 --num-epochs 50 --stop-after-epochs 15 --device cuda --method npe --no-sbc --no-swd --no-one-step"
