@@ -989,20 +989,39 @@ def build_budget_metadata(cfg: ExperimentConfig) -> Dict[str, Any]:
     """Compute benchmark budget metadata for reporting and aggregation."""
     if cfg.method == "fnpe":
         num_pilots = int(round(cfg.fnpe_num_simulations * cfg.fnpe_pilot_fraction))
-        total_simulation_budget_steps = int(
+        effective_budget_steps = int(
             cfg.fnpe_num_simulations * cfg.fnpe_window_size
             + num_pilots * cfg.fnpe_pilot_length
         )
     else:
-        total_simulation_budget_steps = int(cfg.num_simulations * cfg.T_seg)
+        num_pilots = 0
+        effective_budget_steps = int(cfg.num_simulations * cfg.T_seg)
+
+    requested_budget_steps = (
+        int(cfg.requested_budget_steps)
+        if cfg.requested_budget_steps is not None
+        else effective_budget_steps
+    )
 
     return {
         "method": cfg.method,
         "num_simulations": int(cfg.num_simulations),
+        "derived_num_simulations": int(cfg.derived_num_simulations),
+        "training_num_simulations": int(
+            cfg.fnpe_num_simulations if cfg.method == "fnpe" else cfg.num_simulations
+        ),
         "num_test_simulations": int(cfg.num_test_simulations),
         "T_seg": int(cfg.T_seg),
         "active_parameters": list(cfg.active_parameters),
-        "total_simulation_budget_steps": total_simulation_budget_steps,
+        "requested_budget_steps": requested_budget_steps,
+        "effective_budget_steps": effective_budget_steps,
+        "total_simulation_budget_steps": effective_budget_steps,
+        "budget_match_ratio": (
+            float(effective_budget_steps / requested_budget_steps)
+            if requested_budget_steps > 0
+            else None
+        ),
+        "fnpe_num_pilot_simulations": int(num_pilots),
         "benchmark_eval_seed": int(cfg.benchmark_eval_seed),
     }
 

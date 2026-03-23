@@ -115,7 +115,52 @@ def parse_args():
         action="store_true",
         help="Disable dataset cache/reuse so each method run generates its own data.",
     )
+    parser.add_argument(
+        "--requested-budget-steps",
+        type=int,
+        default=None,
+        help="Requested total simulator-step budget for budget-driven benchmark runs.",
+    )
     return parser.parse_args()
+
+
+def _fnpe_effective_budget_steps(
+    num_simulations: int,
+    window_size: int,
+    pilot_fraction: float,
+    pilot_length: int,
+) -> int:
+    num_pilots = int(round(num_simulations * pilot_fraction))
+    return int(num_simulations * window_size + num_pilots * pilot_length)
+
+
+def _infer_fnpe_num_simulations_for_budget(
+    requested_budget_steps: int,
+    window_size: int,
+    pilot_fraction: float,
+    pilot_length: int,
+) -> int:
+    per_sim_step_cost = window_size + pilot_fraction * pilot_length
+    approx = max(1, int(round(requested_budget_steps / max(per_sim_step_cost, 1e-9))))
+    best = approx
+    best_gap = abs(
+        _fnpe_effective_budget_steps(approx, window_size, pilot_fraction, pilot_length)
+        - requested_budget_steps
+    )
+    for delta in range(-256, 257):
+        candidate = approx + delta
+        if candidate <= 0:
+            continue
+        gap = abs(
+            _fnpe_effective_budget_steps(
+                candidate, window_size, pilot_fraction, pilot_length
+            )
+            - requested_budget_steps
+        )
+        if gap < best_gap:
+            best = candidate
+            best_gap = gap
+    return int(best)
 
 
 def create_config(
@@ -128,6 +173,7 @@ def create_config(
     active_parameters=PARAMETER_ORDER,
     quick: bool = False,
     smoke: bool = False,
+    requested_budget_steps: int | None = None,
     dataset_id: str = None,  # type: ignore
     reuse_dataset: bool = False,
     independent_datasets: bool = False,
@@ -141,6 +187,8 @@ def create_config(
         "method": method,
         "exp_name": cfg_exp_name,
         "num_simulations": num_simulations,
+        "requested_budget_steps": requested_budget_steps,
+        "derived_num_simulations": num_simulations,
         "T_seg": T_seg,
         "active_parameters": tuple(active_parameters),
         "device": device,
@@ -299,7 +347,21 @@ def create_config(
                 else cfg_kwargs.get("fnpe_num_simulations", 2000)
             )
 
-    return ExperimentConfig(**cfg_kwargs)
+    cfg = ExperimentConfig(**cfg_kwargs)
+    if (
+        method == "fnpe"
+        and requested_budget_steps is not None
+        and not quick
+        and not smoke
+    ):
+        cfg.fnpe_num_simulations = _infer_fnpe_num_simulations_for_budget(
+            requested_budget_steps=requested_budget_steps,
+            window_size=cfg.fnpe_window_size,
+            pilot_fraction=cfg.fnpe_pilot_fraction,
+            pilot_length=cfg.fnpe_pilot_length,
+        )
+
+    return cfg
 
 
 def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | None]:
@@ -319,6 +381,7 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             active_parameters=args.params,
             quick=args.quick,
             smoke=args.smoke,
+            requested_budget_steps=args.requested_budget_steps,
             dataset_id=None,
             reuse_dataset=True,
             independent_datasets=args.independent_datasets,
@@ -336,6 +399,7 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             active_parameters=args.params,
             quick=args.quick,
             smoke=args.smoke,
+            requested_budget_steps=args.requested_budget_steps,
             dataset_id=shared_dataset_id,
             reuse_dataset=method != "fnpe" and shared_dataset_id is not None,
             independent_datasets=args.independent_datasets,
@@ -376,6 +440,8 @@ def _print_and_save_summary(args, results, configs_used):
     print(f"SBI Method Comparison: {args.exp_name}")
     print(f"Methods: {args.methods}")
     print(f"Simulations: {args.num_simulations}, T_seg: {args.T_seg}")
+    if args.requested_budget_steps is not None:
+        print(f"Requested budget steps: {args.requested_budget_steps}")
     print(f"Device: {args.device}, Quick: {args.quick}, Smoke: {args.smoke}")
     if "fnpe" in args.methods:
         print(
@@ -413,6 +479,15 @@ def _print_and_save_summary(args, results, configs_used):
         metrics = res.get("metrics", {})
         if "budget_metadata" in metrics:
             summary["budget_metadata"] = metrics["budget_metadata"]
+            budget = metrics["budget_metadata"]
+            requested_budget = budget.get("requested_budget_steps")
+            effective_budget = budget.get("effective_budget_steps")
+            if isinstance(requested_budget, int):
+                print(f"  Requested budget steps: {requested_budget}")
+                summary["requested_budget_steps"] = requested_budget
+            if isinstance(effective_budget, int):
+                print(f"  Effective budget steps: {effective_budget}")
+                summary["effective_budget_steps"] = effective_budget
 
         # Training summary
         train = metrics.get("training_summary", {})
@@ -545,6 +620,8 @@ def run_comparison(args):
     print(f"SBI Method Comparison: {args.exp_name}")
     print(f"Methods: {args.methods}")
     print(f"Simulations: {args.num_simulations}, T_seg: {args.T_seg}")
+    if args.requested_budget_steps is not None:
+        print(f"Requested budget steps: {args.requested_budget_steps}")
     print(f"Device: {args.device}, Quick: {args.quick}, Smoke: {args.smoke}")
     if "fnpe" in args.methods:
         print(

@@ -75,6 +75,8 @@ class ExperimentConfig:
 
     # --- Dataset ---
     num_simulations: int = 2000
+    requested_budget_steps: Optional[int] = None  # Requested total simulator budget
+    derived_num_simulations: Optional[int] = None  # num_simulations derived from requested budget
     batch_sim: int = 512
     jit_warmup: bool = True
 
@@ -259,6 +261,8 @@ class ExperimentConfig:
             self.sim_seed = self.random_seed
         if self.train_seed is None:
             self.train_seed = self.random_seed
+        if self.derived_num_simulations is None:
+            self.derived_num_simulations = self.num_simulations
 
         # --- Validate method ---
         valid_methods = {"npe", "npse", "fnpe", "simformer"}

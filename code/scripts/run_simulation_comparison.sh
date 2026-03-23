@@ -31,6 +31,7 @@ MODE=${4:-no}
 METHODS=${5:-"npe npse fnpe simformer"}
 SEED=${6:-42}
 PARAMS=${7:-"mu,cd,m"}
+REQUESTED_BUDGET_STEPS=${8:-""}
 
 MODE_FLAG=""
 if [ "${MODE}" = "yes" ]; then
@@ -88,25 +89,47 @@ echo "Methods:         ${METHODS}"
 echo "Num Methods:     ${NUM_METHODS}"
 echo "Seed:            ${SEED}"
 echo "Params:          ${PARAMS}"
+if [ -n "${REQUESTED_BUDGET_STEPS}" ]; then
+    echo "Budget Steps:    ${REQUESTED_BUDGET_STEPS}"
+fi
 echo "=================================================="
 
 cd "${CODE_DIR}"
 
 module load Miniforge3
-conda activate /software/NHKB22930/nhkbarit/conda_envs/npe
+ENV_PREFIX="/software/NHKB22930/nhkbarit/conda_envs/npe"
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate "${ENV_PREFIX}"
+PYTHON_BIN="${ENV_PREFIX}/bin/python"
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-srun python scripts/run_simulation_comparison.py \
-    --exp-name "${RUN_GROUP}" \
-    --num-simulations "${NUM_SIMULATIONS}" \
-    --T-seg "${T_SEG}" \
-    --device cuda \
-    --methods "${METHOD}" \
-    --seed "${SEED}" \
-    --params "${PARAMS}" \
-    --no-summary \
-    ${MODE_FLAG}
+echo "Python:          ${PYTHON_BIN}"
+"${PYTHON_BIN}" -c "import sys; print('sys.executable:  ', sys.executable)"
+"${PYTHON_BIN}" -c "import torch; print('torch version:    ', torch.__version__)"
+"${PYTHON_BIN}" -c "import jax; print('jax backend:      ', jax.default_backend())"
+
+PY_CMD=(
+    "${PYTHON_BIN}" scripts/run_simulation_comparison.py
+    --exp-name "${RUN_GROUP}"
+    --num-simulations "${NUM_SIMULATIONS}"
+    --T-seg "${T_SEG}"
+    --device cuda
+    --methods "${METHOD}"
+    --seed "${SEED}"
+    --params "${PARAMS}"
+    --no-summary
+)
+
+if [ -n "${REQUESTED_BUDGET_STEPS}" ]; then
+    PY_CMD+=(--requested-budget-steps "${REQUESTED_BUDGET_STEPS}")
+fi
+
+if [ -n "${MODE_FLAG}" ]; then
+    PY_CMD+=("${MODE_FLAG}")
+fi
+
+srun "${PY_CMD[@]}"
 
 echo "=================================================="
 echo "[$(date)] Task completed"

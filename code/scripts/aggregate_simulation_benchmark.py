@@ -8,7 +8,6 @@ import csv
 import json
 from itertools import combinations
 from pathlib import Path
-from statistics import mean, median
 from typing import Any
 
 import numpy as np
@@ -62,6 +61,77 @@ def _metric_summary(values: list[float]) -> dict[str, Any]:
     }
 
 
+def _slugify(value: str) -> str:
+    return value.replace(",", "_").replace(" ", "_")
+
+
+def _plot_metric_vs_budget(
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    metric_key: str,
+    metric_label: str,
+    output_path: Path,
+) -> bool:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if not param_rows:
+        return False
+
+    tsegs = sorted({int(row["T_seg"]) for row in param_rows})
+    if not tsegs:
+        return False
+
+    ncols = min(3, len(tsegs))
+    nrows = int(np.ceil(len(tsegs) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    axes_flat = axes.flatten()
+
+    methods = sorted({row["method"] for row in param_rows})
+    for ax_idx, tseg in enumerate(tsegs):
+        ax = axes_flat[ax_idx]
+        tseg_rows = [row for row in param_rows if int(row["T_seg"]) == tseg]
+        for method in methods:
+            method_rows = [row for row in tseg_rows if row["method"] == method]
+            xs: list[float] = []
+            ys: list[float] = []
+            for row in sorted(
+                method_rows,
+                key=lambda r: (
+                    float(r.get("requested_budget_steps", r.get("total_budget_steps", 0)) or 0)
+                ),
+            ):
+                summary = row.get(metric_key)
+                if not isinstance(summary, dict) or summary.get("mean") is None:
+                    continue
+                xs.append(float(row["requested_budget_steps"]))
+                ys.append(float(summary["mean"]))
+            if xs and ys:
+                ax.plot(xs, ys, marker="o", label=method.upper())
+        ax.set_title(f"T_seg={tseg}")
+        ax.set_xlabel("Requested Budget Steps")
+        ax.set_ylabel(metric_label)
+        ax.grid(True, alpha=0.3)
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend()
+
+    for ax in axes_flat[len(tsegs) :]:
+        ax.axis("off")
+
+    fig.suptitle(f"{metric_label} vs Budget | params={params}")
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
 def main() -> None:
     args = parse_args()
     experiments_root = Path(args.experiments_root)
@@ -83,6 +153,13 @@ def main() -> None:
         heldout = metrics.get("heldout_test_posterior_vs_true") or metrics.get("w2_posterior_vs_true") or {}
         heldout_ppc = metrics.get("heldout_test_ppc", {}).get("aggregate", {})
         budget = metrics.get("budget_metadata", {})
+        training = metrics.get("training_summary", {})
+        requested_budget_steps = budget.get("requested_budget_steps")
+        effective_budget_steps = budget.get("effective_budget_steps")
+        if requested_budget_steps is None:
+            requested_budget_steps = budget.get("total_simulation_budget_steps")
+        if effective_budget_steps is None:
+            effective_budget_steps = budget.get("total_simulation_budget_steps")
         rows.append(
             {
                 "exp_dir": str(config_path.parent),
@@ -91,7 +168,9 @@ def main() -> None:
                 "params": _flatten_active_parameters(cfg.get("active_parameters", [])),
                 "T_seg": int(cfg.get("T_seg")),
                 "num_simulations": int(cfg.get("num_simulations")),
-                "total_budget_steps": budget.get("total_simulation_budget_steps"),
+                "requested_budget_steps": requested_budget_steps,
+                "effective_budget_steps": effective_budget_steps,
+                "total_budget_steps": effective_budget_steps,
                 "w2_mean": heldout.get("w2_mean"),
                 "l2_error_mean": heldout.get("l2_error_mean"),
                 "coverage_90": heldout.get("coverage_90"),
@@ -99,24 +178,33 @@ def main() -> None:
                 "coverage_curve_mae": heldout.get("coverage_curve_mae"),
                 "heldout_ppc_rmse_mean": heldout_ppc.get("rmse_mean"),
                 "heldout_ppc_w2_mean": heldout_ppc.get("w2_mean"),
+                "train_time_s": training.get("train_time_s"),
+                "epochs_trained": training.get("epochs_trained"),
+                "num_train_steps": training.get("num_train_steps"),
+                "sampling_time_mean_s": heldout.get("sampling_time_mean_s"),
             }
         )
 
     if not rows:
         raise SystemExit(f"No experiments found for prefix '{args.exp_prefix}' in {experiments_root}")
 
-    grouped: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
+    grouped: dict[tuple[str, str, int, int], list[dict[str, Any]]] = {}
     for row in rows:
-        key = (row["method"], row["params"], row["T_seg"])
+        requested_budget_steps = row.get("requested_budget_steps")
+        if requested_budget_steps is None:
+            requested_budget_steps = row.get("total_budget_steps")
+        key = (row["method"], row["params"], int(requested_budget_steps), row["T_seg"])
         grouped.setdefault(key, []).append(row)
 
     aggregate_rows: list[dict[str, Any]] = []
-    for (method, params, tseg), group_rows in sorted(grouped.items()):
+    for (method, params, requested_budget_steps, tseg), group_rows in sorted(grouped.items()):
         record: dict[str, Any] = {
             "method": method,
             "params": params,
             "T_seg": tseg,
             "num_runs": len(group_rows),
+            "requested_budget_steps": requested_budget_steps,
+            "effective_budget_steps": group_rows[0]["effective_budget_steps"],
             "total_budget_steps": group_rows[0]["total_budget_steps"],
         }
         for field in [
@@ -127,6 +215,8 @@ def main() -> None:
             "coverage_curve_mae",
             "heldout_ppc_rmse_mean",
             "heldout_ppc_w2_mean",
+            "train_time_s",
+            "sampling_time_mean_s",
         ]:
             values = [float(r[field]) for r in group_rows if r.get(field) is not None]
             if values:
@@ -134,9 +224,25 @@ def main() -> None:
         aggregate_rows.append(record)
 
     pairwise_tests: list[dict[str, Any]] = []
-    group_keys = sorted({(row["params"], row["T_seg"]) for row in rows})
-    for params, tseg in group_keys:
-        candidate_rows = [row for row in rows if row["params"] == params and row["T_seg"] == tseg]
+    group_keys = sorted(
+        {
+            (
+                row["params"],
+                int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0),
+                row["T_seg"],
+            )
+            for row in rows
+        }
+    )
+    for params, requested_budget_steps, tseg in group_keys:
+        candidate_rows = [
+            row
+            for row in rows
+            if row["params"] == params
+            and row["T_seg"] == tseg
+            and int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
+            == requested_budget_steps
+        ]
         methods = sorted({row["method"] for row in candidate_rows})
         for method_a, method_b in combinations(methods, 2):
             rows_a = {row["seed"]: row for row in candidate_rows if row["method"] == method_a}
@@ -158,6 +264,7 @@ def main() -> None:
                 pairwise_tests.append(
                     {
                         "params": params,
+                        "requested_budget_steps": requested_budget_steps,
                         "T_seg": tseg,
                         "metric": metric_key,
                         "method_a": method_a,
@@ -169,11 +276,14 @@ def main() -> None:
                 )
 
     for metric_key in {"w2_mean", "heldout_ppc_rmse_mean"}:
-        for params, tseg in group_keys:
+        for params, requested_budget_steps, tseg in group_keys:
             subset = [
                 pair
                 for pair in pairwise_tests
-                if pair["metric"] == metric_key and pair["params"] == params and pair["T_seg"] == tseg
+                if pair["metric"] == metric_key
+                and pair["params"] == params
+                and pair["requested_budget_steps"] == requested_budget_steps
+                and pair["T_seg"] == tseg
             ]
             _holm_correction(subset)
 
@@ -185,10 +295,6 @@ def main() -> None:
         "raw_rows": rows,
     }
 
-    output_json.parent.mkdir(parents=True, exist_ok=True)
-    with output_json.open("w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2)
-
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
         "method",
@@ -196,6 +302,8 @@ def main() -> None:
         "T_seg",
         "num_runs",
         "total_budget_steps",
+        "requested_budget_steps",
+        "effective_budget_steps",
         "w2_mean_mean",
         "l2_error_mean_mean",
         "coverage_90_mean",
@@ -203,6 +311,8 @@ def main() -> None:
         "coverage_curve_mae_mean",
         "heldout_ppc_rmse_mean_mean",
         "heldout_ppc_w2_mean_mean",
+        "train_time_s_mean",
+        "sampling_time_mean_s_mean",
     ]
     with output_csv.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -215,6 +325,8 @@ def main() -> None:
                     "T_seg": row["T_seg"],
                     "num_runs": row["num_runs"],
                     "total_budget_steps": row["total_budget_steps"],
+                    "requested_budget_steps": row["requested_budget_steps"],
+                    "effective_budget_steps": row["effective_budget_steps"],
                     "w2_mean_mean": row.get("w2_mean", {}).get("mean"),
                     "l2_error_mean_mean": row.get("l2_error_mean", {}).get("mean"),
                     "coverage_90_mean": row.get("coverage_90", {}).get("mean"),
@@ -222,11 +334,36 @@ def main() -> None:
                     "coverage_curve_mae_mean": row.get("coverage_curve_mae", {}).get("mean"),
                     "heldout_ppc_rmse_mean_mean": row.get("heldout_ppc_rmse_mean", {}).get("mean"),
                     "heldout_ppc_w2_mean_mean": row.get("heldout_ppc_w2_mean", {}).get("mean"),
+                    "train_time_s_mean": row.get("train_time_s", {}).get("mean"),
+                    "sampling_time_mean_s_mean": row.get("sampling_time_mean_s", {}).get("mean"),
                 }
             )
 
+    plot_specs = [
+        ("w2_mean", "Held-out W2", "w2"),
+        ("l2_error_mean", "Held-out Posterior Mean L2", "l2"),
+        ("heldout_ppc_rmse_mean", "Held-out PPC RMSE", "ppc_rmse"),
+        ("coverage_90", "Coverage 90%", "coverage90"),
+        ("coverage_50", "Coverage 50%", "coverage50"),
+        ("train_time_s", "Training Time (s)", "train_time"),
+        ("sampling_time_mean_s", "Sampling Time / Case (s)", "sampling_time"),
+    ]
+    generated_plots: list[str] = []
+    for params in sorted({row["params"] for row in aggregate_rows}):
+        for metric_key, metric_label, slug in plot_specs:
+            output_path = output_json.parent / f"{output_json.stem}_{slug}_{_slugify(params)}.png"
+            if _plot_metric_vs_budget(aggregate_rows, params, metric_key, metric_label, output_path):
+                generated_plots.append(str(output_path))
+    output["generated_plots"] = generated_plots
+
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    with output_json.open("w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+
     print(f"Wrote {output_json}")
     print(f"Wrote {output_csv}")
+    for plot_path in generated_plots:
+        print(f"Wrote {plot_path}")
 
 
 if __name__ == "__main__":
