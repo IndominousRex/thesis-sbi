@@ -97,20 +97,24 @@ echo "=================================================="
 cd "${CODE_DIR}"
 
 module load Miniforge3
-ENV_PREFIX="/software/NHKB22930/nhkbarit/conda_envs/npe"
+ENV_PREFIX="${SBI_ENV_PREFIX:-/software/NHKB22930/nhkbarit/conda_envs/npe}"
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate "${ENV_PREFIX}"
 PYTHON_BIN="${ENV_PREFIX}/bin/python"
 
+unset PYTHONHOME || true
+unset PYTHONPATH || true
+export PATH="${ENV_PREFIX}/bin:${PATH}"
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 echo "Python:          ${PYTHON_BIN}"
-"${PYTHON_BIN}" -c "import sys; print('sys.executable:  ', sys.executable)"
-"${PYTHON_BIN}" -c "import torch; print('torch version:    ', torch.__version__)"
-"${PYTHON_BIN}" -c "import jax; print('jax backend:      ', jax.default_backend())"
+conda run -p "${ENV_PREFIX}" --no-capture-output python -c "import sys; print('sys.executable:  ', sys.executable); print('sys.prefix:      ', sys.prefix)"
+conda run -p "${ENV_PREFIX}" --no-capture-output python -c "import torch; print('torch version:    ', torch.__version__)"
+conda run -p "${ENV_PREFIX}" --no-capture-output python -c "import jax; print('jax backend:      ', jax.default_backend())"
 
 PY_CMD=(
-    "${PYTHON_BIN}" scripts/run_simulation_comparison.py
+    conda run -p "${ENV_PREFIX}" --no-capture-output python
+    scripts/run_simulation_comparison.py
     --exp-name "${RUN_GROUP}"
     --num-simulations "${NUM_SIMULATIONS}"
     --T-seg "${T_SEG}"
