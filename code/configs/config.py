@@ -198,7 +198,7 @@ class ExperimentConfig:
     simformer_learning_rate: float = 1e-3
     simformer_min_learning_rate: float = 1e-6
     simformer_clip_max_norm: float = 10.0
-    simformer_batch_size: int = 64  # Reduced from reference for tractable long time-series
+    simformer_batch_size: int = 32  # Reduced for stable full-run memory on cluster GPUs
     simformer_train_steps_scaling: int = 3
     simformer_min_train_steps: int = 5000
     simformer_max_train_steps: int = 100000

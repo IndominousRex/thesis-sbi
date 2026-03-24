@@ -63,26 +63,46 @@ def plot_training_curves(
         out_path: where to save the PNG (e.g. exp_dir/'figures/train_loss.png').
         title: plot title.
     """
-    # Support both naming conventions (sbi uses training_loss, FNPE uses train_loss)
-    train_loss = np.asarray(
-        summary.get("training_loss", summary.get("train_loss", [])), dtype=float
+    def _extract_curve(
+        values: Sequence[float], default_axis: str
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if not values:
+            return np.asarray([], dtype=float), np.asarray([], dtype=float)
+
+        first = values[0]
+        if isinstance(first, dict):
+            axis_key = default_axis if default_axis in first else "step"
+            if axis_key not in first:
+                axis_key = "epoch" if "epoch" in first else "step"
+            x = np.asarray([item.get(axis_key, idx + 1) for idx, item in enumerate(values)], dtype=float)
+            y = np.asarray([item.get("loss", np.nan) for item in values], dtype=float)
+            mask = np.isfinite(y)
+            return x[mask], y[mask]
+
+        y = np.asarray(values, dtype=float)
+        x = np.arange(1, len(y) + 1, dtype=float)
+        return x, y
+
+    # Support both naming conventions (sbi uses training_loss, FNPE/Simformer use train_loss)
+    train_x, train_loss = _extract_curve(
+        summary.get("training_loss", summary.get("train_loss", [])),
+        default_axis="epoch",
     )
-    val_loss = np.asarray(
-        summary.get("validation_loss", summary.get("val_loss", [])), dtype=float
+    val_x, val_loss = _extract_curve(
+        summary.get("validation_loss", summary.get("val_loss", [])),
+        default_axis="epoch",
     )
 
     if train_loss.size == 0:
         print("[plot_training_curves] No training_loss found in summary; skipping.")
         return
 
-    epochs = np.arange(1, len(train_loss) + 1)
-
     _ensure_dir(out_path)
     plt.figure(figsize=(7, 5))
-    plt.plot(epochs, train_loss, label="Training loss")
-    if val_loss.size == train_loss.size:
-        plt.plot(epochs, val_loss, label="Validation loss")
-    plt.xlabel("Epoch")
+    plt.plot(train_x, train_loss, label="Training loss")
+    if val_loss.size > 0:
+        plt.plot(val_x, val_loss, label="Validation loss")
+    plt.xlabel("Step / Epoch")
     plt.ylabel("Loss")
     plt.title(title)
     plt.legend()

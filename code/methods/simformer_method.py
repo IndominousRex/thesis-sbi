@@ -573,6 +573,25 @@ class SimformerMethod(BaseMethod):
             joint_eval, joint_meta = self._build_joint_batch(theta_eval, x_eval, eval_times)
             return _loss_core(params, key_loss, joint_eval, joint_meta)
 
+        def _eval_loss_batched(
+            params: Any,
+            theta_eval: jnp.ndarray,
+            x_eval: jnp.ndarray,
+        ) -> float:
+            val_batch_size = max(1, min(self.batch_size, int(theta_eval.shape[0])))
+            batch_losses: list[float] = []
+            for start in range(0, int(theta_eval.shape[0]), val_batch_size):
+                stop = min(start + val_batch_size, int(theta_eval.shape[0]))
+                key_local = jrandom.fold_in(key, start)
+                batch_loss = _eval_loss_once(
+                    params,
+                    key_local,
+                    theta_eval[start:stop],
+                    x_eval[start:stop],
+                )
+                batch_losses.append(float(batch_loss))
+            return float(np.mean(batch_losses))
+
         print("[Simformer] JIT compiling...", flush=True)
         key, key_warm = jrandom.split(key)
         warm_loss, self.params, opt_state = _update(
@@ -609,9 +628,8 @@ class SimformerMethod(BaseMethod):
             if theta_val is not None and step > 50 and ((step + 1) % val_interval == 0):
                 val_losses = []
                 for _ in range(self.val_repeat):
-                    key, key_val = jrandom.split(key)
-                    val_loss = _eval_loss_once(self.params, key_val, theta_val, x_val)
-                    val_losses.append(float(val_loss))
+                    key, _ = jrandom.split(key)
+                    val_losses.append(_eval_loss_batched(self.params, theta_val, x_val))
                 mean_val_loss = float(np.mean(val_losses))
                 val_loss_log.append({"step": int(step + 1), "loss": mean_val_loss})
                 print(
