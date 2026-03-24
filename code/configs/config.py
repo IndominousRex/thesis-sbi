@@ -117,14 +117,23 @@ class ExperimentConfig:
     fnpe_num_hidden: int = 5
     fnpe_model_type: str = "gru"  # gru | linear
     fnpe_window_size: int = 2  # Markov window size (CRITICAL: keep small, e.g. 2-10)
-    fnpe_steps_per_epoch: int = 10000  # Steps per epoch (like Lotka-Volterra example)
     fnpe_num_diffusion_steps: int = 500
     fnpe_num_simulations: int = 100000  # Simulation budget for FNPE runs
-    fnpe_max_epochs: int = 200  # Hard cap for FNPE epochs
-    fnpe_budget_epoch_multiplier: float = 8.0  # Scale budget-derived epochs; 20k+ sims hit the 200-epoch cap
-    fnpe_stop_after_epochs: int = 20  # Match sbi NPSE default patience
-    fnpe_ema_loss_decay: float = 0.1  # Match sbi NPSE default EMA decay
-    fnpe_convergence_std_threshold: float = 2.0  # Match sbi NPSE convergence threshold
+    fnpe_num_outer_epochs: int = 100  # MarkovSBI-style outer epochs
+    fnpe_num_inner_epochs: int = 50  # Inner passes scaled by dataset size
+    fnpe_batch_size: int = 1000  # Match MarkovSBI score_large baseline
+    fnpe_validation_size: int = 1000  # Held-out validation items for best-param selection
+    fnpe_learning_rate: float = 5e-4  # Match MarkovSBI score_large baseline
+    fnpe_clip_max_norm: float = 20.0  # Match MarkovSBI score_large baseline
+    fnpe_optimizer: str = "adamw"
+    fnpe_scheduler: str = "cosine"
+    # Deprecated compatibility knobs kept for old configs / CLI paths.
+    fnpe_steps_per_epoch: int = 10000
+    fnpe_max_epochs: int = 200
+    fnpe_budget_epoch_multiplier: float = 8.0
+    fnpe_stop_after_epochs: int = 20
+    fnpe_ema_loss_decay: float = 0.1
+    fnpe_convergence_std_threshold: float = 2.0
     # Score composition method:
     # - "gauss_corrected" (DEFAULT): Paper GAUSS method - accurate but slow at inference
     # - "fnpe": Fast, uses (1-N)*prior + sum(scores)
@@ -155,22 +164,52 @@ class ExperimentConfig:
     fnpe_gauss_precision_scale: Optional[float] = None
 
     # --- Simformer-specific ---
-    simformer_token_dim: int = 40  # Token dimension for value embedding
-    simformer_condition_token_dim: int = 10  # Dimension for condition mask embedding
-    simformer_time_embedding_dim: int = 128  # Time embedding dimension
-    simformer_num_heads: int = 4  # Transformer attention heads
-    simformer_num_layers: int = 6  # Transformer layers
-    simformer_attn_size: int = 10  # Attention size per head
-    simformer_widening_factor: int = 3  # MLP widening factor in transformer
-    simformer_sigma_min: float = 0.01  # VESDE minimum noise
-    simformer_sigma_max: float = 15.0  # VESDE maximum noise
-    simformer_t_min: float = 0.02  # Minimum diffusion time
-    simformer_t_max: float = 1.0  # Maximum diffusion time (not too large)
-    simformer_num_diffusion_steps: int = 500  # Reverse SDE sampling steps
-    simformer_learning_rate: float = 1e-3  # Training learning rate
-    simformer_num_train_steps: int = 50000  # Number of training steps
-    simformer_batch_size: int = 1024  # Training batch size
-    simformer_embedding_batch_size: int = 128  # GPU batch size for pre-embedding long sequences
+    simformer_num_timepoints: int = 32  # Timepoints sampled per input channel
+    simformer_token_dim: int = 40
+    simformer_condition_token_dim: int = 10
+    simformer_condition_token_init_scale: float = 0.1
+    simformer_condition_token_init_mean: float = 0.0
+    simformer_condition_mode: str = "concat"
+    simformer_time_embedding_dim: int = 128
+    simformer_num_heads: int = 4
+    simformer_num_layers: int = 6
+    simformer_attn_size: int = 10
+    simformer_widening_factor: int = 3
+    simformer_num_hidden_layers: int = 1
+    simformer_skip_connection_attn: bool = True
+    simformer_skip_connection_mlp: bool = True
+    simformer_layer_norm: bool = True
+    simformer_use_metadata: bool = True
+    simformer_condition_mask_name: str = "structured_random"
+    simformer_condition_mask_p_joint: float = 0.2
+    simformer_condition_mask_p_posterior: float = 0.2
+    simformer_condition_mask_p_likelihood: float = 0.2
+    simformer_condition_mask_p_rnd1: float = 0.2
+    simformer_condition_mask_p_rnd2: float = 0.2
+    simformer_condition_mask_rnd1_prob: float = 0.3
+    simformer_condition_mask_rnd2_prob: float = 0.7
+    simformer_edge_mask_name: str = "none"
+    simformer_rebalance_loss: bool = False
+    simformer_sigma_min: float = 0.01
+    simformer_sigma_max: float = 15.0
+    simformer_t_min: float = 0.02
+    simformer_t_max: float = 1.0
+    simformer_num_diffusion_steps: int = 500
+    simformer_learning_rate: float = 1e-3
+    simformer_min_learning_rate: float = 1e-6
+    simformer_clip_max_norm: float = 10.0
+    simformer_batch_size: int = 64  # Reduced from reference for tractable long time-series
+    simformer_train_steps_scaling: int = 3
+    simformer_min_train_steps: int = 5000
+    simformer_max_train_steps: int = 100000
+    simformer_validation_fraction: float = 0.05
+    simformer_val_repeat: int = 5
+    simformer_val_every: int = 50  # Number of validation checks over full training
+    simformer_stop_early_count: int = 5
+    simformer_val_error_ratio: float = 1.1
+    # Deprecated legacy knobs from the old embedding-based wrapper.
+    simformer_num_train_steps: int = 50000
+    simformer_embedding_batch_size: int = 128
 
     # --- Training ---
     learning_rate: float = 5e-4  # Lower LR for complex data (MarkovSBI large uses 5e-4)

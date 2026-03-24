@@ -338,6 +338,71 @@ def wasserstein2_posterior_vs_true(
     }
 
 
+def per_parameter_posterior_metrics(
+    theta_true: torch.Tensor,
+    theta_samples: torch.Tensor,
+    param_names: list[str] | tuple[str, ...] | None = None,
+) -> dict:
+    """
+    Compute per-parameter posterior error and coverage metrics.
+
+    Args:
+        theta_true: (N, d) true parameter values
+        theta_samples: (N, K, d) posterior samples
+        param_names: Optional names for each parameter dimension
+
+    Returns:
+        Dict keyed by parameter name containing posterior-mean MAE/RMSE/bias,
+        per-dimension W1-style transport error, and 50/90% coverage.
+    """
+    assert theta_true.ndim == 2
+    assert theta_samples.ndim == 3
+    n, _, d = theta_samples.shape
+    assert theta_true.shape == (n, d)
+
+    theta_true_np = theta_true.detach().cpu().numpy().astype(np.float64)
+    theta_samples_np = theta_samples.detach().cpu().numpy().astype(np.float64)
+    posterior_mean = theta_samples_np.mean(axis=1)
+
+    if param_names is None:
+        param_names = [f"param_{idx}" for idx in range(d)]
+
+    alpha_specs = {
+        "coverage_50": 0.50,
+        "coverage_90": 0.90,
+    }
+    metrics: dict[str, dict[str, float]] = {}
+    for dim, name in enumerate(param_names):
+        mean_err = posterior_mean[:, dim] - theta_true_np[:, dim]
+        mae = np.abs(mean_err)
+        rmse = np.sqrt(np.mean(mean_err**2))
+        w1_vals = np.mean(
+            np.abs(theta_samples_np[:, :, dim] - theta_true_np[:, None, dim]),
+            axis=1,
+        )
+
+        dim_metrics = {
+            "mae_mean": float(np.mean(mae)),
+            "mae_std": float(np.std(mae)),
+            "rmse": float(rmse),
+            "bias_mean": float(np.mean(mean_err)),
+            "bias_std": float(np.std(mean_err)),
+            "w1_mean": float(np.mean(w1_vals)),
+            "w1_std": float(np.std(w1_vals)),
+        }
+
+        for level_name, level in alpha_specs.items():
+            alpha = 1.0 - level
+            lower = np.quantile(theta_samples_np[:, :, dim], alpha / 2.0, axis=1)
+            upper = np.quantile(theta_samples_np[:, :, dim], 1.0 - alpha / 2.0, axis=1)
+            hits = (theta_true_np[:, dim] >= lower) & (theta_true_np[:, dim] <= upper)
+            dim_metrics[level_name] = float(np.mean(hits))
+
+        metrics[str(name)] = dim_metrics
+
+    return metrics
+
+
 def _compute_coverage(
     theta_true: np.ndarray, theta_samples: np.ndarray, level: float
 ) -> float:

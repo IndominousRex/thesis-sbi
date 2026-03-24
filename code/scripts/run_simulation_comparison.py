@@ -285,14 +285,20 @@ def create_config(
         if method == "simformer":
             cfg_kwargs.update(
                 {
+                    "simformer_num_timepoints": 8,
                     "simformer_token_dim": 16,
                     "simformer_condition_token_dim": 8,
-                    "simformer_time_embedding_dim": 64,
+                    "simformer_time_embedding_dim": 32,
                     "simformer_num_layers": 2,
                     "simformer_num_heads": 2,
                     "simformer_attn_size": 8,
-                    "simformer_num_train_steps": 250,
-                    "simformer_batch_size": 64,
+                    "simformer_batch_size": 16,
+                    "simformer_train_steps_scaling": 1,
+                    "simformer_min_train_steps": 250,
+                    "simformer_max_train_steps": 250,
+                    "simformer_val_repeat": 2,
+                    "simformer_val_every": 10,
+                    "simformer_stop_early_count": 3,
                     "simformer_num_diffusion_steps": 50,
                 }
             )
@@ -300,7 +306,14 @@ def create_config(
             cfg_kwargs["fnpe_num_simulations"] = min(
                 2000, max(256, num_simulations * 4)
             )
-            cfg_kwargs["fnpe_max_epochs"] = 200
+            cfg_kwargs.update(
+                {
+                    "fnpe_num_outer_epochs": 8,
+                    "fnpe_num_inner_epochs": 4,
+                    "fnpe_batch_size": 256,
+                    "fnpe_validation_size": 128,
+                }
+            )
 
         if device == "cpu":
             cfg_kwargs.update(
@@ -314,9 +327,13 @@ def create_config(
             if method == "simformer":
                 cfg_kwargs.update(
                     {
-                        "simformer_num_train_steps": 50,
+                        "simformer_num_timepoints": 6,
                         "simformer_num_diffusion_steps": 20,
-                        "simformer_batch_size": 32,
+                        "simformer_batch_size": 8,
+                        "simformer_min_train_steps": 50,
+                        "simformer_max_train_steps": 50,
+                        "simformer_val_repeat": 1,
+                        "simformer_val_every": 5,
                     }
                 )
             elif method == "fnpe":
@@ -324,9 +341,10 @@ def create_config(
                     {
                         "run_sbc": False,
                         "fnpe_num_simulations": 64,
-                        "fnpe_max_epochs": 8,
-                        "fnpe_budget_epoch_multiplier": 1.0,
-                        "fnpe_steps_per_epoch": 250,
+                        "fnpe_num_outer_epochs": 4,
+                        "fnpe_num_inner_epochs": 2,
+                        "fnpe_batch_size": 64,
+                        "fnpe_validation_size": 32,
                         "fnpe_pilot_fraction": 0.05,
                         "fnpe_pilot_length": 256,
                         "num_test_simulations": 3,
@@ -339,14 +357,20 @@ def create_config(
         if smoke:
             cfg_kwargs.update(
                 {
+                    "simformer_num_timepoints": 4,
                     "simformer_token_dim": 16,
                     "simformer_condition_token_dim": 8,
                     "simformer_time_embedding_dim": 32,
                     "simformer_num_layers": 2,
                     "simformer_num_heads": 2,
                     "simformer_attn_size": 8,
-                    "simformer_num_train_steps": 25,
-                    "simformer_batch_size": 32,
+                    "simformer_batch_size": 8,
+                    "simformer_train_steps_scaling": 1,
+                    "simformer_min_train_steps": 25,
+                    "simformer_max_train_steps": 25,
+                    "simformer_val_repeat": 1,
+                    "simformer_val_every": 5,
+                    "simformer_stop_early_count": 2,
                     "simformer_num_diffusion_steps": 20,
                 }
             )
@@ -357,7 +381,14 @@ def create_config(
         # FNPE generates its own data
         if smoke:
             cfg_kwargs["fnpe_num_simulations"] = 128
-            cfg_kwargs["fnpe_max_epochs"] = 5
+            cfg_kwargs.update(
+                {
+                    "fnpe_num_outer_epochs": 2,
+                    "fnpe_num_inner_epochs": 2,
+                    "fnpe_batch_size": 64,
+                    "fnpe_validation_size": 32,
+                }
+            )
         else:
             # For comparison runs, align FNPE to the same nominal simulation budget
             # as the shared-data methods. FNPE still differs in training windows and
@@ -506,7 +537,8 @@ def _print_and_save_summary(args, results, configs_used):
             )
             summary["T_seg"] = cfg_used.T_seg
             if method == "fnpe":
-                summary["fnpe_steps_per_epoch"] = cfg_used.fnpe_steps_per_epoch
+                summary["fnpe_num_outer_epochs"] = cfg_used.fnpe_num_outer_epochs
+                summary["fnpe_num_inner_epochs"] = cfg_used.fnpe_num_inner_epochs
 
         metrics = res.get("metrics", {})
         if "budget_metadata" in metrics:
@@ -530,6 +562,9 @@ def _print_and_save_summary(args, results, configs_used):
             if "train_time_s" in train:
                 print(f"  Training time: {train['train_time_s']:.1f}s")
                 summary["train_time_s"] = train["train_time_s"]
+            if "num_train_steps" in train and train["num_train_steps"] is not None:
+                print(f"  Optimizer steps: {train['num_train_steps']}")
+                summary["num_train_steps"] = train["num_train_steps"]
 
         # SBC
         if "sbc_check_stats" in metrics:

@@ -1,11 +1,13 @@
 #!/usr/bin/env python
-"""Aggregate simulation benchmark runs across seeds."""
+"""Aggregate simulation benchmark runs across seeds and budgets."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import json
+import re
+from datetime import datetime
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -17,7 +19,9 @@ from scipy.stats import wilcoxon
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Aggregate simulation benchmark results.")
     p.add_argument("--experiments-root", default="experiments")
-    p.add_argument("--exp-prefix", required=True, help="Prefix shared by benchmark exp_name values.")
+    p.add_argument(
+        "--exp-prefix", required=True, help="Prefix shared by benchmark exp_name values."
+    )
     p.add_argument("--output-json", default=None)
     p.add_argument("--output-csv", default=None)
     return p.parse_args()
@@ -25,6 +29,31 @@ def parse_args() -> argparse.Namespace:
 
 def _flatten_active_parameters(active_parameters: list[str] | tuple[str, ...]) -> str:
     return ",".join(active_parameters)
+
+
+def _slugify(value: str) -> str:
+    return value.replace(",", "_").replace(" ", "_")
+
+
+def _parse_run_timestamp(exp_dir: Path) -> datetime:
+    match = re.search(r"(\d{8}-\d{6})$", exp_dir.name)
+    if match:
+        return datetime.strptime(match.group(1), "%Y%m%d-%H%M%S")
+    return datetime.fromtimestamp(exp_dir.stat().st_mtime)
+
+
+def _dedupe_key(cfg: dict[str, Any], metrics: dict[str, Any]) -> tuple[Any, ...]:
+    budget = metrics.get("budget_metadata", {})
+    requested_budget_steps = budget.get("requested_budget_steps")
+    if requested_budget_steps is None:
+        requested_budget_steps = budget.get("total_simulation_budget_steps")
+    return (
+        cfg.get("method"),
+        _flatten_active_parameters(cfg.get("active_parameters", [])),
+        int(cfg.get("T_seg")),
+        int(cfg.get("random_seed", cfg.get("sim_seed", 0))),
+        requested_budget_steps,
+    )
 
 
 def _holm_correction(pairs: list[dict[str, Any]]) -> None:
@@ -49,7 +78,9 @@ def _holm_correction(pairs: list[dict[str, Any]]) -> None:
 
 def _metric_summary(values: list[float]) -> dict[str, Any]:
     arr = np.asarray(values, dtype=np.float64)
-    ci_low, ci_high = np.quantile(arr, [0.025, 0.975]) if len(arr) > 1 else (arr[0], arr[0])
+    ci_low, ci_high = (
+        np.quantile(arr, [0.025, 0.975]) if len(arr) > 1 else (arr[0], arr[0])
+    )
     return {
         "n": int(len(arr)),
         "mean": float(np.mean(arr)),
@@ -61,8 +92,19 @@ def _metric_summary(values: list[float]) -> dict[str, Any]:
     }
 
 
-def _slugify(value: str) -> str:
-    return value.replace(",", "_").replace(" ", "_")
+def _flatten_per_parameter_metrics(
+    block: dict[str, Any], suffix: str
+) -> dict[str, float | None]:
+    flattened: dict[str, float | None] = {}
+    for param_name, metrics in block.items():
+        if not isinstance(metrics, dict):
+            continue
+        for metric_name, metric_value in metrics.items():
+            key = f"{param_name}_{metric_name}_{suffix}"
+            flattened[key] = (
+                float(metric_value) if isinstance(metric_value, (int, float)) else None
+            )
+    return flattened
 
 
 def _plot_metric_vs_budget(
@@ -90,7 +132,9 @@ def _plot_metric_vs_budget(
 
     ncols = min(3, len(tsegs))
     nrows = int(np.ceil(len(tsegs) / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False
+    )
     axes_flat = axes.flatten()
 
     methods = sorted({row["method"] for row in param_rows})
@@ -103,8 +147,8 @@ def _plot_metric_vs_budget(
             ys: list[float] = []
             for row in sorted(
                 method_rows,
-                key=lambda r: (
-                    float(r.get("requested_budget_steps", r.get("total_budget_steps", 0)) or 0)
+                key=lambda r: float(
+                    r.get("requested_budget_steps", r.get("total_budget_steps", 0)) or 0
                 ),
             ):
                 summary = row.get(metric_key)
@@ -132,25 +176,56 @@ def _plot_metric_vs_budget(
     return True
 
 
-def main() -> None:
-    args = parse_args()
-    experiments_root = Path(args.experiments_root)
-    output_json = Path(args.output_json) if args.output_json else experiments_root / f"{args.exp_prefix}_aggregate.json"
-    output_csv = Path(args.output_csv) if args.output_csv else experiments_root / f"{args.exp_prefix}_aggregate.csv"
+def _load_completed_runs(experiments_root: Path, exp_prefix: str) -> list[dict[str, Any]]:
+    deduped_runs: dict[tuple[Any, ...], dict[str, Any]] = {}
 
-    rows: list[dict[str, Any]] = []
     for config_path in experiments_root.glob("*/config.json"):
         metrics_path = config_path.with_name("metrics.json")
         if not metrics_path.exists():
             continue
+
         with config_path.open("r", encoding="utf-8") as f:
             cfg = json.load(f)
-        if not str(cfg.get("exp_name", "")).startswith(args.exp_prefix):
+        if not str(cfg.get("exp_name", "")).startswith(exp_prefix):
             continue
+
         with metrics_path.open("r", encoding="utf-8") as f:
             metrics = json.load(f)
 
-        heldout = metrics.get("heldout_test_posterior_vs_true") or metrics.get("w2_posterior_vs_true") or {}
+        exp_dir = config_path.parent
+        record = {
+            "cfg": cfg,
+            "metrics": metrics,
+            "exp_dir": exp_dir,
+            "timestamp": _parse_run_timestamp(exp_dir),
+        }
+        key = _dedupe_key(cfg, metrics)
+        existing = deduped_runs.get(key)
+        if (
+            existing is None
+            or record["timestamp"] > existing["timestamp"]
+            or (
+                record["timestamp"] == existing["timestamp"]
+                and str(exp_dir) > str(existing["exp_dir"])
+            )
+        ):
+            deduped_runs[key] = record
+
+    return list(deduped_runs.values())
+
+
+def _build_raw_rows(completed_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for record in completed_runs:
+        cfg = record["cfg"]
+        metrics = record["metrics"]
+        config_path = record["exp_dir"] / "config.json"
+
+        heldout = (
+            metrics.get("heldout_test_posterior_vs_true")
+            or metrics.get("w2_posterior_vs_true")
+            or {}
+        )
         heldout_ppc = metrics.get("heldout_test_ppc", {}).get("aggregate", {})
         budget = metrics.get("budget_metadata", {})
         training = metrics.get("training_summary", {})
@@ -160,34 +235,52 @@ def main() -> None:
             requested_budget_steps = budget.get("total_simulation_budget_steps")
         if effective_budget_steps is None:
             effective_budget_steps = budget.get("total_simulation_budget_steps")
-        rows.append(
-            {
-                "exp_dir": str(config_path.parent),
-                "method": cfg.get("method"),
-                "seed": int(cfg.get("random_seed", cfg.get("sim_seed", 0))),
-                "params": _flatten_active_parameters(cfg.get("active_parameters", [])),
-                "T_seg": int(cfg.get("T_seg")),
-                "num_simulations": int(cfg.get("num_simulations")),
-                "requested_budget_steps": requested_budget_steps,
-                "effective_budget_steps": effective_budget_steps,
-                "total_budget_steps": effective_budget_steps,
-                "w2_mean": heldout.get("w2_mean"),
-                "l2_error_mean": heldout.get("l2_error_mean"),
-                "coverage_90": heldout.get("coverage_90"),
-                "coverage_50": heldout.get("coverage_50"),
-                "coverage_curve_mae": heldout.get("coverage_curve_mae"),
-                "heldout_ppc_rmse_mean": heldout_ppc.get("rmse_mean"),
-                "heldout_ppc_w2_mean": heldout_ppc.get("w2_mean"),
-                "train_time_s": training.get("train_time_s"),
-                "epochs_trained": training.get("epochs_trained"),
-                "num_train_steps": training.get("num_train_steps"),
-                "sampling_time_mean_s": heldout.get("sampling_time_mean_s"),
-            }
+
+        row = {
+            "exp_dir": str(config_path.parent),
+            "method": cfg.get("method"),
+            "seed": int(cfg.get("random_seed", cfg.get("sim_seed", 0))),
+            "params": _flatten_active_parameters(cfg.get("active_parameters", [])),
+            "T_seg": int(cfg.get("T_seg")),
+            "num_simulations": int(
+                cfg.get("fnpe_num_simulations")
+                if cfg.get("method") == "fnpe"
+                else cfg.get("num_simulations")
+            ),
+            "requested_budget_steps": requested_budget_steps,
+            "effective_budget_steps": effective_budget_steps,
+            "total_budget_steps": effective_budget_steps,
+            "w2_mean": heldout.get("w2_mean"),
+            "l2_error_mean": heldout.get("l2_error_mean"),
+            "coverage_90": heldout.get("coverage_90"),
+            "coverage_50": heldout.get("coverage_50"),
+            "coverage_curve_mae": heldout.get("coverage_curve_mae"),
+            "heldout_ppc_rmse_mean": heldout_ppc.get("rmse_mean"),
+            "heldout_ppc_w2_mean": heldout_ppc.get("w2_mean"),
+            "train_time_s": training.get("train_time_s"),
+            "epochs_trained": training.get("epochs_trained"),
+            "num_train_steps": training.get("num_train_steps"),
+            "optimizer_examples_seen": training.get("optimizer_examples_seen"),
+            "training_batch_size": training.get("training_batch_size"),
+            "num_outer_epochs": training.get("num_outer_epochs"),
+            "num_inner_epochs": training.get("num_inner_epochs"),
+            "sampling_time_mean_s": heldout.get("sampling_time_mean_s"),
+        }
+        row.update(
+            _flatten_per_parameter_metrics(
+                metrics.get("heldout_test_per_parameter_physical", {}), "phys"
+            )
         )
+        row.update(
+            _flatten_per_parameter_metrics(
+                metrics.get("heldout_test_per_parameter_normalized", {}), "norm"
+            )
+        )
+        rows.append(row)
+    return rows
 
-    if not rows:
-        raise SystemExit(f"No experiments found for prefix '{args.exp_prefix}' in {experiments_root}")
 
+def _build_aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, str, int, int], list[dict[str, Any]]] = {}
     for row in rows:
         requested_budget_steps = row.get("requested_budget_steps")
@@ -197,6 +290,17 @@ def main() -> None:
         grouped.setdefault(key, []).append(row)
 
     aggregate_rows: list[dict[str, Any]] = []
+    ignore_fields = {
+        "exp_dir",
+        "method",
+        "seed",
+        "params",
+        "T_seg",
+        "num_simulations",
+        "requested_budget_steps",
+        "effective_budget_steps",
+        "total_budget_steps",
+    }
     for (method, params, requested_budget_steps, tseg), group_rows in sorted(grouped.items()):
         record: dict[str, Any] = {
             "method": method,
@@ -207,22 +311,18 @@ def main() -> None:
             "effective_budget_steps": group_rows[0]["effective_budget_steps"],
             "total_budget_steps": group_rows[0]["total_budget_steps"],
         }
-        for field in [
-            "w2_mean",
-            "l2_error_mean",
-            "coverage_90",
-            "coverage_50",
-            "coverage_curve_mae",
-            "heldout_ppc_rmse_mean",
-            "heldout_ppc_w2_mean",
-            "train_time_s",
-            "sampling_time_mean_s",
-        ]:
+        candidate_fields = sorted(
+            {field for row in group_rows for field in row.keys() if field not in ignore_fields}
+        )
+        for field in candidate_fields:
             values = [float(r[field]) for r in group_rows if r.get(field) is not None]
             if values:
                 record[field] = _metric_summary(values)
         aggregate_rows.append(record)
+    return aggregate_rows
 
+
+def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     pairwise_tests: list[dict[str, Any]] = []
     group_keys = sorted(
         {
@@ -240,7 +340,9 @@ def main() -> None:
             for row in rows
             if row["params"] == params
             and row["T_seg"] == tseg
-            and int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
+            and int(
+                row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0
+            )
             == requested_budget_steps
         ]
         methods = sorted({row["method"] for row in candidate_rows})
@@ -249,8 +351,16 @@ def main() -> None:
             rows_b = {row["seed"]: row for row in candidate_rows if row["method"] == method_b}
             shared_seeds = sorted(set(rows_a) & set(rows_b))
             for metric_key in ["w2_mean", "heldout_ppc_rmse_mean"]:
-                x = [rows_a[s][metric_key] for s in shared_seeds if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None]
-                y = [rows_b[s][metric_key] for s in shared_seeds if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None]
+                x = [
+                    rows_a[s][metric_key]
+                    for s in shared_seeds
+                    if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None
+                ]
+                y = [
+                    rows_b[s][metric_key]
+                    for s in shared_seeds
+                    if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None
+                ]
                 pvalue = None
                 stat = None
                 if len(x) >= 2 and len(y) >= 2:
@@ -286,6 +396,63 @@ def main() -> None:
                 and pair["T_seg"] == tseg
             ]
             _holm_correction(subset)
+    return pairwise_tests
+
+
+def _write_csv(output_csv: Path, aggregate_rows: list[dict[str, Any]]) -> None:
+    base_fields = [
+        "method",
+        "params",
+        "T_seg",
+        "num_runs",
+        "total_budget_steps",
+        "requested_budget_steps",
+        "effective_budget_steps",
+    ]
+    metric_fields = sorted(
+        {
+            key
+            for row in aggregate_rows
+            for key, value in row.items()
+            if isinstance(value, dict) and value.get("mean") is not None
+        }
+    )
+    fieldnames = base_fields + [f"{field}_mean" for field in metric_fields]
+
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    with output_csv.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in aggregate_rows:
+            out_row = {field: row.get(field) for field in base_fields}
+            for field in metric_fields:
+                out_row[f"{field}_mean"] = row.get(field, {}).get("mean")
+            writer.writerow(out_row)
+
+
+def main() -> None:
+    args = parse_args()
+    experiments_root = Path(args.experiments_root)
+    output_json = (
+        Path(args.output_json)
+        if args.output_json
+        else experiments_root / f"{args.exp_prefix}_aggregate.json"
+    )
+    output_csv = (
+        Path(args.output_csv)
+        if args.output_csv
+        else experiments_root / f"{args.exp_prefix}_aggregate.csv"
+    )
+
+    completed_runs = _load_completed_runs(experiments_root, args.exp_prefix)
+    if not completed_runs:
+        raise SystemExit(
+            f"No completed experiments found for prefix '{args.exp_prefix}' in {experiments_root}"
+        )
+
+    rows = _build_raw_rows(completed_runs)
+    aggregate_rows = _build_aggregate_rows(rows)
+    pairwise_tests = _build_pairwise_tests(rows)
 
     output = {
         "exp_prefix": args.exp_prefix,
@@ -295,49 +462,7 @@ def main() -> None:
         "raw_rows": rows,
     }
 
-    output_csv.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "method",
-        "params",
-        "T_seg",
-        "num_runs",
-        "total_budget_steps",
-        "requested_budget_steps",
-        "effective_budget_steps",
-        "w2_mean_mean",
-        "l2_error_mean_mean",
-        "coverage_90_mean",
-        "coverage_50_mean",
-        "coverage_curve_mae_mean",
-        "heldout_ppc_rmse_mean_mean",
-        "heldout_ppc_w2_mean_mean",
-        "train_time_s_mean",
-        "sampling_time_mean_s_mean",
-    ]
-    with output_csv.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in aggregate_rows:
-            writer.writerow(
-                {
-                    "method": row["method"],
-                    "params": row["params"],
-                    "T_seg": row["T_seg"],
-                    "num_runs": row["num_runs"],
-                    "total_budget_steps": row["total_budget_steps"],
-                    "requested_budget_steps": row["requested_budget_steps"],
-                    "effective_budget_steps": row["effective_budget_steps"],
-                    "w2_mean_mean": row.get("w2_mean", {}).get("mean"),
-                    "l2_error_mean_mean": row.get("l2_error_mean", {}).get("mean"),
-                    "coverage_90_mean": row.get("coverage_90", {}).get("mean"),
-                    "coverage_50_mean": row.get("coverage_50", {}).get("mean"),
-                    "coverage_curve_mae_mean": row.get("coverage_curve_mae", {}).get("mean"),
-                    "heldout_ppc_rmse_mean_mean": row.get("heldout_ppc_rmse_mean", {}).get("mean"),
-                    "heldout_ppc_w2_mean_mean": row.get("heldout_ppc_w2_mean", {}).get("mean"),
-                    "train_time_s_mean": row.get("train_time_s", {}).get("mean"),
-                    "sampling_time_mean_s_mean": row.get("sampling_time_mean_s", {}).get("mean"),
-                }
-            )
+    _write_csv(output_csv, aggregate_rows)
 
     plot_specs = [
         ("w2_mean", "Held-out W2", "w2"),
@@ -348,6 +473,21 @@ def main() -> None:
         ("train_time_s", "Training Time (s)", "train_time"),
         ("sampling_time_mean_s", "Sampling Time / Case (s)", "sampling_time"),
     ]
+    per_param_metric_keys = sorted(
+        {
+            key
+            for row in aggregate_rows
+            for key in row.keys()
+            if key.endswith("_rmse_phys")
+            or key.endswith("_rmse_norm")
+            or key.endswith("_mae_phys")
+            or key.endswith("_mae_norm")
+        }
+    )
+    for metric_key in per_param_metric_keys:
+        label = metric_key.replace("_", " ")
+        plot_specs.append((metric_key, label, metric_key))
+
     generated_plots: list[str] = []
     for params in sorted({row["params"] for row in aggregate_rows}):
         for metric_key, metric_label, slug in plot_specs:
@@ -362,6 +502,7 @@ def main() -> None:
 
     print(f"Wrote {output_json}")
     print(f"Wrote {output_csv}")
+    print(f"Deduplicated completed runs: {len(completed_runs)}")
     for plot_path in generated_plots:
         print(f"Wrote {plot_path}")
 

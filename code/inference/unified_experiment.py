@@ -26,6 +26,7 @@ from tqdm.auto import tqdm
 from configs.config import ExperimentConfig
 from utils.env_utils import setup_environment, get_device
 from utils.metrics import (
+    per_parameter_posterior_metrics,
     sliced_wasserstein_prior_vs_dap,
     one_step_rmse_observation,
     real_data_trajectory_metrics,
@@ -985,8 +986,11 @@ def run_simulated_ppc_diagnostic(
     return {"per_example": per_example, "aggregate": aggregate}
 
 
-def build_budget_metadata(cfg: ExperimentConfig) -> Dict[str, Any]:
+def build_budget_metadata(
+    cfg: ExperimentConfig, training_summary: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Compute benchmark budget metadata for reporting and aggregation."""
+    training_summary = training_summary or {}
     if cfg.method == "fnpe":
         num_pilots = int(round(cfg.fnpe_num_simulations * cfg.fnpe_pilot_fraction))
         effective_budget_steps = int(
@@ -1003,7 +1007,7 @@ def build_budget_metadata(cfg: ExperimentConfig) -> Dict[str, Any]:
         else effective_budget_steps
     )
 
-    return {
+    metadata = {
         "method": cfg.method,
         "num_simulations": int(cfg.num_simulations),
         "derived_num_simulations": int(cfg.derived_num_simulations),
@@ -1024,6 +1028,41 @@ def build_budget_metadata(cfg: ExperimentConfig) -> Dict[str, Any]:
         "fnpe_num_pilot_simulations": int(num_pilots),
         "benchmark_eval_seed": int(cfg.benchmark_eval_seed),
     }
+    if training_summary:
+        metadata["training_batch_size"] = training_summary.get("training_batch_size")
+        metadata["num_train_steps"] = training_summary.get("num_train_steps")
+        metadata["optimizer_examples_seen"] = training_summary.get(
+            "optimizer_examples_seen"
+        )
+    if cfg.method == "simformer":
+        metadata.update(
+            {
+                "optimizer_budget_steps": training_summary.get("num_train_steps"),
+                "simformer_num_timepoints": getattr(
+                    cfg, "simformer_num_timepoints", None
+                ),
+                "simformer_best_validation_step": training_summary.get(
+                    "best_validation_step"
+                ),
+                "simformer_best_validation_loss": training_summary.get(
+                    "best_validation_loss"
+                ),
+            }
+        )
+    elif cfg.method == "fnpe":
+        metadata.update(
+            {
+                "optimizer_budget_steps": training_summary.get(
+                    "total_optimizer_updates"
+                ),
+                "fnpe_num_outer_epochs": training_summary.get("num_outer_epochs"),
+                "fnpe_num_inner_epochs": training_summary.get("num_inner_epochs"),
+                "fnpe_best_validation_loss": training_summary.get(
+                    "best_validation_loss"
+                ),
+            }
+        )
+    return metadata
 
 
 def run_parameter_posterior_plots(
@@ -1643,6 +1682,20 @@ def run_w2_posterior_diagnostic(
         theta_samples,
         num_projections=cfg.num_swd_projections,
         seed=cfg.random_seed,
+    )
+    w2_results["per_parameter_physical"] = per_parameter_posterior_metrics(
+        theta_true_sub,
+        theta_samples,
+        param_names=list(cfg.active_parameters),
+    )
+    theta_true_norm = normalizer.normalize_theta(theta_true_sub.to(device)).cpu()
+    theta_samples_norm = normalizer.normalize_theta(
+        theta_samples.to(device).reshape(-1, theta_samples.shape[-1])
+    ).reshape(theta_samples.shape[0], theta_samples.shape[1], theta_samples.shape[2]).cpu()
+    w2_results["per_parameter_normalized"] = per_parameter_posterior_metrics(
+        theta_true_norm,
+        theta_samples_norm,
+        param_names=list(cfg.active_parameters),
     )
     if sample_times_s:
         w2_results["sampling_time_mean_s"] = float(np.mean(sample_times_s))
@@ -2317,27 +2370,57 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     elif cfg.method == "simformer":
         method_kwargs.update(
             {
+                "num_timepoints": cfg.simformer_num_timepoints,
                 "token_dim": cfg.simformer_token_dim,
                 "condition_token_dim": cfg.simformer_condition_token_dim,
+                "condition_token_init_scale": cfg.simformer_condition_token_init_scale,
+                "condition_token_init_mean": cfg.simformer_condition_token_init_mean,
+                "condition_mode": cfg.simformer_condition_mode,
                 "time_embedding_dim": cfg.simformer_time_embedding_dim,
                 "num_heads": cfg.simformer_num_heads,
                 "num_layers": cfg.simformer_num_layers,
                 "attn_size": cfg.simformer_attn_size,
                 "widening_factor": cfg.simformer_widening_factor,
+                "num_hidden_layers": cfg.simformer_num_hidden_layers,
+                "skip_connection_attn": cfg.simformer_skip_connection_attn,
+                "skip_connection_mlp": cfg.simformer_skip_connection_mlp,
+                "layer_norm": cfg.simformer_layer_norm,
                 "sigma_min": cfg.simformer_sigma_min,
                 "sigma_max": cfg.simformer_sigma_max,
                 "T_min": cfg.simformer_t_min,
                 "T_max": cfg.simformer_t_max,
                 "num_diffusion_steps": cfg.simformer_num_diffusion_steps,
                 "learning_rate": cfg.simformer_learning_rate,
-                "num_train_steps": cfg.simformer_num_train_steps,
+                "min_learning_rate": cfg.simformer_min_learning_rate,
+                "clip_max_norm": cfg.simformer_clip_max_norm,
                 "batch_size": cfg.simformer_batch_size,
-                "embedding_batch_size": cfg.simformer_embedding_batch_size,
+                "train_steps_scaling": cfg.simformer_train_steps_scaling,
+                "min_train_steps": cfg.simformer_min_train_steps,
+                "max_train_steps": cfg.simformer_max_train_steps,
+                "validation_fraction": cfg.simformer_validation_fraction,
+                "val_repeat": cfg.simformer_val_repeat,
+                "val_every": cfg.simformer_val_every,
+                "stop_early_count": cfg.simformer_stop_early_count,
+                "val_error_ratio": cfg.simformer_val_error_ratio,
+                "condition_mask_name": cfg.simformer_condition_mask_name,
+                "condition_mask_kwargs": {
+                    "p_joint": cfg.simformer_condition_mask_p_joint,
+                    "p_posterior": cfg.simformer_condition_mask_p_posterior,
+                    "p_likelihood": cfg.simformer_condition_mask_p_likelihood,
+                    "p_rnd1": cfg.simformer_condition_mask_p_rnd1,
+                    "p_rnd2": cfg.simformer_condition_mask_p_rnd2,
+                    "rnd1_prob": cfg.simformer_condition_mask_rnd1_prob,
+                    "rnd2_prob": cfg.simformer_condition_mask_rnd2_prob,
+                },
+                "use_metadata": cfg.simformer_use_metadata,
+                "rebalance_loss": cfg.simformer_rebalance_loss,
             }
         )
         print(
             f"[Simformer] layers={cfg.simformer_num_layers}, heads={cfg.simformer_num_heads}, "
-            f"train_steps={cfg.simformer_num_train_steps}",
+            f"timepoints={cfg.simformer_num_timepoints}, "
+            f"steps=clip(n*{cfg.simformer_train_steps_scaling}, "
+            f"{cfg.simformer_min_train_steps}, {cfg.simformer_max_train_steps})",
             flush=True,
         )
     elif cfg.method == "fnpe":
@@ -2347,19 +2430,20 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "num_hidden": cfg.fnpe_num_hidden,
                 "model_type": cfg.fnpe_model_type,
                 "window_size": cfg.fnpe_window_size,  # CRITICAL: small Markov window
-                "num_epochs": cfg.num_epochs,
-                "steps_per_epoch": cfg.fnpe_steps_per_epoch,
-                "batch_size": cfg.training_batch_size,
+                "num_outer_epochs": cfg.fnpe_num_outer_epochs,
+                "num_inner_epochs": cfg.fnpe_num_inner_epochs,
+                "batch_size": cfg.fnpe_batch_size,
+                "validation_size": cfg.fnpe_validation_size,
+                "learning_rate": cfg.fnpe_learning_rate,
+                "clip_max_norm": cfg.fnpe_clip_max_norm,
+                "optimizer_name": cfg.fnpe_optimizer,
+                "scheduler_name": cfg.fnpe_scheduler,
                 "num_diffusion_steps": cfg.fnpe_num_diffusion_steps,
                 "score_fn_type": cfg.fnpe_score_fn_type,
-                "stop_after_epochs": cfg.fnpe_stop_after_epochs,
-                "validation_fraction": cfg.validation_fraction,
                 "proposal_type": cfg.fnpe_proposal_type,  # "pred" (correct), "naive", or "trajectory" (old)
                 "pilot_fraction": cfg.fnpe_pilot_fraction,  # Fraction of sims for pilots (default 2%)
                 "pilot_length": cfg.fnpe_pilot_length,  # Length of pilot trajectories (default 500)
                 "proposal_noise": cfg.fnpe_proposal_noise,  # Noise scale (default 0.03 * std)
-                "ema_loss_decay": cfg.fnpe_ema_loss_decay,
-                "convergence_std_threshold": cfg.fnpe_convergence_std_threshold,
                 "gauss_posterior_precission_scale": getattr(
                     cfg, "fnpe_gauss_precision_scale", None
                 ),
@@ -2372,6 +2456,11 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         }.get(cfg.fnpe_proposal_type, cfg.fnpe_proposal_type)
         print(
             f"[FNPE] window_size={cfg.fnpe_window_size}",
+            flush=True,
+        )
+        print(
+            f"[FNPE] schedule: outer_epochs={cfg.fnpe_num_outer_epochs}, "
+            f"inner_epochs={cfg.fnpe_num_inner_epochs}, batch_size={cfg.fnpe_batch_size}",
             flush=True,
         )
         print(
@@ -2510,7 +2599,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     metrics: Dict[str, Any] = {
         "method": cfg.method,
         "training_summary": training_summary,
-        "budget_metadata": build_budget_metadata(cfg),
+        "budget_metadata": build_budget_metadata(cfg, training_summary),
     }
     if train_region_metadata is not None:
         metrics["train_region_metadata"] = train_region_metadata
@@ -2691,6 +2780,12 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             if w2_post_results:
                 metrics["w2_posterior_vs_true"] = w2_post_results
                 metrics["heldout_test_posterior_vs_true"] = w2_post_results
+                metrics["heldout_test_per_parameter_physical"] = w2_post_results.get(
+                    "per_parameter_physical", {}
+                )
+                metrics["heldout_test_per_parameter_normalized"] = w2_post_results.get(
+                    "per_parameter_normalized", {}
+                )
                 # Save separately
                 with (exp_dir / "w2_posterior_metrics.json").open("w") as f:
                     json.dump(w2_post_results, f, indent=2)

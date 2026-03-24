@@ -312,20 +312,28 @@ class FNPEMethod(BaseMethod):
         num_hidden: int = 5,
         model_type: str = "gru",
         window_size: int = 2,  # Markov window size - CRITICAL for performance
-        num_epochs: int = 20,
-        steps_per_epoch: int = 10000,
-        batch_size: int = 512,
+        num_outer_epochs: int = 100,
+        num_inner_epochs: int = 50,
+        batch_size: int = 1000,
+        validation_size: int = 1000,
+        learning_rate: float = 5e-4,
+        clip_max_norm: float = 20.0,
+        optimizer_name: str = "adamw",
+        scheduler_name: str = "cosine",
         num_diffusion_steps: int = 500,
         score_fn_type: str = "fnpe",
-        stop_after_epochs: int = 20,
-        validation_fraction: float = 0.1,
         proposal_type: str = "pred",  # "pred" (correct), "naive", or "trajectory" (old/wrong)
         pilot_fraction: float = 0.02,  # Fraction of num_sims for pilots (2%)
         pilot_length: int = 500,  # Length of each pilot trajectory
         proposal_noise: float = 0.03,  # Noise scale: noise = proposal_noise * std(pool)
-        ema_loss_decay: float = 0.1,
-        convergence_std_threshold: float = 2.0,
         gauss_posterior_precission_scale: Optional[float] = None,
+        # Deprecated compatibility knobs from the old trainer.
+        num_epochs: Optional[int] = None,
+        steps_per_epoch: Optional[int] = None,
+        stop_after_epochs: Optional[int] = None,
+        validation_fraction: Optional[float] = None,
+        ema_loss_decay: Optional[float] = None,
+        convergence_std_threshold: Optional[float] = None,
     ):
         # Note: FNPE doesn't use torch prior/device directly
         super().__init__(cfg, prior, device)
@@ -335,15 +343,16 @@ class FNPEMethod(BaseMethod):
         self.num_hidden = num_hidden
         self.model_type = model_type
         self.window_size = window_size  # Small window, NOT full sequence!
-        self.num_epochs = num_epochs
-        self.steps_per_epoch = steps_per_epoch
-        self.batch_size = batch_size
+        self.num_outer_epochs = int(num_outer_epochs)
+        self.num_inner_epochs = int(num_inner_epochs)
+        self.batch_size = int(batch_size)
+        self.validation_size = int(validation_size)
+        self.learning_rate = float(learning_rate)
+        self.clip_max_norm = float(clip_max_norm)
+        self.optimizer_name = str(optimizer_name).lower()
+        self.scheduler_name = str(scheduler_name).lower()
         self.num_diffusion_steps = num_diffusion_steps
         self.score_fn_type = score_fn_type
-        self.stop_after_epochs = stop_after_epochs
-        self.validation_fraction = validation_fraction
-        self.ema_loss_decay = ema_loss_decay
-        self.convergence_std_threshold = convergence_std_threshold
         # Proposal type for training data generation
         # "pred" = correct FNPE (proposal from pilot sims)
         # "naive" = sample from initial state distribution
@@ -474,18 +483,22 @@ class FNPEMethod(BaseMethod):
         print(f"[FNPE] Initializing SDE (T_min={t_min})...", flush=True)
         self.sde, self.weight_fn = init_sde(data, T_min=t_min)
 
-        # Train score network
-        budget_epochs = self._compute_budget_epochs(num_sim)
-        self.num_epochs = budget_epochs
         print(
-            f"[FNPE] Training score network (max {self.num_epochs} epochs)...",
+            f"[FNPE] Training score network "
+            f"({self.num_outer_epochs} outer epochs x {self.num_inner_epochs} inner epochs)...",
             flush=True,
         )
         train_start = time.time()
 
         # Pass window_size for network construction
-        self.params, self.score_net, losses = self._train_score_network(
-            data, self.window_size
+        (
+            self.params,
+            self.score_net,
+            losses,
+            inner_updates_per_outer,
+            total_optimizer_updates,
+        ) = self._train_score_network(
+            data, self.window_size, num_sim
         )
 
         train_time = time.time() - train_start
@@ -500,37 +513,62 @@ class FNPEMethod(BaseMethod):
         # losses is now a dict with 'train' and 'val' keys
         self._training_summary = {
             "train_loss": losses.get("train", []),
-            "train_loss_ema": losses.get("train_ema", []),
-            "final_train_loss": losses["train"][-1] if losses.get("train") else None,
-            "final_train_loss_ema": (
-                losses["train_ema"][-1] if losses.get("train_ema") else None
-            ),
+            "val_loss": losses.get("val", []),
+            "final_train_loss": losses["train"][-1]["loss"] if losses.get("train") else None,
+            "final_val_loss": losses["val"][-1]["loss"] if losses.get("val") else None,
             "final_loss": (
-                losses["train_ema"][-1]
-                if losses.get("train_ema")
-                else (losses["train"][-1] if losses.get("train") else None)
+                losses["val"][-1]["loss"]
+                if losses.get("val")
+                else (losses["train"][-1]["loss"] if losses.get("train") else None)
             ),
-            "best_train_loss_ema": losses.get("best_train_loss_ema"),
-            "epochs_trained": len(losses.get("train", [])),
+            "best_validation_loss": losses.get("best_validation_loss"),
+            "best_validation_epoch": losses.get("best_validation_epoch"),
+            "epochs_trained": self.num_outer_epochs,
+            "num_outer_epochs": self.num_outer_epochs,
+            "num_inner_epochs": self.num_inner_epochs,
+            "inner_updates_per_outer": inner_updates_per_outer,
+            "num_train_steps": total_optimizer_updates,
+            "total_optimizer_updates": total_optimizer_updates,
+            "training_batch_size": self.batch_size,
+            "optimizer_examples_seen": int(total_optimizer_updates * self.batch_size),
             "train_time_s": train_time,
             "num_simulations": num_sim,
             "T_train": t_train,  # Training window size
             "T_obs_full": self._t_obs_full,  # Full observation length for inference
-            "budget_epochs": budget_epochs,
-            "early_stopped": losses.get("early_stopped", False),
         }
 
         return self._training_summary
 
-    def _train_score_network(self, data: Dict, window_size: int):
-        """Train the FNPE score network with NPSE-style plateau detection on train loss."""
+    def _train_score_network(
+        self,
+        data: Dict,
+        window_size: int,
+        num_simulations: int,
+    ):
+        """Train the FNPE score network with MarkovSBI-style outer/inner loops."""
         key = self._key
         key, key_init = jax.random.split(key, 2)
+        total_items = int(data["thetas"].shape[0])
+        if total_items < 2:
+            raise ValueError("FNPE training requires at least two generated samples.")
 
-        train_data = {
-            "thetas": data["thetas"],
-            "xs": data["xs"],
-        }
+        desired_val = int(np.floor(0.1 * num_simulations))
+        desired_val = min(self.validation_size, desired_val)
+        if total_items > self.batch_size:
+            desired_val = max(desired_val, min(self.batch_size, total_items - 1))
+        else:
+            desired_val = min(max(1, total_items // 5), total_items - 1)
+        val_size = int(min(max(desired_val, 1), total_items - 1))
+        train_size = int(total_items - val_size)
+
+        theta_all = data["thetas"]
+        xs_all = data["xs"]
+        theta_val = theta_all[:val_size]
+        xs_val = xs_all[:val_size]
+        theta_train = theta_all[val_size:]
+        xs_train = xs_all[val_size:]
+        train_data = {"thetas": theta_train, "xs": xs_train}
+        val_data = {"thetas": theta_val, "xs": xs_val}
 
         # Preconditioning
         c_in, c_noise, c_out = precondition_functions(self.sde)
@@ -546,8 +584,9 @@ class FNPEMethod(BaseMethod):
             c_out=c_out,
         )
 
-        # Build batch sampler for training
+        # Build batch samplers for training and validation
         train_batch_sampler = build_batch_sampler(train_data)
+        val_batch_sampler = build_batch_sampler(val_data)
         loss_fn = build_loss_fn(
             "dsm", score_net, self.sde, self.weight_fn, control_variate=True
         )
@@ -559,17 +598,33 @@ class FNPEMethod(BaseMethod):
         n_params = sum(p.size for p in jax.tree_util.tree_leaves(params))
         print(f"[FNPE] Score network: {n_params:,} parameters", flush=True)
 
-        # Optimizer - use max possible steps, early stopping will terminate early
-        max_total_steps = self.num_epochs * self.steps_per_epoch
-        schedule = optax.cosine_onecycle_schedule(
-            max_total_steps, self.cfg.learning_rate
+        inner_updates_per_outer = self.num_inner_epochs * (
+            max(1, train_size // self.batch_size) + 1
+        )
+        total_optimizer_updates = int(self.num_outer_epochs * inner_updates_per_outer)
+        print(
+            f"[FNPE] Training schedule: outer_epochs={self.num_outer_epochs}, "
+            f"inner_updates_per_outer={inner_updates_per_outer}, "
+            f"total_updates={total_optimizer_updates}, "
+            f"train_size={train_size}, val_size={val_size}",
+            flush=True,
+        )
+
+        if self.scheduler_name == "cosine":
+            lr_schedule = optax.cosine_onecycle_schedule(
+                total_optimizer_updates, self.learning_rate
+            )
+        else:
+            lr_schedule = optax.constant_schedule(self.learning_rate)
+
+        optimizer_core = (
+            optax.adamw(lr_schedule)
+            if self.optimizer_name == "adamw"
+            else optax.adam(lr_schedule)
         )
         optimizer = optax.chain(
-            optax.adaptive_grad_clip(self.cfg.clip_max_norm),
-            optax.ema(
-                0.01
-            ),  # EMA on weights for smoother training (like MarkovSBI notebook)
-            optax.adamw(schedule),
+            optax.adaptive_grad_clip(self.clip_max_norm),
+            optimizer_core,
         )
         opt_state = optimizer.init(params)
 
@@ -581,6 +636,10 @@ class FNPEMethod(BaseMethod):
             params = optax.apply_updates(params, updates)
             return loss, params, opt_state
 
+        @jax.jit
+        def eval_loss(params, rng, theta_batch, x_batch):
+            return loss_fn(params, rng, theta_batch, x_batch)
+
         # JIT warmup
         print("[FNPE] JIT compiling...", flush=True)
         key, key_batch, key_loss = jax.random.split(key, 3)
@@ -591,26 +650,23 @@ class FNPEMethod(BaseMethod):
         _ = float(loss)  # Block until done
         print("[FNPE] JIT compilation complete.", flush=True)
 
-        # Training loop with NPSE-style convergence check applied to EMA-smoothed
-        # epoch training losses. FNPE has no held-out validation path here.
         train_losses = []
-        train_losses_ema = []
-        best_train_loss_ema = float("inf")
-        epochs_since_last_improvement = 0
+        val_losses = []
+        best_validation_loss = float("inf")
+        best_validation_epoch = None
         best_params = params
-        early_stopped = False
 
         print(
-            f"[FNPE] Starting training: {self.num_epochs} epochs, {self.steps_per_epoch} steps/epoch",
+            f"[FNPE] Starting training: {self.num_outer_epochs} outer epochs, "
+            f"{inner_updates_per_outer} inner updates/outer",
             flush=True,
         )
 
-        for epoch in range(self.num_epochs):
-            # Training - accumulate losses without blocking
+        for epoch in range(self.num_outer_epochs):
             epoch_losses = []
             pbar = tqdm(
-                range(self.steps_per_epoch),
-                desc=f"Epoch {epoch+1}/{self.num_epochs}",
+                range(inner_updates_per_outer),
+                desc=f"Epoch {epoch+1}/{self.num_outer_epochs}",
                 leave=False,
                 file=sys.stderr,
             )
@@ -621,70 +677,56 @@ class FNPEMethod(BaseMethod):
                     params, key_loss, opt_state, theta_batch, x_batch
                 )
                 epoch_losses.append(loss)
-                # Only sync every 100 steps for progress display
                 if step % 100 == 99:
-                    # Block and compute mean of last 100 losses
                     recent_losses = jnp.stack(epoch_losses[-100:])
                     mean_loss = float(jnp.mean(recent_losses))
                     pbar.set_postfix({"loss": f"{mean_loss:.4f}"})
             pbar.close()
 
-            # Compute epoch mean (single sync point)
             all_losses = jnp.stack(epoch_losses)
             epoch_train_loss = float(jnp.mean(all_losses))
-            train_losses.append(epoch_train_loss)
-            if len(train_losses_ema) == 0:
-                epoch_train_loss_ema = epoch_train_loss
-            else:
-                previous_loss = train_losses_ema[-1]
-                epoch_train_loss_ema = (
-                    (1.0 - self.ema_loss_decay) * previous_loss
-                    + self.ema_loss_decay * epoch_train_loss
-                )
-            train_losses_ema.append(epoch_train_loss_ema)
+            train_losses.append({"epoch": int(epoch + 1), "loss": epoch_train_loss})
+
+            val_batch_losses = []
+            num_val_batches = max(1, min(self.num_inner_epochs, val_size // max(1, self.batch_size) + 1))
+            for _ in range(num_val_batches):
+                key, key_batch, key_loss = jax.random.split(key, 3)
+                theta_batch, x_batch = val_batch_sampler(key_batch, min(self.batch_size, val_size))
+                val_batch_loss = eval_loss(params, key_loss, theta_batch, x_batch)
+                val_batch_losses.append(float(val_batch_loss))
+            epoch_val_loss = float(np.mean(val_batch_losses))
+            val_losses.append({"epoch": int(epoch + 1), "loss": epoch_val_loss})
 
             print(
-                f"[FNPE] Epoch {epoch+1}/{self.num_epochs}: "
-                f"Train={epoch_train_loss:.6f} | EMA={epoch_train_loss_ema:.6f}",
+                f"[FNPE] Epoch {epoch+1}/{self.num_outer_epochs}: "
+                f"Train={epoch_train_loss:.6f} | Val={epoch_val_loss:.6f}",
                 flush=True,
             )
 
-            if epoch == 0 or epoch_train_loss_ema < best_train_loss_ema:
-                best_train_loss_ema = epoch_train_loss_ema
-                epochs_since_last_improvement = 0
+            if epoch_val_loss < best_validation_loss:
+                best_validation_loss = epoch_val_loss
+                best_validation_epoch = int(epoch + 1)
                 best_params = params
-            else:
-                if len(train_losses_ema) >= self.stop_after_epochs:
-                    recent_losses = np.asarray(
-                        train_losses_ema[-self.stop_after_epochs * 2 :], dtype=np.float32
-                    )
-                    loss_std = max(float(np.std(recent_losses)), 1e-12)
-                    diff_to_best_normalized = (
-                        epoch_train_loss_ema - best_train_loss_ema
-                    ) / loss_std
-                    if diff_to_best_normalized > self.convergence_std_threshold:
-                        epochs_since_last_improvement += 1
-                    else:
-                        epochs_since_last_improvement = 0
-
-                    if epochs_since_last_improvement > self.stop_after_epochs - 1:
-                        params = best_params
-                        early_stopped = True
-                        print(
-                            f"[FNPE] Early stopping at epoch {epoch+1} "
-                            f"(best EMA train loss={best_train_loss_ema:.6f})",
-                            flush=True,
-                        )
-                        break
 
         self._key = key
+        params = best_params
 
-        return params, score_net, {
-            "train": train_losses,
-            "train_ema": train_losses_ema,
-            "best_train_loss_ema": best_train_loss_ema,
-            "early_stopped": early_stopped,
-        }
+        return (
+            params,
+            score_net,
+            {
+                "train": train_losses,
+                "val": val_losses,
+                "best_validation_loss": (
+                    float(best_validation_loss)
+                    if best_validation_epoch is not None
+                    else None
+                ),
+                "best_validation_epoch": best_validation_epoch,
+            },
+            inner_updates_per_outer,
+            total_optimizer_updates,
+        )
 
     def _setup_sampler(self):
         """Set up the diffusion sampler."""
@@ -760,16 +802,6 @@ class FNPEMethod(BaseMethod):
             self.task.input_shape,
             transform_state=transform_state,
         )
-
-    def _compute_budget_epochs(self, num_simulations: int) -> int:
-        """Compute FNPE epoch budget from simulation count, scaled and capped."""
-        batch_size = max(1, int(self.batch_size))
-        base_epochs = (num_simulations + batch_size - 1) // batch_size
-        budget_multiplier = float(
-            getattr(self.cfg, "fnpe_budget_epoch_multiplier", 1.0)
-        )
-        epochs = int(np.ceil(base_epochs * budget_multiplier))
-        return min(int(self.cfg.fnpe_max_epochs), max(1, int(epochs)))
 
     def build_posterior(self, normalizer=None) -> FNPEPosterior:
         """Build posterior wrapper for sampling.
