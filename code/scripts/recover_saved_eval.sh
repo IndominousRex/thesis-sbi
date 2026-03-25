@@ -21,7 +21,7 @@
 set -euo pipefail
 
 EXPERIMENTS_DIR=${1:-"$PWD"}
-MATCH_PREFIX=${2:-"bench_budget_v2_mu"}
+MATCH_PREFIX=${2:-"bench_budget_v2_mu_s42"}
 DEVICE=${3:-"cuda"}
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ] && [ -f "${SLURM_SUBMIT_DIR}/scripts/recover_saved_eval.py" ]; then
