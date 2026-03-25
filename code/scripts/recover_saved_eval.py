@@ -87,6 +87,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Only scan direct children of the experiments directory.",
     )
+    p.add_argument(
+        "--shard-index",
+        type=int,
+        default=0,
+        help="Zero-based shard index for parallel recovery runs.",
+    )
+    p.add_argument(
+        "--num-shards",
+        type=int,
+        default=1,
+        help="Total number of parallel shards. Matches are split by index modulo this value.",
+    )
     return p.parse_args()
 
 
@@ -243,6 +255,16 @@ def _prepare_eval_config(exp_dir: Path, device: str) -> ExperimentConfig:
 
 def main() -> int:
     args = parse_args()
+    if args.num_shards < 1:
+        print("--num-shards must be >= 1", file=sys.stderr)
+        return 2
+    if args.shard_index < 0 or args.shard_index >= args.num_shards:
+        print(
+            f"--shard-index must be in [0, {args.num_shards - 1}]",
+            file=sys.stderr,
+        )
+        return 2
+
     experiments_dir = args.experiments_dir.resolve()
     if not experiments_dir.exists():
         print(f"Experiments directory not found: {experiments_dir}", file=sys.stderr)
@@ -268,6 +290,13 @@ def main() -> int:
     if args.limit is not None:
         matches = matches[: args.limit]
 
+    if args.num_shards > 1:
+        matches = [
+            match
+            for idx, match in enumerate(matches)
+            if idx % args.num_shards == args.shard_index
+        ]
+
     if not matches:
         print("No matching recovery candidates found.")
         if skipped_prefix_matches:
@@ -287,6 +316,8 @@ def main() -> int:
         "experiments_dir": str(experiments_dir),
         "match_prefix": args.match_prefix,
         "device": args.device,
+        "shard_index": args.shard_index,
+        "num_shards": args.num_shards,
         "processed": [],
         "failed": [],
     }
@@ -329,7 +360,14 @@ def main() -> int:
             if original_config is not None:
                 _restore_original_config(config_path, original_config)
 
-    summary_path = experiments_dir / "recover_saved_eval_summary.json"
+    if args.num_shards > 1:
+        summary_name = (
+            f"recover_saved_eval_summary_shard{args.shard_index:03d}"
+            f"_of_{args.num_shards:03d}.json"
+        )
+    else:
+        summary_name = "recover_saved_eval_summary.json"
+    summary_path = experiments_dir / summary_name
     with summary_path.open("w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     print(f"\nWrote recovery summary to {summary_path}")

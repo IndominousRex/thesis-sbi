@@ -5,6 +5,9 @@
 # Run from inside the experiments directory or pass the experiments dir explicitly:
 #   sbatch ../scripts/recover_saved_eval.sh
 #   sbatch ../scripts/recover_saved_eval.sh /bigwork/.../code/experiments bench_budget_v2_mu
+# Parallel arrays:
+#   sbatch --array=0-3 ../scripts/recover_saved_eval.sh /bigwork/.../code/experiments bench_budget_v2_mu_s42 cuda
+#   sbatch --array=0-7%4 ../scripts/recover_saved_eval.sh /bigwork/.../code/experiments bench_budget_v2_mu_s42 cuda
 # ==============================================================================
 
 #SBATCH --job-name=recover_eval
@@ -40,6 +43,7 @@ echo "=================================================="
 echo "Date:            $(date)"
 echo "Node:            $(hostname)"
 echo "Job ID:          ${SLURM_JOB_ID:-local}"
+echo "Array Task:      ${SLURM_ARRAY_TASK_ID:-0}/${SLURM_ARRAY_TASK_COUNT:-1}"
 echo "Experiments Dir: ${EXPERIMENTS_DIR}"
 echo "Match Prefix:    ${MATCH_PREFIX}"
 echo "Device:          ${DEVICE}"
@@ -57,10 +61,15 @@ unset PYTHONPATH || true
 export PATH="${ENV_PREFIX}/bin:${PATH}"
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
+SHARD_INDEX=${SLURM_ARRAY_TASK_ID:-0}
+NUM_SHARDS=${SLURM_ARRAY_TASK_COUNT:-1}
+
 conda run -p "${ENV_PREFIX}" --no-capture-output python scripts/recover_saved_eval.py \
     --experiments-dir "${EXPERIMENTS_DIR}" \
     --match-prefix "${MATCH_PREFIX}" \
-    --device "${DEVICE}"
+    --device "${DEVICE}" \
+    --shard-index "${SHARD_INDEX}" \
+    --num-shards "${NUM_SHARDS}"
 
 echo "=================================================="
 echo "[$(date)] Recovery completed"
