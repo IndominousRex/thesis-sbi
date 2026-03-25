@@ -54,12 +54,31 @@ class FNPEPosterior:
         key: jax.random.PRNGKey,
         normalizer=None,  # External normalizer for interface compatibility
         obs_dim: int = 9,  # Number of observation channels (without controls)
+        sampling_batch_size: int = 64,
     ):
         self.sampler = sampler
         self.task = task
         self.key = key
         self.normalizer = normalizer  # Used to match NPE/NPSE interface
         self.obs_dim = obs_dim  # Observation dimension (controls appended separately)
+        self.sampling_batch_size = max(1, int(sampling_batch_size))
+
+    def _ensure_hyperparameters(self, x_norm) -> None:
+        """Estimate score-function hyperparameters once per conditioning input."""
+        score_fn = self.sampler.kernel.score_fn
+        if not (
+            hasattr(score_fn, "requires_hyperparameters")
+            and score_fn.requires_hyperparameters
+        ):
+            return
+
+        x_hash = hash(np.asarray(x_norm).tobytes())
+        if hasattr(self, "_hyper_cache_hash") and self._hyper_cache_hash == x_hash:
+            return
+
+        self.key, key_hyper = jax.random.split(self.key)
+        score_fn.estimate_hyperparameters(x_norm, self.sampler.theta_shape, key_hyper)
+        self._hyper_cache_hash = x_hash
 
     def sample(
         self,
@@ -136,36 +155,25 @@ class FNPEPosterior:
         # FNPE internal normalization (using task's own stats)
         x_norm = self.task.normalize_x(x_jax)
 
-        # Check if score function requires hyperparameter estimation (e.g., GaussCorrectedScoreFn)
-        score_fn = self.sampler.kernel.score_fn
-        if (
-            hasattr(score_fn, "requires_hyperparameters")
-            and score_fn.requires_hyperparameters
-        ):
-            # Cache: skip re-estimation if observation hasn't changed
-            x_hash = hash(x_norm.tobytes())
-            if (
-                not hasattr(self, "_hyper_cache_hash")
-                or self._hyper_cache_hash != x_hash
-            ):
-                self.key, key_hyper = jax.random.split(self.key)
-                score_fn.estimate_hyperparameters(
-                    x_norm, self.sampler.theta_shape, key_hyper
-                )
-                self._hyper_cache_hash = x_hash
+        self._ensure_hyperparameters(x_norm)
 
-        # Sample from diffusion
-        self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
-        sample_keys = jnp.stack(sample_keys)
+        # Sample from diffusion in bounded chunks to avoid JAX GPU OOM during
+        # eval-heavy paths such as posterior plots and C2ST.
+        samples_phys_chunks = []
+        remaining = int(num_samples)
+        while remaining > 0:
+            chunk_size = min(self.sampling_batch_size, remaining)
+            self.key, key_chunk = jax.random.split(self.key)
+            sample_keys = jax.random.split(key_chunk, chunk_size)
+            chunk_norm = jax.vmap(self.sampler.sample, in_axes=(0, None))(
+                sample_keys, x_norm
+            )
+            chunk_norm = jax.block_until_ready(chunk_norm)
+            chunk_phys = jax.vmap(self.task.unnormalize_theta)(chunk_norm)
+            samples_phys_chunks.append(np.asarray(chunk_phys))
+            remaining -= chunk_size
 
-        samples_norm_jax = jax.vmap(self.sampler.sample, in_axes=(0, None))(
-            sample_keys, x_norm
-        )
-        samples_norm_jax = jax.block_until_ready(samples_norm_jax)
-
-        # Unnormalize using FNPE's task stats -> physical units
-        samples_phys = jax.vmap(self.task.unnormalize_theta)(samples_norm_jax)
-        samples_phys_np = np.array(samples_phys)
+        samples_phys_np = np.concatenate(samples_phys_chunks, axis=0)
 
         if return_physical:
             # Legacy mode: return physical numpy array
@@ -254,40 +262,28 @@ class FNPEPosterior:
         x_jax = jnp.asarray(x_squeezed)
         x_norm = self.task.normalize_x(x_jax)
 
-        # Check if score function requires hyperparameter estimation
-        score_fn = self.sampler.kernel.score_fn
-        if (
-            hasattr(score_fn, "requires_hyperparameters")
-            and score_fn.requires_hyperparameters
-        ):
-            x_hash = hash(x_norm.tobytes())
-            if (
-                not hasattr(self, "_hyper_cache_hash")
-                or self._hyper_cache_hash != x_hash
-            ):
-                self.key, key_hyper = jax.random.split(self.key)
-                score_fn.estimate_hyperparameters(
-                    x_norm, self.sampler.theta_shape, key_hyper
-                )
-                self._hyper_cache_hash = x_hash
+        self._ensure_hyperparameters(x_norm)
 
-        # Sample with traces using sampler.simulate (returns full trajectory)
-        self.key, *sample_keys = jax.random.split(self.key, num_samples + 1)
-        sample_keys = jnp.stack(sample_keys)
+        traces_phys_chunks = []
+        remaining = int(num_samples)
+        while remaining > 0:
+            chunk_size = min(self.sampling_batch_size, remaining)
+            self.key, key_chunk = jax.random.split(self.key)
+            sample_keys = jax.random.split(key_chunk, chunk_size)
 
-        # sampler.simulate returns the full diffusion trajectory
-        traces_norm_jax = jax.vmap(self.sampler.simulate, in_axes=(0, None))(
-            sample_keys, x_norm
-        )
-        traces_norm_jax = jax.block_until_ready(traces_norm_jax)
+            traces_norm_jax = jax.vmap(self.sampler.simulate, in_axes=(0, None))(
+                sample_keys, x_norm
+            )
+            traces_norm_jax = jax.block_until_ready(traces_norm_jax)
 
-        # traces_norm_jax shape: (num_samples, num_steps, d_theta)
-        # Unnormalize each step to physical units
-        def unnorm_trace(trace):
-            return jax.vmap(self.task.unnormalize_theta)(trace)
+            def unnorm_trace(trace):
+                return jax.vmap(self.task.unnormalize_theta)(trace)
 
-        traces_phys = jax.vmap(unnorm_trace)(traces_norm_jax)
-        traces_phys_np = np.array(traces_phys)
+            traces_phys = jax.vmap(unnorm_trace)(traces_norm_jax)
+            traces_phys_chunks.append(np.asarray(traces_phys))
+            remaining -= chunk_size
+
+        traces_phys_np = np.concatenate(traces_phys_chunks, axis=0)
 
         return traces_phys_np
 
@@ -758,6 +754,8 @@ class FNPEMethod(BaseMethod):
                 prior_norm,
                 posterior_precission_est_fn=posterior_precission_est_fn,
                 window_size=self.window_size,
+                num_steps=int(self.cfg.fnpe_gauss_hyper_num_steps),
+                num_samples=int(self.cfg.fnpe_gauss_hyper_num_samples),
             )
         else:
             # Uncorrected: uses marginal prior score
@@ -821,6 +819,7 @@ class FNPEMethod(BaseMethod):
             key_posterior,
             normalizer=normalizer,
             obs_dim=self.cfg.obs_dim,  # Pass obs_dim from config
+            sampling_batch_size=self.cfg.fnpe_sampling_batch_size,
         )
         return self.posterior
 

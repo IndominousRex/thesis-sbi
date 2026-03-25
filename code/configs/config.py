@@ -162,6 +162,13 @@ class ExperimentConfig:
     )
     # Precision scale for GaussCorrectedScoreFn (None = auto-estimate).
     fnpe_gauss_precision_scale: Optional[float] = None
+    # Chunk posterior sampling during eval/plotting to avoid JAX OOM.
+    fnpe_sampling_batch_size: int = 64
+    # Gauss-correction hyperparameter estimation is expensive at eval time.
+    # Use smaller defaults than markovsbi's generic benchmark to keep recovery
+    # and posterior plotting feasible on 16 GB-class GPUs.
+    fnpe_gauss_hyper_num_steps: int = 100
+    fnpe_gauss_hyper_num_samples: int = 128
 
     # --- Simformer-specific ---
     simformer_num_timepoints: int = 32  # Timepoints sampled per input channel
