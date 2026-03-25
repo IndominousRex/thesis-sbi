@@ -2309,6 +2309,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     fig_dir.mkdir(parents=True, exist_ok=True)
     print(f"[SETUP] Experiment dir: {exp_dir}")
     print(f"[SETUP] Directory exists: {exp_dir.exists()}")
+    cfg.save(str(exp_dir / "config.json"))
+    print(f"[SETUP] Saved config to {exp_dir / 'config.json'}")
 
     train_region_metadata: Dict[str, Any] | None = None
     test_region_metadata: Dict[str, Any] | None = None
