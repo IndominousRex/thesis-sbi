@@ -71,6 +71,11 @@ from methods import build_method, AVAILABLE_METHODS
 
 def make_experiment_dir(cfg: ExperimentConfig) -> Path:
     """Create experiment directory with method prefix and timestamp."""
+    if cfg.output_dir:
+        exp_dir = Path(cfg.output_dir)
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        return exp_dir
+
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     root = Path(cfg.results_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -2293,6 +2298,11 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         f"[SETUP] input_dim={D_in}, T_event={T_event}, d_theta={cfg.active_param_dim()}"
     )
 
+    checkpoint_dir: Path | None = None
+    if cfg.checkpoint:
+        checkpoint_path = Path(cfg.checkpoint)
+        checkpoint_dir = checkpoint_path if checkpoint_path.is_dir() else checkpoint_path.parent
+
     # --- Create experiment directory ---
     exp_dir = make_experiment_dir(cfg)
     fig_dir = exp_dir / "figures"
@@ -2322,6 +2332,26 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         normalizer = None
         theta_train = None
         x_train = None
+    elif cfg.checkpoint and not cfg.do_train:
+        print(
+            "[DATA] Eval-only mode: skipping training dataset generation and loading "
+            "saved normalization stats.",
+            flush=True,
+        )
+        theta_train_phys = None
+        x_train_phys = None
+        theta_train = None
+        x_train = None
+
+        norm_path = (checkpoint_dir or exp_dir) / "stats_normalization.json"
+        if not norm_path.exists():
+            raise FileNotFoundError(
+                f"Expected saved normalization stats for eval-only run: {norm_path}"
+            )
+        normalizer_cpu = load_normalizer(norm_path)
+        normalizer = normalizer_cpu.to(device)
+        if x_test_phys is not None:
+            x_test_norm = normalizer_cpu.normalize_x(x_test_phys, cfg.obs_dim)
     else:
         theta_train_phys, x_train_phys, train_region_metadata = get_or_generate_training_dataset(
             cfg, prior_phys, simulator, device
@@ -2542,11 +2572,8 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
     elif cfg.checkpoint:
         print(f"\n[LOAD] Loading checkpoint from {cfg.checkpoint}", flush=True)
-        checkpoint_path = Path(cfg.checkpoint)
-        checkpoint_dir = (
-            checkpoint_path if checkpoint_path.is_dir() else checkpoint_path.parent
-        )
-        method.load(checkpoint_dir)
+        method.load(checkpoint_dir or Path(cfg.checkpoint))
+        training_summary = getattr(method, "_training_summary", {}) or {}
         # For FNPE checkpoint, also load/create normalizer
         if cfg.method == "fnpe":
             norm_path = checkpoint_dir / "stats_normalization.json"

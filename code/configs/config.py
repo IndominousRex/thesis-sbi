@@ -262,6 +262,7 @@ class ExperimentConfig:
 
     # --- Logging / saving ---
     results_root: str = "experiments"
+    output_dir: Optional[str] = None  # Reuse an existing experiment directory
     no_plots: bool = False
 
     # --- Execution mode ---
