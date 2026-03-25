@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--match-prefix",
         type=str,
-        default="bench_budget_v2_mu",
+        default="bench_budget_v2_mu_s42",
         help="Folder-name prefix after the method name, e.g. bench_budget_v2_mu.",
     )
     p.add_argument(
@@ -117,7 +117,9 @@ def _load_original_config(config_path: Path) -> dict[str, Any]:
         return json.load(f)
 
 
-def _restore_original_config(config_path: Path, original_config: dict[str, Any]) -> None:
+def _restore_original_config(
+    config_path: Path, original_config: dict[str, Any]
+) -> None:
     with config_path.open("w", encoding="utf-8") as f:
         json.dump(original_config, f, indent=2)
 
