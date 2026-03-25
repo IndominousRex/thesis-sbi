@@ -195,6 +195,7 @@ class ExperimentConfig:
     simformer_t_min: float = 0.02
     simformer_t_max: float = 1.0
     simformer_num_diffusion_steps: int = 500
+    simformer_sampling_batch_size: int = 128  # Chunk posterior sampling to avoid GPU OOM
     simformer_learning_rate: float = 1e-3
     simformer_min_learning_rate: float = 1e-6
     simformer_clip_max_norm: float = 10.0

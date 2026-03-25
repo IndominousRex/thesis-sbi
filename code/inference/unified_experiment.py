@@ -2542,10 +2542,14 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
     elif cfg.checkpoint:
         print(f"\n[LOAD] Loading checkpoint from {cfg.checkpoint}", flush=True)
-        method.load(Path(cfg.checkpoint))
+        checkpoint_path = Path(cfg.checkpoint)
+        checkpoint_dir = (
+            checkpoint_path if checkpoint_path.is_dir() else checkpoint_path.parent
+        )
+        method.load(checkpoint_dir)
         # For FNPE checkpoint, also load/create normalizer
         if cfg.method == "fnpe":
-            norm_path = Path(cfg.checkpoint).parent / "stats_normalization.json"
+            norm_path = checkpoint_dir / "stats_normalization.json"
             if norm_path.exists():
                 normalizer = load_normalizer(norm_path).to(device)
                 print(f"[NORM] Loaded normalizer from {norm_path}")

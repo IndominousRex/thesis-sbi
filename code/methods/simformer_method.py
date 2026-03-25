@@ -116,6 +116,7 @@ class SimformerPosterior:
         condition_mask: jnp.ndarray,
         meta_data: Optional[jnp.ndarray],
         num_steps: int,
+        sampling_batch_size: int,
         clip_low: Optional[jnp.ndarray] = None,
         clip_high: Optional[jnp.ndarray] = None,
     ) -> None:
@@ -127,6 +128,7 @@ class SimformerPosterior:
         self.condition_mask = condition_mask
         self.meta_data = meta_data
         self.num_steps = int(num_steps)
+        self.sampling_batch_size = int(max(1, sampling_batch_size))
         self.clip_low = clip_low
         self.clip_high = clip_high
         self.dense_time_grid = np.linspace(0.0, 1.0, self.seq_len, dtype=np.float32)
@@ -158,19 +160,24 @@ class SimformerPosterior:
         x_o = self._flatten_conditioning_observation(x)
         seed = int(seed) if seed is not None else int(time.time() * 1000) % (2**31)
         key = _make_key(seed)
-        samples = self.model.sample(
-            num_samples,
-            x_o=x_o,
-            rng=key,
-            node_id=self.node_id,
-            condition_mask=self.condition_mask,
-            meta_data=self.meta_data,
-            num_steps=self.num_steps,
-            unique_nodes=False,
-        )
-        if self.clip_low is not None and self.clip_high is not None:
-            samples = jnp.clip(samples, self.clip_low, self.clip_high)
-        return torch.from_numpy(np.asarray(samples)).float()
+        chunk_arrays = []
+        for start in range(0, num_samples, self.sampling_batch_size):
+            stop = min(start + self.sampling_batch_size, num_samples)
+            key_chunk = jrandom.fold_in(key, start)
+            samples = self.model.sample(
+                stop - start,
+                x_o=x_o,
+                rng=key_chunk,
+                node_id=self.node_id,
+                condition_mask=self.condition_mask,
+                meta_data=self.meta_data,
+                num_steps=self.num_steps,
+                unique_nodes=False,
+            )
+            if self.clip_low is not None and self.clip_high is not None:
+                samples = jnp.clip(samples, self.clip_low, self.clip_high)
+            chunk_arrays.append(np.asarray(samples, dtype=np.float32))
+        return torch.from_numpy(np.concatenate(chunk_arrays, axis=0)).float()
 
 
 class SimformerMethod(BaseMethod):
@@ -775,6 +782,7 @@ class SimformerMethod(BaseMethod):
             condition_mask=self.posterior_condition_mask,
             meta_data=self.eval_meta_data,
             num_steps=self.num_diffusion_steps,
+            sampling_batch_size=self.cfg.simformer_sampling_batch_size,
             clip_low=clip_low,
             clip_high=clip_high,
         )

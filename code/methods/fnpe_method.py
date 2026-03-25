@@ -853,14 +853,54 @@ class FNPEMethod(BaseMethod):
         with open(model_path, "rb") as f:
             self.params = pickle.load(f)
 
-        self.model = self.params
+        if self.task is None:
+            raise RuntimeError("Method not built. Call build() before load().")
 
-        # Need to rebuild sampler - this requires the score_net architecture
-        # which requires re-running build and partial train setup
-        raise NotImplementedError(
-            "FNPE loading requires re-building score network architecture. "
-            "This is not yet fully supported."
+        norm_stats_path = exp_dir / "normalization_stats.json"
+        if not norm_stats_path.exists():
+            raise FileNotFoundError(
+                f"FNPE normalization stats not found: {norm_stats_path}"
+            )
+
+        with open(norm_stats_path, "r") as f:
+            norm_stats_json = json.load(f)
+
+        norm_stats = {
+            key: (
+                None
+                if value is None
+                else jnp.asarray(np.asarray(value, dtype=np.float32))
+            )
+            for key, value in norm_stats_json.items()
+        }
+        self.task.set_normalization_stats(norm_stats)
+
+        theta_dim = len(self.cfg.active_parameters)
+        dummy_thetas = jnp.stack(
+            [
+                -jnp.ones((theta_dim,), dtype=jnp.float32),
+                jnp.ones((theta_dim,), dtype=jnp.float32),
+            ],
+            axis=0,
         )
+        self.sde, self.weight_fn = init_sde(
+            {"thetas": dummy_thetas},
+            T_min=getattr(self.cfg, "fnpe_t_min", 0.05),
+        )
+
+        c_in, c_noise, c_out = precondition_functions(self.sde)
+        _init_fn, self.score_net = build_score_mlp(
+            window_size=self.window_size,
+            num_hidden=self.num_hidden,
+            hidden_dim=self.hidden_dim,
+            x_o_processing=self.model_type,
+            c_in=c_in,
+            c_noise=c_noise,
+            c_out=c_out,
+        )
+
+        self._setup_sampler()
+        self.model = self.params
 
     @property
     def supports_lc2st(self) -> bool:
