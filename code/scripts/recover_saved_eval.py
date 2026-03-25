@@ -76,6 +76,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Maximum number of matching experiments to process.",
     )
+    p.add_argument(
+        "--non-recursive",
+        action="store_true",
+        help="Only scan direct children of the experiments directory.",
+    )
     return p.parse_args()
 
 
@@ -150,19 +155,31 @@ def main() -> int:
         return 2
 
     matches: list[tuple[Path, str, str]] = []
-    for child in sorted(experiments_dir.iterdir()):
+    skipped_prefix_matches: list[tuple[Path, str]] = []
+    iterator = (
+        sorted(experiments_dir.iterdir())
+        if args.non_recursive
+        else sorted(p for p in experiments_dir.rglob("*") if p.is_dir())
+    )
+    for child in iterator:
         method = _matches_prefix(child, args.methods, args.match_prefix)
         if method is None:
             continue
         include, reason = _is_candidate(child, method)
         if include:
             matches.append((child, method, reason))
+        else:
+            skipped_prefix_matches.append((child, reason))
 
     if args.limit is not None:
         matches = matches[: args.limit]
 
     if not matches:
         print("No matching recovery candidates found.")
+        if skipped_prefix_matches:
+            print("Matching-prefix folders were found but skipped:")
+            for exp_dir, reason in skipped_prefix_matches[:20]:
+                print(f"- {exp_dir} ({reason})")
         return 0
 
     print(f"Found {len(matches)} recovery candidate(s) in {experiments_dir}")
