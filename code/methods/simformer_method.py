@@ -733,13 +733,22 @@ class SimformerMethod(BaseMethod):
             "observation_node_count": int(self.obs_nodes),
             "simformer_num_timepoints": int(self.num_timepoints),
             "embedding_trained": False,
+            "fixed_epoch_schedule": True,
         }
-        print(
-            f"[Simformer] Training complete in {train_time:.1f}s, "
-            f"best validation step={best_validation_step}, "
-            f"final train loss={self._training_summary['final_loss']:.4f}",
-            flush=True,
-        )
+        if best_validation_step is not None:
+            print(
+                f"[Simformer] Training complete in {train_time:.1f}s, "
+                f"best validation step={best_validation_step}, "
+                f"final train loss={self._training_summary['final_loss']:.4f}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[Simformer] Training complete in {train_time:.1f}s, "
+                f"fixed steps={total_steps}, "
+                f"final train loss={self._training_summary['final_loss']:.4f}",
+                flush=True,
+            )
         return self._training_summary
 
     def _compute_normalized_clip_bounds(

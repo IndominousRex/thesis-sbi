@@ -385,6 +385,7 @@ def posterior_predictive_from_real(
     normalizer: Normalizer,
     device: torch.device,
     K_ppc: int = 200,
+    state0: Optional[jnp.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Posterior predictive simulation for a real (or simulated) window.
@@ -427,9 +428,13 @@ def posterior_predictive_from_real(
         y_real = y_real[:L_min]
         T_event = L_min
 
-    # 3) Use the first real observation to seed the simulator state.
-    #    This maps y0 → full state [geo_x, geo_y, yaw, dyaw, v_x, v_y, tire_fl, tire_fr, tire_rl, tire_rr].
-    state0_real = initial_state_from_obs(y_real[0])
+    # 3) For real trajectories we reconstruct the simulator state from the first
+    # observation. For synthetic held-out data we can pass the true hidden state.
+    state0_real = (
+        initial_state_from_obs(y_real[0])
+        if state0 is None
+        else jnp.asarray(state0, dtype=jnp.float32)
+    )
 
     # 4) Sample parameters from p(theta | x_real)
     with torch.no_grad():

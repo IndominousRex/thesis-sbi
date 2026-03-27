@@ -362,6 +362,7 @@ def _generate_heldout_test_dataset(
         return {
             "theta": torch.empty(0, cfg.active_param_dim(), dtype=torch.float32),
             "x": torch.empty(0, cfg.T_seg, cfg.obs_dim + 4, dtype=torch.float32),
+            "state0": torch.empty(0, cfg.state_dim, dtype=torch.float32),
             "region_metadata": region_meta,
             "acceptance": {"accepted": 0, "attempted": 0, "acceptance_rate": 0.0},
         }
@@ -370,6 +371,7 @@ def _generate_heldout_test_dataset(
     batch = int(cfg.batch_sim)
     theta_items: List[torch.Tensor] = []
     x_items: List[torch.Tensor] = []
+    state0_items: List[torch.Tensor] = []
     generated = 0
     attempted = 0
     theta_attempted = 0
@@ -384,6 +386,7 @@ def _generate_heldout_test_dataset(
             theta_attempted += theta_draws
             x_b, _ = simulator(theta_b)
             x_b = x_b.cpu()
+            state0_b = getattr(simulator, "_last_state0_batch", None)
             mask_holdout = _joint_holdout_mask(cfg, theta_b, x_b, region_meta)
             keep_idx = mask_holdout.nonzero(as_tuple=False).squeeze(-1)
             if keep_idx.numel() > 0:
@@ -391,6 +394,8 @@ def _generate_heldout_test_dataset(
                 keep_idx = keep_idx[:take]
                 theta_items.append(theta_b[keep_idx])
                 x_items.append(x_b[keep_idx])
+                if state0_b is not None:
+                    state0_items.append(state0_b[keep_idx].cpu())
                 generated += take
             attempted += b
 
@@ -403,6 +408,11 @@ def _generate_heldout_test_dataset(
     return {
         "theta": torch.cat(theta_items, dim=0),
         "x": torch.cat(x_items, dim=0),
+        "state0": (
+            torch.cat(state0_items, dim=0)
+            if state0_items
+            else torch.empty(0, cfg.state_dim, dtype=torch.float32)
+        ),
         "region_metadata": region_meta,
         "acceptance": {
             "accepted": generated,
@@ -485,7 +495,7 @@ def get_or_generate_test_dataset(
     prior,
     simulator,
     device: torch.device,
-) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
+) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any], torch.Tensor]:
     """
     Get the shared held-out synthetic test dataset from cache or generate it.
 
@@ -493,6 +503,7 @@ def get_or_generate_test_dataset(
         theta_test: Held-out test parameters (physical space)
         x_test: Held-out test observations (physical space)
         metadata: Held-out region metadata and thresholds
+        state0_test: True initial hidden simulator states for the held-out cases
     """
     if not cfg.run_simulated_test_eval:
         region_meta = _get_test_region_metadata(cfg)
@@ -500,6 +511,7 @@ def get_or_generate_test_dataset(
             torch.empty(0, cfg.active_param_dim(), dtype=torch.float32),
             torch.empty(0, cfg.T_seg, cfg.obs_dim + 4, dtype=torch.float32),
             region_meta,
+            torch.empty(0, cfg.state_dim, dtype=torch.float32),
         )
 
     cache_path = cfg.get_test_dataset_cache_path()
@@ -509,7 +521,12 @@ def get_or_generate_test_dataset(
     if cfg.reuse_dataset and cache_path.exists():
         print(f"[DATA] Loading cached held-out test dataset from {cache_path}")
         cached = torch.load(cache_path, weights_only=False)
-        return cached["theta"], cached["x"], cached.get("region_metadata", region_meta)
+        return (
+            cached["theta"],
+            cached["x"],
+            cached.get("region_metadata", region_meta),
+            cached.get("state0", torch.empty(0, cfg.state_dim, dtype=torch.float32)),
+        )
 
     if cfg.cache_dataset or cfg.reuse_dataset:
         _acquire_cache_lock(lock_path)
@@ -521,6 +538,9 @@ def get_or_generate_test_dataset(
                     cached["theta"],
                     cached["x"],
                     cached.get("region_metadata", region_meta),
+                    cached.get(
+                        "state0", torch.empty(0, cfg.state_dim, dtype=torch.float32)
+                    ),
                 )
             print(f"[DATA] Generating {cfg.num_test_simulations} held-out test simulations...")
             original_seed = cfg.random_seed
@@ -546,13 +566,19 @@ def get_or_generate_test_dataset(
                     {
                         "theta": bundle["theta"],
                         "x": bundle["x"],
+                        "state0": bundle["state0"],
                         "region_metadata": bundle["region_metadata"],
                         "acceptance": bundle["acceptance"],
                         "config_hash": cfg.test_dataset_id,
                     },
                     cache_path,
                 )
-            return bundle["theta"], bundle["x"], bundle["region_metadata"]
+            return (
+                bundle["theta"],
+                bundle["x"],
+                bundle["region_metadata"],
+                bundle["state0"],
+            )
         finally:
             _release_cache_lock(lock_path)
 
@@ -571,7 +597,7 @@ def get_or_generate_test_dataset(
         cfg.sim_seed = original_sim_seed
         setup_environment(cfg.sim_seed)
 
-    return bundle["theta"], bundle["x"], bundle["region_metadata"]
+    return bundle["theta"], bundle["x"], bundle["region_metadata"], bundle["state0"]
 
 
 def get_or_generate_dataset(
@@ -937,10 +963,12 @@ def run_simulated_ppc_diagnostic(
     fig_dir: Path,
     posterior,
     x_test_phys: torch.Tensor,
+    state0_test_phys: Optional[torch.Tensor],
     normalizer: Normalizer,
     device: torch.device,
     *,
     num_examples: int,
+    num_plot_examples: int,
     num_posterior_samples: int,
 ) -> Dict[str, Any]:
     """Run simulated PPC on held-out synthetic test trajectories."""
@@ -952,6 +980,9 @@ def run_simulated_ppc_diagnostic(
     for ex_idx in range(total):
         x_case = x_test_phys[ex_idx : ex_idx + 1].to(device)
         controls = _controls_dict_from_x_case(x_test_phys[ex_idx], cfg.obs_dim)
+        state0_case = None
+        if state0_test_phys is not None and ex_idx < int(state0_test_phys.shape[0]):
+            state0_case = state0_test_phys[ex_idx].detach().cpu().numpy()
         y_real, y_ppc = posterior_predictive_from_real(
             posterior,
             x_case,
@@ -960,8 +991,9 @@ def run_simulated_ppc_diagnostic(
             normalizer=normalizer,
             device=device,
             K_ppc=num_posterior_samples,
+            state0=state0_case,
         )
-        if not cfg.no_plots:
+        if not cfg.no_plots and ex_idx < int(num_plot_examples):
             ppc_path = fig_dir / f"ppc_timeseries_simulated_test_ex{ex_idx}.png"
             plot_ppc_trajectories(
                 y_real=y_real,
@@ -982,6 +1014,7 @@ def run_simulated_ppc_diagnostic(
     w2_vals = [float(item["metrics"]["w2"]) for item in per_example]
     aggregate = {
         "num_examples": total,
+        "num_plot_examples": int(min(total, num_plot_examples)),
         "num_posterior_samples": int(num_posterior_samples),
         "rmse_mean": float(np.mean(rmse_vals)),
         "rmse_std": float(np.std(rmse_vals)),
@@ -2317,9 +2350,15 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     theta_test_phys = None
     x_test_phys = None
     x_test_norm = None
+    x_test_state0 = None
 
     if cfg.run_simulated_test_eval or cfg.run_simulated_ppc:
-        theta_test_phys, x_test_phys, test_region_metadata = get_or_generate_test_dataset(
+        (
+            theta_test_phys,
+            x_test_phys,
+            test_region_metadata,
+            x_test_state0,
+        ) = get_or_generate_test_dataset(
             cfg, prior_phys, simulator, device
         )
 
@@ -2713,7 +2752,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     posterior_plot_examples,
                     pairplot_examples,
                     c2st_examples,
-                    cfg.num_simulated_ppc_examples,
+                    cfg.num_simulated_ppc_plot_examples,
                     2,
                 ),
             )
@@ -2850,9 +2889,11 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     fig_dir,
                     posterior,
                     shared_eval_x_phys,
+                    x_test_state0,
                     normalizer,
                     device,
                     num_examples=cfg.num_simulated_ppc_examples,
+                    num_plot_examples=cfg.num_simulated_ppc_plot_examples,
                     num_posterior_samples=cfg.simulated_test_ppc_samples,
                 )
                 if simulated_ppc:

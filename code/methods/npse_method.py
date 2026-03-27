@@ -97,13 +97,19 @@ class NPSEMethod(BaseMethod):
 
         # Train
         train_start = time.time()
-        self.model = self.inference.train(
-            learning_rate=self.cfg.learning_rate,
-            training_batch_size=self.cfg.training_batch_size,
-            validation_fraction=self.cfg.validation_fraction,
-            stop_after_epochs=self.cfg.stop_after_epochs,
-            show_train_summary=True,
-        )
+        original_get_dataloaders = self._install_fixed_epoch_full_data_loaders()
+        try:
+            self.model = self.inference.train(
+                learning_rate=self.cfg.learning_rate,
+                training_batch_size=self.cfg.training_batch_size,
+                validation_fraction=self.cfg.validation_fraction,
+                stop_after_epochs=self.cfg.num_epochs + 1,
+                max_num_epochs=max(0, self.cfg.num_epochs - 1),
+                show_train_summary=True,
+            )
+        finally:
+            if original_get_dataloaders is not None:
+                self.inference.get_dataloaders = original_get_dataloaders
         train_time = time.time() - train_start
 
         self.score_estimator = self.model
@@ -114,7 +120,9 @@ class NPSEMethod(BaseMethod):
             "train_loss": summary.get("training_loss", []),
             "sde_type": self.sde_type,
             "train_time_s": train_time,
-            "val_loss": summary.get("validation_loss", []),
+            "val_loss": [],
+            "epochs_trained": self.cfg.num_epochs,
+            "fixed_epoch_schedule": True,
         }
 
         return self._training_summary

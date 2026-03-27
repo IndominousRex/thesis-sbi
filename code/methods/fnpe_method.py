@@ -509,16 +509,14 @@ class FNPEMethod(BaseMethod):
         # losses is now a dict with 'train' and 'val' keys
         self._training_summary = {
             "train_loss": losses.get("train", []),
-            "val_loss": losses.get("val", []),
+            "val_loss": [],
             "final_train_loss": losses["train"][-1]["loss"] if losses.get("train") else None,
-            "final_val_loss": losses["val"][-1]["loss"] if losses.get("val") else None,
+            "final_val_loss": None,
             "final_loss": (
-                losses["val"][-1]["loss"]
-                if losses.get("val")
-                else (losses["train"][-1]["loss"] if losses.get("train") else None)
+                losses["train"][-1]["loss"] if losses.get("train") else None
             ),
-            "best_validation_loss": losses.get("best_validation_loss"),
-            "best_validation_epoch": losses.get("best_validation_epoch"),
+            "best_validation_loss": None,
+            "best_validation_epoch": None,
             "epochs_trained": self.num_outer_epochs,
             "num_outer_epochs": self.num_outer_epochs,
             "num_inner_epochs": self.num_inner_epochs,
@@ -541,30 +539,17 @@ class FNPEMethod(BaseMethod):
         window_size: int,
         num_simulations: int,
     ):
-        """Train the FNPE score network with MarkovSBI-style outer/inner loops."""
+        """Train the FNPE score network with a fixed outer/inner schedule."""
         key = self._key
         key, key_init = jax.random.split(key, 2)
         total_items = int(data["thetas"].shape[0])
         if total_items < 2:
             raise ValueError("FNPE training requires at least two generated samples.")
 
-        desired_val = int(np.floor(0.1 * num_simulations))
-        desired_val = min(self.validation_size, desired_val)
-        if total_items > self.batch_size:
-            desired_val = max(desired_val, min(self.batch_size, total_items - 1))
-        else:
-            desired_val = min(max(1, total_items // 5), total_items - 1)
-        val_size = int(min(max(desired_val, 1), total_items - 1))
-        train_size = int(total_items - val_size)
-
         theta_all = data["thetas"]
         xs_all = data["xs"]
-        theta_val = theta_all[:val_size]
-        xs_val = xs_all[:val_size]
-        theta_train = theta_all[val_size:]
-        xs_train = xs_all[val_size:]
-        train_data = {"thetas": theta_train, "xs": xs_train}
-        val_data = {"thetas": theta_val, "xs": xs_val}
+        train_size = int(total_items)
+        train_data = {"thetas": theta_all, "xs": xs_all}
 
         # Preconditioning
         c_in, c_noise, c_out = precondition_functions(self.sde)
@@ -580,9 +565,9 @@ class FNPEMethod(BaseMethod):
             c_out=c_out,
         )
 
-        # Build batch samplers for training and validation
+        # Build batch sampler over the full training set. FNPE now uses a fixed
+        # schedule without validation-based checkpoint selection.
         train_batch_sampler = build_batch_sampler(train_data)
-        val_batch_sampler = build_batch_sampler(val_data)
         loss_fn = build_loss_fn(
             "dsm", score_net, self.sde, self.weight_fn, control_variate=True
         )
@@ -602,7 +587,7 @@ class FNPEMethod(BaseMethod):
             f"[FNPE] Training schedule: outer_epochs={self.num_outer_epochs}, "
             f"inner_updates_per_outer={inner_updates_per_outer}, "
             f"total_updates={total_optimizer_updates}, "
-            f"train_size={train_size}, val_size={val_size}",
+            f"train_size={train_size}",
             flush=True,
         )
 
@@ -632,10 +617,6 @@ class FNPEMethod(BaseMethod):
             params = optax.apply_updates(params, updates)
             return loss, params, opt_state
 
-        @jax.jit
-        def eval_loss(params, rng, theta_batch, x_batch):
-            return loss_fn(params, rng, theta_batch, x_batch)
-
         # JIT warmup
         print("[FNPE] JIT compiling...", flush=True)
         key, key_batch, key_loss = jax.random.split(key, 3)
@@ -647,10 +628,6 @@ class FNPEMethod(BaseMethod):
         print("[FNPE] JIT compilation complete.", flush=True)
 
         train_losses = []
-        val_losses = []
-        best_validation_loss = float("inf")
-        best_validation_epoch = None
-        best_params = params
 
         print(
             f"[FNPE] Starting training: {self.num_outer_epochs} outer epochs, "
@@ -683,42 +660,22 @@ class FNPEMethod(BaseMethod):
             epoch_train_loss = float(jnp.mean(all_losses))
             train_losses.append({"epoch": int(epoch + 1), "loss": epoch_train_loss})
 
-            val_batch_losses = []
-            num_val_batches = max(1, min(self.num_inner_epochs, val_size // max(1, self.batch_size) + 1))
-            for _ in range(num_val_batches):
-                key, key_batch, key_loss = jax.random.split(key, 3)
-                theta_batch, x_batch = val_batch_sampler(key_batch, min(self.batch_size, val_size))
-                val_batch_loss = eval_loss(params, key_loss, theta_batch, x_batch)
-                val_batch_losses.append(float(val_batch_loss))
-            epoch_val_loss = float(np.mean(val_batch_losses))
-            val_losses.append({"epoch": int(epoch + 1), "loss": epoch_val_loss})
-
             print(
                 f"[FNPE] Epoch {epoch+1}/{self.num_outer_epochs}: "
-                f"Train={epoch_train_loss:.6f} | Val={epoch_val_loss:.6f}",
+                f"Train={epoch_train_loss:.6f}",
                 flush=True,
             )
 
-            if epoch_val_loss < best_validation_loss:
-                best_validation_loss = epoch_val_loss
-                best_validation_epoch = int(epoch + 1)
-                best_params = params
-
         self._key = key
-        params = best_params
 
         return (
             params,
             score_net,
             {
                 "train": train_losses,
-                "val": val_losses,
-                "best_validation_loss": (
-                    float(best_validation_loss)
-                    if best_validation_epoch is not None
-                    else None
-                ),
-                "best_validation_epoch": best_validation_epoch,
+                "val": [],
+                "best_validation_loss": None,
+                "best_validation_epoch": None,
             },
             inner_updates_per_outer,
             total_optimizer_updates,

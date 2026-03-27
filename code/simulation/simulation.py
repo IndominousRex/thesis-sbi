@@ -511,6 +511,9 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
             center_ms=cfg.init_speed_center_ms,
             range_ms=cfg.init_speed_range_ms,
         )
+        simulator._last_state0_batch = torch.from_numpy(
+            np.asarray(S0, dtype=np.float32).copy()
+        )
         P = expand_theta_to_full(theta_np, cfg)
 
         y_batch = vmapped_rollout_train(P, S0, ctrls)  # (B, T_seg, d_obs)
@@ -530,6 +533,9 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
         c = controls_to_array(ctrls)  # (T_seg, 4)
         c_rep = jnp.broadcast_to(c, (B, c.shape[0], c.shape[1]))  # (B, T_seg, 4)
         yc = jnp.concatenate([y_batch, c_rep], axis=-1)  # (B, T_seg, D_in)
+        simulator._last_controls_array = torch.from_numpy(
+            np.asarray(c_rep, dtype=np.float32).copy()
+        )
 
         yc_numpy = np.asarray(yc, dtype=np.float32)
         yc_numpy_copy = yc_numpy.copy()  # to ensure contiguous array

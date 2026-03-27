@@ -211,7 +211,7 @@ def _plot_metric_vs_budget(
         fig.text(
             0.5,
             0.02,
-            "Training time reflects time-to-convergence / best-validation stopping where applicable.",
+            "Training time reflects the configured training schedule for each run; older experiments may include best-validation stopping.",
             ha="center",
             fontsize=9,
         )

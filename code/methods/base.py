@@ -8,8 +8,10 @@ must implement to ensure fair and consistent experiments.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from types import MethodType
 from typing import Any, Dict, Optional, Tuple
 import torch
+from torch.utils import data
 
 
 @dataclass
@@ -165,3 +167,46 @@ class BaseMethod(ABC):
             samples = self.posterior.sample((num_samples,), x=x_obs, **kwargs)
 
         return samples
+
+    def _install_fixed_epoch_full_data_loaders(self):
+        """
+        Patch sbi trainers to monitor on the full dataset instead of creating a
+        held-out validation split. This keeps all simulations in the training set
+        while still satisfying the trainer's expected train/val loader interface.
+        """
+        if self.inference is None or not hasattr(self.inference, "get_simulations"):
+            return None
+
+        original_get_dataloaders = self.inference.get_dataloaders
+
+        def _get_dataloaders(
+            inference_self,
+            starting_round: int = 0,
+            training_batch_size: int = 200,
+            validation_fraction: float = 0.1,
+            resume_training: bool = False,
+            dataloader_kwargs: Optional[dict] = None,
+        ):
+            theta, x, prior_masks = inference_self.get_simulations(starting_round)
+            dataset = data.TensorDataset(theta, x, prior_masks)
+            num_examples = int(theta.size(0))
+            batch_size = max(1, min(int(training_batch_size), num_examples))
+            base_kwargs = {
+                "batch_size": batch_size,
+                "drop_last": True,
+            }
+            if dataloader_kwargs is not None:
+                base_kwargs = dict(base_kwargs, **dataloader_kwargs)
+
+            train_loader = data.DataLoader(dataset, shuffle=True, **base_kwargs)
+            val_loader = data.DataLoader(dataset, shuffle=False, **base_kwargs)
+
+            full_indices = torch.arange(num_examples)
+            inference_self.train_indices = full_indices
+            inference_self.val_indices = full_indices
+            return train_loader, val_loader
+
+        self.inference.get_dataloaders = MethodType(
+            _get_dataloaders, self.inference
+        )
+        return original_get_dataloaders

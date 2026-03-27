@@ -225,13 +225,14 @@ def create_config(
         "run_posterior_plots": True,
         "run_lc2st": method == "npe",  # Only for NPE
         "unify_eval_budgets": True,
-        "num_sbc_samples": 50,
-        "num_posterior_samples_sbc": 200,
-        "num_test_simulations": 100,
+        "num_sbc_samples": 400,
+        "num_posterior_samples_sbc": 2000,
+        "num_test_simulations": 500,
         "run_simulated_test_eval": True,
         "run_simulated_ppc": True,
-        "num_simulated_ppc_examples": 2,
-        "simulated_test_ppc_samples": 200,
+        "num_simulated_ppc_examples": 50,
+        "num_simulated_ppc_plot_examples": 2,
+        "simulated_test_ppc_samples": 400,
         # Simulated-data-only runs
         "real_data_csv": None,
         "checkpoint": checkpoint,
@@ -273,7 +274,8 @@ def create_config(
                 "num_sbc_samples": 5,
                 "num_posterior_samples_sbc": 50,
                 "num_test_simulations": 20,
-                "num_simulated_ppc_examples": 1,
+                "num_simulated_ppc_examples": 5,
+                "num_simulated_ppc_plot_examples": 1,
                 "simulated_test_ppc_samples": 20,
                 "num_epochs": 20,
                 "stop_after_epochs": 5,
@@ -311,7 +313,7 @@ def create_config(
                     "fnpe_num_outer_epochs": 8,
                     "fnpe_num_inner_epochs": 4,
                     "fnpe_batch_size": 256,
-                    "fnpe_validation_size": 128,
+                    "fnpe_validation_size": 0,
                 }
             )
 
@@ -322,6 +324,7 @@ def create_config(
                     "num_posterior_samples_sbc": 20,
                     "num_test_simulations": 10,
                     "simulated_test_ppc_samples": 10,
+                    "num_simulated_ppc_plot_examples": 1,
                 }
             )
             if method == "simformer":
@@ -344,10 +347,12 @@ def create_config(
                         "fnpe_num_outer_epochs": 4,
                         "fnpe_num_inner_epochs": 2,
                         "fnpe_batch_size": 64,
-                        "fnpe_validation_size": 32,
+                        "fnpe_validation_size": 0,
                         "fnpe_pilot_fraction": 0.05,
                         "fnpe_pilot_length": 256,
                         "num_test_simulations": 3,
+                        "num_simulated_ppc_examples": 2,
+                        "num_simulated_ppc_plot_examples": 1,
                         "simulated_test_ppc_samples": 5,
                     }
                 )
@@ -386,7 +391,7 @@ def create_config(
                     "fnpe_num_outer_epochs": 2,
                     "fnpe_num_inner_epochs": 2,
                     "fnpe_batch_size": 64,
-                    "fnpe_validation_size": 32,
+                    "fnpe_validation_size": 0,
                 }
             )
         else:

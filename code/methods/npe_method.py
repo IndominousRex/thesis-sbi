@@ -70,15 +70,21 @@ class NPEMethod(BaseMethod):
 
         # Train
         train_start = time.time()
-        self.model = self.inference.train(
-            learning_rate=self.cfg.learning_rate,
-            training_batch_size=self.cfg.training_batch_size,
-            validation_fraction=self.cfg.validation_fraction,
-            stop_after_epochs=self.cfg.stop_after_epochs,
-            clip_max_norm=self.cfg.clip_max_norm,
-            show_train_summary=True,
-            use_combined_loss=False,
-        )
+        original_get_dataloaders = self._install_fixed_epoch_full_data_loaders()
+        try:
+            self.model = self.inference.train(
+                learning_rate=self.cfg.learning_rate,
+                training_batch_size=self.cfg.training_batch_size,
+                validation_fraction=self.cfg.validation_fraction,
+                stop_after_epochs=self.cfg.num_epochs + 1,
+                max_num_epochs=max(0, self.cfg.num_epochs - 1),
+                clip_max_norm=self.cfg.clip_max_norm,
+                show_train_summary=True,
+                use_combined_loss=False,
+            )
+        finally:
+            if original_get_dataloaders is not None:
+                self.inference.get_dataloaders = original_get_dataloaders
         train_time = time.time() - train_start
 
         self.model.to(self.device).eval()
@@ -88,8 +94,10 @@ class NPEMethod(BaseMethod):
         self._training_summary = {
             "train_loss": summary.get("training_loss", []),
             "train_time_s": train_time,
-            "val_loss": summary.get("validation_loss", []),
-            "best_val_loss": summary.get("best_validation_loss", None),
+            "val_loss": [],
+            "best_val_loss": None,
+            "epochs_trained": self.cfg.num_epochs,
+            "fixed_epoch_schedule": True,
         }
 
         return self._training_summary

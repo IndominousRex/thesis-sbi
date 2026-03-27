@@ -122,7 +122,7 @@ class ExperimentConfig:
     fnpe_num_outer_epochs: int = 100  # MarkovSBI-style outer epochs
     fnpe_num_inner_epochs: int = 50  # Inner passes scaled by dataset size
     fnpe_batch_size: int = 1000  # Match MarkovSBI score_large baseline
-    fnpe_validation_size: int = 1000  # Held-out validation items for best-param selection
+    fnpe_validation_size: int = 0  # Deprecated: FNPE now trains on a fixed schedule without validation
     fnpe_learning_rate: float = 5e-4  # Match MarkovSBI score_large baseline
     fnpe_clip_max_norm: float = 20.0  # Match MarkovSBI score_large baseline
     fnpe_optimizer: str = "adamw"
@@ -210,10 +210,10 @@ class ExperimentConfig:
     simformer_train_steps_scaling: int = 3
     simformer_min_train_steps: int = 5000
     simformer_max_train_steps: int = 100000
-    simformer_validation_fraction: float = 0.05
+    simformer_validation_fraction: float = 0.0
     simformer_val_repeat: int = 5
-    simformer_val_every: int = 50  # Number of validation checks over full training
-    simformer_stop_early_count: int = 5
+    simformer_val_every: int = 50  # Deprecated when validation_fraction=0
+    simformer_stop_early_count: int = 5  # Deprecated when validation_fraction=0
     simformer_val_error_ratio: float = 1.1
     # Deprecated legacy knobs from the old embedding-based wrapper.
     simformer_num_train_steps: int = 50000
@@ -222,12 +222,12 @@ class ExperimentConfig:
     # --- Training ---
     learning_rate: float = 5e-4  # Lower LR for complex data (MarkovSBI large uses 5e-4)
     training_batch_size: int = 512  # Larger batch for stability
-    validation_fraction: float = 0.15  # 15% for stable validation metrics
-    stop_after_epochs: int = 30  # High patience, let LR schedule do its work
+    validation_fraction: float = 0.15  # sbi uses this for monitoring loaders; early stopping is disabled
+    stop_after_epochs: int = 30  # Deprecated for benchmark runs using fixed max epochs
     clip_max_norm: float = (
         20.0  # Higher clip for complex data (MarkovSBI large uses 20)
     )
-    num_epochs: int = 200  # More epochs for complex data (MarkovSBI large uses 100)
+    num_epochs: int = 500  # Fixed full-run schedule for NPE/NPSE on the shared training dataset
 
     # --- SBC / diagnostics ---
     num_sbc_samples: int = 400
@@ -246,7 +246,8 @@ class ExperimentConfig:
     run_simulated_test_eval: bool = True  # Run held-out synthetic test evaluation
     run_simulated_ppc: bool = True  # Run simulated PPC on held-out synthetic cases
     num_test_simulations: int = 500  # Size of held-out synthetic test set
-    num_simulated_ppc_examples: int = 4  # Number of held-out PPC plots to save
+    num_simulated_ppc_examples: int = 50  # Number of held-out PPC cases used in the metric
+    num_simulated_ppc_plot_examples: int = 2  # Number of held-out PPC figures to save
     simulated_test_ppc_samples: int = 400  # PPC samples per held-out test case
     benchmark_posterior_plot_examples: int = 3
     benchmark_posterior_plot_samples: int = 10000
@@ -383,6 +384,7 @@ class ExperimentConfig:
         """Generate a unique ID for the shared held-out synthetic test set."""
         test_params = {
             "holdout_region_version": "prior_quantile_v2",
+            "test_dataset_format": "true_state0_v1",
             "benchmark_eval_seed": self.benchmark_eval_seed,
             "num_test_simulations": self.num_test_simulations,
             "T_seg": self.T_seg,
