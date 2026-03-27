@@ -2666,17 +2666,21 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 w2_cases = min(20, int(cfg.num_test_simulations))
                 w2_posterior_samples = 50
         elif getattr(cfg, "unify_eval_budgets", False):
-            posterior_plot_examples = 2
-            pairplot_examples = 2
-            pairplot_posterior_samples = 500
-            c2st_examples = 2
-            c2st_posterior_samples = 500
-            one_step_cases = 20
-            one_step_posterior_samples = 50
-            w2_cases = 50
-            w2_posterior_samples = 200
+            posterior_plot_examples = int(cfg.benchmark_posterior_plot_examples)
+            posterior_plot_samples = int(cfg.benchmark_posterior_plot_samples)
+            pairplot_examples = int(cfg.benchmark_pairplot_examples)
+            pairplot_posterior_samples = int(cfg.benchmark_pairplot_posterior_samples)
+            c2st_examples = int(cfg.benchmark_c2st_examples)
+            c2st_posterior_samples = int(cfg.benchmark_c2st_posterior_samples)
+            one_step_cases = min(
+                int(cfg.benchmark_one_step_cases), int(cfg.num_test_simulations)
+            )
+            one_step_posterior_samples = int(cfg.benchmark_one_step_posterior_samples)
+            w2_cases = min(int(cfg.benchmark_w2_cases), int(cfg.num_test_simulations))
+            w2_posterior_samples = int(cfg.benchmark_w2_posterior_samples)
         else:
             posterior_plot_examples = 3 if cfg.method == "npe" else 2
+            posterior_plot_samples = 5000
             pairplot_examples = 3 if cfg.method == "npe" else 2
             pairplot_posterior_samples = 1000 if cfg.method == "npe" else 500
             c2st_examples = 3 if cfg.method == "npe" else 2
@@ -2685,6 +2689,10 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             one_step_posterior_samples = 100
             w2_cases = 100
             w2_posterior_samples = 500
+        if not cfg.no_plots and not getattr(cfg, "unify_eval_budgets", False):
+            posterior_plot_samples = 5000
+        elif cfg.no_plots:
+            posterior_plot_samples = 0
 
         shared_examples: Optional[List[Dict[str, Any]]] = None
         shared_eval_theta_phys: Optional[torch.Tensor] = theta_test_phys
@@ -2738,7 +2746,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 normalizer,
                 device,
                 num_examples=posterior_plot_examples,
-                num_posterior_samples=5000,
+                num_posterior_samples=posterior_plot_samples,
                 method=method,  # Pass method for FNPE
                 examples=shared_examples[:posterior_plot_examples],
             )

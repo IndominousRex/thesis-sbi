@@ -230,11 +230,11 @@ class ExperimentConfig:
     num_epochs: int = 200  # More epochs for complex data (MarkovSBI large uses 100)
 
     # --- SBC / diagnostics ---
-    num_sbc_samples: int = 200
-    num_posterior_samples_sbc: int = 1000
+    num_sbc_samples: int = 400
+    num_posterior_samples_sbc: int = 2000
     num_calibration_items: int = 5
     num_lc2st_samples: Optional[int] = None  # Computed in post_init
-    num_swd_projections: int = 1000
+    num_swd_projections: int = 2000
 
     # --- Diagnostic options ---
     run_sbc: bool = False
@@ -245,9 +245,19 @@ class ExperimentConfig:
     unify_eval_budgets: bool = True  # Use identical evaluation budgets across methods
     run_simulated_test_eval: bool = True  # Run held-out synthetic test evaluation
     run_simulated_ppc: bool = True  # Run simulated PPC on held-out synthetic cases
-    num_test_simulations: int = 100  # Size of held-out synthetic test set
-    num_simulated_ppc_examples: int = 2  # Number of held-out PPC plots to save
-    simulated_test_ppc_samples: int = 200  # PPC samples per held-out test case
+    num_test_simulations: int = 500  # Size of held-out synthetic test set
+    num_simulated_ppc_examples: int = 4  # Number of held-out PPC plots to save
+    simulated_test_ppc_samples: int = 400  # PPC samples per held-out test case
+    benchmark_posterior_plot_examples: int = 3
+    benchmark_posterior_plot_samples: int = 10000
+    benchmark_pairplot_examples: int = 3
+    benchmark_pairplot_posterior_samples: int = 1000
+    benchmark_c2st_examples: int = 3
+    benchmark_c2st_posterior_samples: int = 1000
+    benchmark_one_step_cases: int = 50
+    benchmark_one_step_posterior_samples: int = 100
+    benchmark_w2_cases: int = 100
+    benchmark_w2_posterior_samples: int = 400
     benchmark_eval_seed: int = 314159  # Fixed seed for shared held-out test set
     test_region_theta_tail_frac: float = 0.25  # Parameter-tail width for holdout region
     test_region_require_joint_holdout: bool = True  # Require theta + driving holdout
