@@ -171,17 +171,17 @@ class ExperimentConfig:
     fnpe_gauss_hyper_num_samples: int = 128
 
     # --- Simformer-specific ---
-    simformer_num_timepoints: int = 32  # Timepoints sampled per input channel
+    simformer_num_timepoints: int = 64  # Timepoints sampled per input channel
     simformer_token_dim: int = 40
     simformer_condition_token_dim: int = 10
-    simformer_condition_token_init_scale: float = 0.1
+    simformer_condition_token_init_scale: float = 0.01
     simformer_condition_token_init_mean: float = 0.0
     simformer_condition_mode: str = "concat"
     simformer_time_embedding_dim: int = 128
     simformer_num_heads: int = 4
-    simformer_num_layers: int = 6
+    simformer_num_layers: int = 8
     simformer_attn_size: int = 10
-    simformer_widening_factor: int = 3
+    simformer_widening_factor: int = 4
     simformer_num_hidden_layers: int = 1
     simformer_skip_connection_attn: bool = True
     simformer_skip_connection_mlp: bool = True
