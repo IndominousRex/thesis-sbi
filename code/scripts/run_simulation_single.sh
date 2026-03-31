@@ -11,7 +11,7 @@
 #   sbatch scripts/run_simulation_single.sh 20000 1000 cmp_single no simformer 42 "mu"
 #
 # For a guaranteed >=20 GB GPU based on the cluster guide, override on submit:
-#   sbatch --gres=gpu:a100m40:1 scripts/run_simulation_single.sh ...
+#   sbatch --gres=gpu:h200:1 scripts/run_simulation_single.sh ...
 # ==============================================================================
 
 #SBATCH --job-name=sim_cmp_1
@@ -19,7 +19,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:h200:1
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=24:00:00
 #SBATCH --output=sim_cmp_1_%j.out
