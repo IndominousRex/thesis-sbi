@@ -113,7 +113,20 @@ def parse_args():
     parser.add_argument(
         "--independent-datasets",
         action="store_true",
-        help="Disable dataset cache/reuse so each method run generates its own data.",
+        help=(
+            "Disable shared dataset settings so each method run generates its own "
+            "data independently."
+        ),
+    )
+    parser.add_argument(
+        "--cache-datasets",
+        action="store_true",
+        help="Cache freshly generated train/test datasets to disk.",
+    )
+    parser.add_argument(
+        "--reuse-datasets",
+        action="store_true",
+        help="Reuse cached train/test datasets when available.",
     )
     parser.add_argument(
         "--requested-budget-steps",
@@ -194,6 +207,7 @@ def create_config(
     checkpoint: str | None = None,
     do_train: bool = True,
     dataset_id: str = None,  # type: ignore
+    cache_dataset: bool = False,
     reuse_dataset: bool = False,
     independent_datasets: bool = False,
 ) -> ExperimentConfig:
@@ -215,7 +229,7 @@ def create_config(
         "sim_seed": seed,
         "train_seed": seed + 1,
         # Dataset caching
-        "cache_dataset": not independent_datasets,
+        "cache_dataset": False if independent_datasets else cache_dataset,
         "dataset_id": None if independent_datasets else dataset_id,
         "reuse_dataset": False if independent_datasets else reuse_dataset,
         # Diagnostics
@@ -432,7 +446,9 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
     shared_methods = [m for m in args.methods if m != "fnpe"]
     shared_dataset_id = None
 
-    if shared_methods and not args.independent_datasets:
+    use_dataset_cache = bool(args.cache_datasets or args.reuse_datasets)
+
+    if shared_methods and not args.independent_datasets and use_dataset_cache:
         seed_cfg = create_config(
             method=shared_methods[0],
             exp_name=args.exp_name,
@@ -448,7 +464,8 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             checkpoint=args.checkpoint,
             do_train=not args.eval_only,
             dataset_id=None,
-            reuse_dataset=True,
+            cache_dataset=args.cache_datasets,
+            reuse_dataset=args.reuse_datasets,
             independent_datasets=args.independent_datasets,
         )
         shared_dataset_id = seed_cfg.dataset_id
@@ -469,7 +486,12 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             checkpoint=args.checkpoint,
             do_train=not args.eval_only,
             dataset_id=shared_dataset_id,
-            reuse_dataset=method != "fnpe" and shared_dataset_id is not None,
+            cache_dataset=args.cache_datasets,
+            reuse_dataset=(
+                method != "fnpe"
+                and args.reuse_datasets
+                and shared_dataset_id is not None
+            ),
             independent_datasets=args.independent_datasets,
         )
         configs_used[method] = cfg
@@ -695,6 +717,19 @@ def run_comparison(args):
     if args.requested_budget_steps is not None:
         print(f"Requested budget steps: {args.requested_budget_steps}")
     print(f"Device: {args.device}, Quick: {args.quick}, Smoke: {args.smoke}")
+    if args.independent_datasets:
+        print("[INFO] Dataset mode: per-method deterministic regeneration")
+    elif args.cache_datasets or args.reuse_datasets:
+        print(
+            "[INFO] Dataset mode: "
+            f"cache={args.cache_datasets}, reuse={args.reuse_datasets}"
+        )
+    else:
+        sample_cfg = next(iter(configs_used.values()))
+        print(
+            "[INFO] Dataset mode: fresh deterministic regeneration "
+            f"(sim_seed={sample_cfg.sim_seed}, benchmark_eval_seed={sample_cfg.benchmark_eval_seed})"
+        )
     if "fnpe" in args.methods:
         print(
             "[WARN] FNPE uses its own simulator/training-data pipeline; "

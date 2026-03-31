@@ -84,7 +84,7 @@ class ExperimentConfig:
     dataset_id: Optional[str] = None  # Unique ID for cached dataset
     test_dataset_id: Optional[str] = None  # Unique ID for cached held-out test dataset
     dataset_cache_dir: str = "datasets"
-    cache_dataset: bool = True  # Whether to cache generated dataset
+    cache_dataset: bool = False  # Persist generated datasets only when explicitly requested
     reuse_dataset: bool = False  # Whether to load cached dataset if available
 
     # --- Encoder / embedding ---

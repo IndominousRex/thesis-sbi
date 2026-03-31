@@ -5,9 +5,8 @@
 # Submit this script with sbatch. It is designed to run 4 array tasks in
 # parallel by default, one method per task, one GPU per task.
 #
-# The array tasks share cached train/test datasets for fair benchmark runs.
-# Cache creation is guarded in Python, so parallel array tasks can reuse the
-# same datasets without racing.
+# By default each task regenerates its datasets deterministically from the
+# configured seeds. Dataset caching/reuse is now opt-in at the Python entrypoint.
 # ==============================================================================
 
 #SBATCH --job-name=sim_cmp

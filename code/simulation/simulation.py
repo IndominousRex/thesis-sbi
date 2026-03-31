@@ -483,10 +483,11 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
     def simulator(theta: torch.Tensor):
         theta_np = theta.detach().cpu().numpy().astype(np.float32)
         B = theta_np.shape[0]
-
-        rng = np.random.default_rng(
-            getattr(simulator, "_batch_idx", 0) + cfg.random_seed
+        seed_base = int(
+            cfg.sim_seed if getattr(cfg, "sim_seed", None) is not None else cfg.random_seed
         )
+
+        rng = np.random.default_rng(getattr(simulator, "_batch_idx", 0) + seed_base)
         simulator._batch_idx = getattr(simulator, "_batch_idx", 0) + 1
 
         recipe = make_shuffled_U(
