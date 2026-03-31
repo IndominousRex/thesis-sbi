@@ -212,8 +212,8 @@ def _parse_config_from_dir_name(exp_dir: Path, method: str, device: str) -> Expe
         output_dir=str(exp_dir.resolve()),
         results_root=str(exp_dir.parent.resolve()),
         dataset_cache_dir=str((REPO_ROOT / "datasets").resolve()),
-        cache_dataset=True,
-        reuse_dataset=True,
+        cache_dataset=False,
+        reuse_dataset=False,
         run_sbc=False,
         no_plots=False,
         do_train=False,
@@ -246,8 +246,8 @@ def _prepare_eval_config(exp_dir: Path, device: str) -> ExperimentConfig:
     cfg.output_dir = str(exp_dir.resolve())
     cfg.results_root = str(exp_dir.parent.resolve())
     cfg.dataset_cache_dir = str((REPO_ROOT / "datasets").resolve())
-    cfg.cache_dataset = True
-    cfg.reuse_dataset = True
+    cfg.cache_dataset = False
+    cfg.reuse_dataset = False
     cfg.run_sbc = False
     cfg.no_plots = False
     return cfg
