@@ -131,8 +131,73 @@ def _compute_axis_limits(
     return x_limits, y_limits
 
 
+def _compute_seed_offsets(
+    seeds: list[int],
+    x_values: list[float],
+    *,
+    offset_frac: float = 0.02,
+) -> dict[int, float]:
+    if not seeds:
+        return {}
+    if len(seeds) == 1:
+        return {seeds[0]: 0.0}
+
+    x_min = float(min(x_values))
+    x_max = float(max(x_values))
+    x_span = max(x_max - x_min, 1.0)
+    max_offset = x_span * offset_frac
+    offsets = np.linspace(-max_offset, max_offset, len(seeds))
+    return {seed: float(offset) for seed, offset in zip(seeds, offsets)}
+
+
+def _plot_seed_traces(
+    ax: Any,
+    rows: list[dict[str, Any]],
+    methods: list[str],
+    method_colors: dict[str, str],
+    metric_key: str,
+    *,
+    x_key: str,
+    x_offsets: dict[int, float],
+    sort_key: Any,
+) -> None:
+    for method in methods:
+        method_rows = [row for row in rows if row["method"] == method and row.get(metric_key) is not None]
+        if not method_rows:
+            continue
+
+        rows_by_seed: dict[int, list[dict[str, Any]]] = {}
+        for row in method_rows:
+            rows_by_seed.setdefault(int(row["seed"]), []).append(row)
+
+        label_used = False
+        for seed in sorted(rows_by_seed):
+            seed_rows = sorted(rows_by_seed[seed], key=sort_key)
+            xs = [float(row[x_key]) + x_offsets.get(seed, 0.0) for row in seed_rows]
+            ys = [float(row[metric_key]) for row in seed_rows]
+            if len(xs) >= 2:
+                ax.plot(
+                    xs,
+                    ys,
+                    color=method_colors[method],
+                    alpha=0.35,
+                    linewidth=1.2,
+                    zorder=1,
+                )
+            ax.scatter(
+                xs,
+                ys,
+                color=method_colors[method],
+                alpha=0.9,
+                s=45,
+                label=method.upper() if not label_used else None,
+                zorder=2,
+            )
+            label_used = True
+
+
 def _plot_metric_vs_budget(
-    aggregate_rows: list[dict[str, Any]],
+    raw_rows: list[dict[str, Any]],
     params: str,
     metric_key: str,
     metric_label: str,
@@ -146,7 +211,7 @@ def _plot_metric_vs_budget(
     except Exception:
         return False
 
-    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    param_rows = [row for row in raw_rows if row["params"] == params]
     if not param_rows:
         return False
 
@@ -162,39 +227,54 @@ def _plot_metric_vs_budget(
     axes_flat = axes.flatten()
 
     methods = sorted({row["method"] for row in param_rows})
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    if not color_cycle:
+        color_cycle = ["C0", "C1", "C2", "C3", "C4", "C5"]
+    method_colors = {
+        method: color_cycle[idx % len(color_cycle)] for idx, method in enumerate(methods)
+    }
+    seeds = sorted({int(row["seed"]) for row in param_rows})
+    budget_values = [
+        float(row["requested_budget_steps"])
+        for row in param_rows
+        if row.get(metric_key) is not None and row.get("requested_budget_steps") is not None
+    ]
+    seed_offsets = _compute_seed_offsets(seeds, budget_values)
     all_xs: list[float] = []
     all_ys: list[float] = []
     for row in param_rows:
-        summary = row.get(metric_key)
-        if not isinstance(summary, dict) or summary.get("mean") is None:
+        if row.get(metric_key) is None or row.get("requested_budget_steps") is None:
             continue
-        all_xs.append(float(row["requested_budget_steps"]))
-        all_ys.append(float(summary["mean"]))
+        all_xs.append(float(row["requested_budget_steps"]) + seed_offsets.get(int(row["seed"]), 0.0))
+        all_ys.append(float(row[metric_key]))
     x_limits, y_limits = _compute_axis_limits(all_xs, all_ys)
 
     for ax_idx, tseg in enumerate(tsegs):
         ax = axes_flat[ax_idx]
         tseg_rows = [row for row in param_rows if int(row["T_seg"]) == tseg]
-        for method in methods:
-            method_rows = [row for row in tseg_rows if row["method"] == method]
-            xs: list[float] = []
-            ys: list[float] = []
-            for row in sorted(
-                method_rows,
-                key=lambda r: float(
-                    r.get("requested_budget_steps", r.get("total_budget_steps", 0)) or 0
-                ),
-            ):
-                summary = row.get(metric_key)
-                if not isinstance(summary, dict) or summary.get("mean") is None:
-                    continue
-                xs.append(float(row["requested_budget_steps"]))
-                ys.append(float(summary["mean"]))
-            if xs and ys:
-                ax.plot(xs, ys, marker="o", label=method.upper())
+        _plot_seed_traces(
+            ax,
+            tseg_rows,
+            methods,
+            method_colors,
+            metric_key,
+            x_key="requested_budget_steps",
+            x_offsets=seed_offsets,
+            sort_key=lambda r: float(
+                r.get("requested_budget_steps", r.get("total_budget_steps", 0)) or 0
+            ),
+        )
         ax.set_title(f"T_seg={tseg}")
         ax.set_xlabel("Requested Budget Steps")
         ax.set_ylabel(metric_label)
+        ax.set_xticks(
+            sorted(
+                {
+                    int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
+                    for row in tseg_rows
+                }
+            )
+        )
         if x_limits is not None:
             ax.set_xlim(*x_limits)
         if y_limits is not None:
@@ -207,17 +287,24 @@ def _plot_metric_vs_budget(
         ax.axis("off")
 
     fig.suptitle(f"{metric_label} vs Budget | params={params}")
+    footer_lines = [
+        "Each point is one seed; faint same-color lines connect the same seed. Small horizontal offsets separate seeds at the same budget."
+    ]
     if metric_key == "train_time_s":
-        fig.text(
-            0.5,
-            0.02,
-            "Training time reflects the configured training schedule for each run; older experiments may include best-validation stopping.",
-            ha="center",
-            fontsize=9,
+        footer_lines.append(
+            "Training time reflects the configured training schedule for each run; older experiments may include best-validation stopping."
         )
-        fig.tight_layout(rect=(0, 0.05, 1, 0.96))
+    fig.text(
+        0.5,
+        0.02,
+        "\n".join(footer_lines),
+        ha="center",
+        fontsize=9,
+    )
+    if len(footer_lines) > 1:
+        fig.tight_layout(rect=(0, 0.08, 1, 0.96))
     else:
-        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        fig.tight_layout(rect=(0, 0.05, 1, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -225,7 +312,7 @@ def _plot_metric_vs_budget(
 
 
 def _plot_metric_vs_tseg(
-    aggregate_rows: list[dict[str, Any]],
+    raw_rows: list[dict[str, Any]],
     params: str,
     metric_key: str,
     metric_label: str,
@@ -239,7 +326,7 @@ def _plot_metric_vs_tseg(
     except Exception:
         return False
 
-    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    param_rows = [row for row in raw_rows if row["params"] == params]
     if not param_rows:
         return False
 
@@ -260,14 +347,22 @@ def _plot_metric_vs_tseg(
     axes_flat = axes.flatten()
 
     methods = sorted({row["method"] for row in param_rows})
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    if not color_cycle:
+        color_cycle = ["C0", "C1", "C2", "C3", "C4", "C5"]
+    method_colors = {
+        method: color_cycle[idx % len(color_cycle)] for idx, method in enumerate(methods)
+    }
+    seeds = sorted({int(row["seed"]) for row in param_rows})
+    tseg_values = [float(row["T_seg"]) for row in param_rows if row.get(metric_key) is not None]
+    seed_offsets = _compute_seed_offsets(seeds, tseg_values)
     all_xs: list[float] = []
     all_ys: list[float] = []
     for row in param_rows:
-        summary = row.get(metric_key)
-        if not isinstance(summary, dict) or summary.get("mean") is None:
+        if row.get(metric_key) is None:
             continue
-        all_xs.append(float(row["T_seg"]))
-        all_ys.append(float(summary["mean"]))
+        all_xs.append(float(row["T_seg"]) + seed_offsets.get(int(row["seed"]), 0.0))
+        all_ys.append(float(row[metric_key]))
     x_limits, y_limits = _compute_axis_limits(all_xs, all_ys)
 
     for ax_idx, budget in enumerate(budgets):
@@ -278,18 +373,16 @@ def _plot_metric_vs_tseg(
             if int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
             == budget
         ]
-        for method in methods:
-            method_rows = [row for row in budget_rows if row["method"] == method]
-            xs: list[float] = []
-            ys: list[float] = []
-            for row in sorted(method_rows, key=lambda r: int(r["T_seg"])):
-                summary = row.get(metric_key)
-                if not isinstance(summary, dict) or summary.get("mean") is None:
-                    continue
-                xs.append(float(row["T_seg"]))
-                ys.append(float(summary["mean"]))
-            if xs and ys:
-                ax.plot(xs, ys, marker="o", label=method.upper())
+        _plot_seed_traces(
+            ax,
+            budget_rows,
+            methods,
+            method_colors,
+            metric_key,
+            x_key="T_seg",
+            x_offsets=seed_offsets,
+            sort_key=lambda r: int(r["T_seg"]),
+        )
         ax.set_title(f"Budget={budget:.0e}")
         ax.set_xlabel("T_seg")
         ax.set_ylabel(metric_label)
@@ -306,7 +399,14 @@ def _plot_metric_vs_tseg(
         ax.axis("off")
 
     fig.suptitle(f"{metric_label} vs T_seg | params={params}")
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.text(
+        0.5,
+        0.02,
+        "Each point is one seed; faint same-color lines connect the same seed. Small horizontal offsets separate seeds at the same T_seg.",
+        ha="center",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -743,17 +843,17 @@ def main() -> None:
         plot_specs.append((metric_key, label, metric_key))
 
     generated_plots: list[str] = []
-    for params in sorted({row["params"] for row in aggregate_rows}):
+    for params in sorted({row["params"] for row in rows}):
         for metric_key, metric_label, slug in plot_specs:
             output_path = output_json.parent / f"{output_json.stem}_{slug}_{_slugify(params)}.png"
-            if _plot_metric_vs_budget(aggregate_rows, params, metric_key, metric_label, output_path):
+            if _plot_metric_vs_budget(rows, params, metric_key, metric_label, output_path):
                 generated_plots.append(str(output_path))
         tseg_w2_path = (
             output_json.parent
             / f"{output_json.stem}_w2_vs_tseg_{_slugify(params)}.png"
         )
         if _plot_metric_vs_tseg(
-            aggregate_rows,
+            rows,
             params,
             "w2_mean",
             "Held-out W2",
