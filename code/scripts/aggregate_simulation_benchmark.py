@@ -150,6 +150,36 @@ def _compute_seed_offsets(
     return {seed: float(offset) for seed, offset in zip(seeds, offsets)}
 
 
+def _method_color_map(methods: list[str], plt: Any) -> dict[str, str]:
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    if not color_cycle:
+        color_cycle = ["C0", "C1", "C2", "C3", "C4", "C5"]
+    return {method: color_cycle[idx % len(color_cycle)] for idx, method in enumerate(methods)}
+
+
+def _apply_reference_lines(ax: Any, plot_spec: dict[str, Any]) -> None:
+    for value in plot_spec.get("reference_lines", []):
+        ax.axhline(
+            float(value),
+            color="0.45",
+            linestyle="--",
+            linewidth=1.0,
+            alpha=0.9,
+            zorder=0,
+        )
+
+
+def _plot_footer_lines(metric_key: str) -> list[str]:
+    lines = [
+        "Each point is one seed; faint same-color lines connect the same seed. Small horizontal offsets separate seeds at shared x-values."
+    ]
+    if metric_key == "train_time_s":
+        lines.append(
+            "Training time reflects the configured training schedule for each run; older experiments may include best-validation stopping."
+        )
+    return lines
+
+
 def _plot_seed_traces(
     ax: Any,
     rows: list[dict[str, Any]],
@@ -196,11 +226,145 @@ def _plot_seed_traces(
             label_used = True
 
 
+def _base_plot_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "metric_key": "w2_mean",
+            "metric_label": "Held-out W2",
+            "slug": "w2",
+            "figure_families": ["budget", "tseg"],
+            "category": "posterior_quality",
+        },
+        {
+            "metric_key": "l2_error_mean",
+            "metric_label": "Held-out Posterior Mean L2",
+            "slug": "l2",
+            "figure_families": ["budget"],
+            "category": "posterior_quality",
+        },
+        {
+            "metric_key": "heldout_ppc_rmse_mean",
+            "metric_label": "Held-out PPC RMSE",
+            "slug": "ppc_rmse",
+            "figure_families": ["budget", "tseg"],
+            "category": "predictive_quality",
+        },
+        {
+            "metric_key": "heldout_ppc_w2_mean",
+            "metric_label": "Held-out PPC W2",
+            "slug": "ppc_w2",
+            "figure_families": ["budget"],
+            "category": "predictive_quality",
+        },
+        {
+            "metric_key": "coverage_50",
+            "metric_label": "Coverage 50%",
+            "slug": "coverage50",
+            "figure_families": ["budget"],
+            "category": "calibration",
+            "reference_lines": [0.5],
+        },
+        {
+            "metric_key": "coverage_90",
+            "metric_label": "Coverage 90%",
+            "slug": "coverage90",
+            "figure_families": ["budget"],
+            "category": "calibration",
+            "reference_lines": [0.9],
+        },
+        {
+            "metric_key": "coverage_curve_mae",
+            "metric_label": "Coverage Curve MAE (lower is better)",
+            "slug": "coverage_curve_mae",
+            "figure_families": ["budget", "tseg"],
+            "category": "calibration",
+        },
+        {
+            "metric_key": "train_time_s",
+            "metric_label": "Training Time (s)",
+            "slug": "train_time",
+            "figure_families": ["budget"],
+            "category": "runtime",
+        },
+        {
+            "metric_key": "sampling_time_mean_s",
+            "metric_label": "Sampling Time / Case (s)",
+            "slug": "sampling_time",
+            "figure_families": ["budget"],
+            "category": "runtime",
+        },
+    ]
+
+
+def _per_parameter_plot_specs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    suffix_specs = [
+        ("rmse_phys", "RMSE (physical units)", None),
+        ("rmse_norm", "RMSE (normalized)", None),
+        ("mae_mean_phys", "MAE (physical units)", None),
+        ("mae_mean_norm", "MAE (normalized)", None),
+        ("bias_mean_phys", "Bias Mean (physical units)", [0.0]),
+        ("bias_mean_norm", "Bias Mean (normalized)", [0.0]),
+        ("w1_mean_phys", "W1 Mean (physical units)", None),
+        ("w1_mean_norm", "W1 Mean (normalized)", None),
+    ]
+    available_keys = {key for row in rows for key in row.keys()}
+    plot_specs: list[dict[str, Any]] = []
+    for suffix, suffix_label, reference_lines in suffix_specs:
+        matching_keys = sorted(
+            key for key in available_keys if key.endswith(f"_{suffix}")
+        )
+        for key in matching_keys:
+            param_name = key[: -(len(suffix) + 1)]
+            spec = {
+                "metric_key": key,
+                "metric_label": f"{param_name} {suffix_label}",
+                "slug": key,
+                "figure_families": ["budget"],
+                "category": "per_parameter",
+            }
+            if reference_lines is not None:
+                spec["reference_lines"] = reference_lines
+            plot_specs.append(spec)
+    return plot_specs
+
+
+def _pareto_plot_specs() -> list[dict[str, Any]]:
+    return [
+        {
+            "slug": "pareto_train_time_vs_w2",
+            "x_metric_key": "train_time_s",
+            "x_label": "Training Time (s)",
+            "y_metric_key": "w2_mean",
+            "y_label": "Held-out W2",
+            "log_x": True,
+        },
+        {
+            "slug": "pareto_sampling_time_vs_ppc_rmse",
+            "x_metric_key": "sampling_time_mean_s",
+            "x_label": "Sampling Time / Case (s)",
+            "y_metric_key": "heldout_ppc_rmse_mean",
+            "y_label": "Held-out PPC RMSE",
+            "log_x": True,
+        },
+    ]
+
+
+def _build_plot_registry(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    base_specs = _base_plot_specs()
+    per_param_specs = _per_parameter_plot_specs(rows)
+    all_specs = base_specs + per_param_specs
+    return {
+        "all": all_specs,
+        "budget": [spec for spec in all_specs if "budget" in spec["figure_families"]],
+        "tseg": [spec for spec in all_specs if "tseg" in spec["figure_families"]],
+        "pareto": _pareto_plot_specs(),
+    }
+
+
 def _plot_metric_vs_budget(
     raw_rows: list[dict[str, Any]],
     params: str,
-    metric_key: str,
-    metric_label: str,
+    plot_spec: dict[str, Any],
     output_path: Path,
 ) -> bool:
     try:
@@ -215,6 +379,8 @@ def _plot_metric_vs_budget(
     if not param_rows:
         return False
 
+    metric_key = plot_spec["metric_key"]
+    metric_label = plot_spec["metric_label"]
     tsegs = sorted({int(row["T_seg"]) for row in param_rows})
     if not tsegs:
         return False
@@ -227,12 +393,7 @@ def _plot_metric_vs_budget(
     axes_flat = axes.flatten()
 
     methods = sorted({row["method"] for row in param_rows})
-    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
-    if not color_cycle:
-        color_cycle = ["C0", "C1", "C2", "C3", "C4", "C5"]
-    method_colors = {
-        method: color_cycle[idx % len(color_cycle)] for idx, method in enumerate(methods)
-    }
+    method_colors = _method_color_map(methods, plt)
     seeds = sorted({int(row["seed"]) for row in param_rows})
     budget_values = [
         float(row["requested_budget_steps"])
@@ -267,6 +428,7 @@ def _plot_metric_vs_budget(
         ax.set_title(f"T_seg={tseg}")
         ax.set_xlabel("Requested Budget Steps")
         ax.set_ylabel(metric_label)
+        _apply_reference_lines(ax, plot_spec)
         ax.set_xticks(
             sorted(
                 {
@@ -287,13 +449,7 @@ def _plot_metric_vs_budget(
         ax.axis("off")
 
     fig.suptitle(f"{metric_label} vs Budget | params={params}")
-    footer_lines = [
-        "Each point is one seed; faint same-color lines connect the same seed. Small horizontal offsets separate seeds at the same budget."
-    ]
-    if metric_key == "train_time_s":
-        footer_lines.append(
-            "Training time reflects the configured training schedule for each run; older experiments may include best-validation stopping."
-        )
+    footer_lines = _plot_footer_lines(metric_key)
     fig.text(
         0.5,
         0.02,
@@ -314,8 +470,7 @@ def _plot_metric_vs_budget(
 def _plot_metric_vs_tseg(
     raw_rows: list[dict[str, Any]],
     params: str,
-    metric_key: str,
-    metric_label: str,
+    plot_spec: dict[str, Any],
     output_path: Path,
 ) -> bool:
     try:
@@ -330,6 +485,8 @@ def _plot_metric_vs_tseg(
     if not param_rows:
         return False
 
+    metric_key = plot_spec["metric_key"]
+    metric_label = plot_spec["metric_label"]
     budgets = sorted(
         {
             int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
@@ -347,12 +504,7 @@ def _plot_metric_vs_tseg(
     axes_flat = axes.flatten()
 
     methods = sorted({row["method"] for row in param_rows})
-    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
-    if not color_cycle:
-        color_cycle = ["C0", "C1", "C2", "C3", "C4", "C5"]
-    method_colors = {
-        method: color_cycle[idx % len(color_cycle)] for idx, method in enumerate(methods)
-    }
+    method_colors = _method_color_map(methods, plt)
     seeds = sorted({int(row["seed"]) for row in param_rows})
     tseg_values = [float(row["T_seg"]) for row in param_rows if row.get(metric_key) is not None]
     seed_offsets = _compute_seed_offsets(seeds, tseg_values)
@@ -386,6 +538,7 @@ def _plot_metric_vs_tseg(
         ax.set_title(f"Budget={budget:.0e}")
         ax.set_xlabel("T_seg")
         ax.set_ylabel(metric_label)
+        _apply_reference_lines(ax, plot_spec)
         ax.set_xticks(sorted({int(row['T_seg']) for row in budget_rows}))
         if x_limits is not None:
             ax.set_xlim(*x_limits)
@@ -402,11 +555,143 @@ def _plot_metric_vs_tseg(
     fig.text(
         0.5,
         0.02,
-        "Each point is one seed; faint same-color lines connect the same seed. Small horizontal offsets separate seeds at the same T_seg.",
+        "\n".join(_plot_footer_lines(metric_key)),
         ha="center",
         fontsize=9,
     )
     fig.tight_layout(rect=(0, 0.05, 1, 0.96))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _pareto_front_mask(points: list[tuple[float, float]]) -> list[bool]:
+    mask = [True] * len(points)
+    for idx, (x_i, y_i) in enumerate(points):
+        for jdx, (x_j, y_j) in enumerate(points):
+            if idx == jdx:
+                continue
+            dominates = (x_j <= x_i and y_j <= y_i) and (x_j < x_i or y_j < y_i)
+            if dominates:
+                mask[idx] = False
+                break
+    return mask
+
+
+def _plot_pareto_scatter(
+    raw_rows: list[dict[str, Any]],
+    params: str,
+    plot_spec: dict[str, Any],
+    output_path: Path,
+) -> bool:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
+    except Exception:
+        return False
+
+    x_metric_key = plot_spec["x_metric_key"]
+    y_metric_key = plot_spec["y_metric_key"]
+    param_rows = [
+        row
+        for row in raw_rows
+        if row["params"] == params
+        and row.get(x_metric_key) is not None
+        and row.get(y_metric_key) is not None
+    ]
+    if not param_rows:
+        return False
+
+    fig, ax = plt.subplots(figsize=(8.5, 6.5))
+    methods = sorted({row["method"] for row in param_rows})
+    method_colors = _method_color_map(methods, plt)
+    tsegs = sorted({int(row["T_seg"]) for row in param_rows})
+    marker_cycle = ["o", "s", "^", "D", "P", "X", "v", "<", ">"]
+    tseg_markers = {
+        tseg: marker_cycle[idx % len(marker_cycle)] for idx, tseg in enumerate(tsegs)
+    }
+
+    points = [
+        (float(row[x_metric_key]), float(row[y_metric_key])) for row in param_rows
+    ]
+    pareto_mask = _pareto_front_mask(points)
+
+    for row, is_front in zip(param_rows, pareto_mask):
+        x_val = float(row[x_metric_key])
+        y_val = float(row[y_metric_key])
+        ax.scatter(
+            x_val,
+            y_val,
+            color=method_colors[row["method"]],
+            marker=tseg_markers[int(row["T_seg"])],
+            s=85 if is_front else 60,
+            alpha=0.95 if is_front else 0.65,
+            edgecolors="black" if is_front else "none",
+            linewidths=0.5 if is_front else 0.0,
+            zorder=3 if is_front else 2,
+        )
+        if is_front:
+            label = (
+                f"{row['method'].upper()} "
+                f"b={int(row['requested_budget_steps']):.0e} "
+                f"T={int(row['T_seg'])} s={int(row['seed'])}"
+            )
+            ax.annotate(
+                label,
+                (x_val, y_val),
+                xytext=(5, 4),
+                textcoords="offset points",
+                fontsize=8,
+            )
+
+    if plot_spec.get("log_x"):
+        ax.set_xscale("log")
+    ax.set_xlabel(plot_spec["x_label"])
+    ax.set_ylabel(plot_spec["y_label"])
+    ax.set_title(f"{plot_spec['y_label']} vs {plot_spec['x_label']} | params={params}")
+    ax.grid(True, alpha=0.3)
+
+    method_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="none",
+            markerfacecolor=method_colors[method],
+            markeredgecolor="none",
+            markersize=8,
+            label=method.upper(),
+        )
+        for method in methods
+    ]
+    tseg_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker=tseg_markers[tseg],
+            color="black",
+            linestyle="None",
+            markersize=8,
+            label=f"T_seg={tseg}",
+        )
+        for tseg in tsegs
+    ]
+    first_legend = ax.legend(handles=method_handles, title="Method", loc="upper right")
+    ax.add_artist(first_legend)
+    ax.legend(handles=tseg_handles, title="T_seg", loc="lower left")
+
+    fig.text(
+        0.5,
+        0.02,
+        "Each point is one seed-run. Labels are shown only for non-dominated Pareto-front points.",
+        ha="center",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0.05, 1, 0.98))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -435,7 +720,7 @@ def _collect_plot_gallery(
     }
 
     copied: list[dict[str, Any]] = []
-    grouped_images: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    grouped_images: dict[tuple[str, str, str, int], list[dict[str, Any]]] = {}
 
     for record in completed_runs:
         cfg = record["cfg"]
@@ -480,54 +765,85 @@ def _collect_plot_gallery(
                 }
                 copied.append(entry)
                 grouped_images.setdefault(
-                    (plot_kind, params_slug, example_key), []
+                    (plot_kind, params_slug, example_key, seed), []
                 ).append(entry)
 
     contact_sheets: list[str] = []
-    for (plot_kind, params_slug, example_key), entries in grouped_images.items():
-        entries = sorted(
-            entries,
-            key=lambda item: (
-                item["requested_budget_steps"],
-                item["T_seg"],
-                item["method"],
-                item["seed"],
-            ),
+    sheet_metadata: list[dict[str, Any]] = []
+    for (plot_kind, params_slug, example_key, seed), entries in grouped_images.items():
+        entries = sorted(entries, key=lambda item: (item["requested_budget_steps"], item["T_seg"], item["method"]))
+        methods = sorted({str(item["method"]) for item in entries})
+        combos = sorted(
+            {
+                (int(item["requested_budget_steps"]), int(item["T_seg"]))
+                for item in entries
+            }
         )
-        ncols = min(4, len(entries))
-        nrows = int(np.ceil(len(entries) / ncols))
+        if not methods or not combos:
+            continue
+
+        entry_lookup = {
+            (str(item["method"]), int(item["requested_budget_steps"]), int(item["T_seg"])): item
+            for item in entries
+        }
+        nrows = len(methods)
+        ncols = len(combos)
         fig, axes = plt.subplots(
             nrows,
             ncols,
-            figsize=(4.6 * ncols, 3.8 * nrows),
+            figsize=(3.6 * ncols, 3.2 * nrows),
             squeeze=False,
         )
-        axes_flat = axes.flatten()
-        for ax, entry in zip(axes_flat, entries):
-            image = plt.imread(entry["copied_to"])
-            ax.imshow(image)
-            ax.set_title(
-                f"{entry['method'].upper()} | b={entry['requested_budget_steps']:.0e}\n"
-                f"T={entry['T_seg']} | s={entry['seed']}",
-                fontsize=9,
-            )
-            ax.axis("off")
-        for ax in axes_flat[len(entries) :]:
-            ax.axis("off")
+        for row_idx, method in enumerate(methods):
+            for col_idx, (budget, tseg) in enumerate(combos):
+                ax = axes[row_idx][col_idx]
+                entry = entry_lookup.get((method, budget, tseg))
+                if entry is None:
+                    ax.axis("off")
+                    ax.text(0.5, 0.5, "No plot", ha="center", va="center", fontsize=9, color="0.4")
+                else:
+                    image = plt.imread(entry["copied_to"])
+                    ax.imshow(image)
+                    ax.axis("off")
+                if row_idx == 0:
+                    ax.set_title(f"b={budget:.0e}\nT={tseg}", fontsize=9)
+                if col_idx == 0:
+                    ax.set_ylabel(method.upper(), fontsize=10)
         fig.suptitle(
-            f"{plot_kind.upper()} collection | params={params_slug} | {example_key}",
+            f"{plot_kind.upper()} aligned collection | params={params_slug} | {example_key} | seed={seed}",
             fontsize=12,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.96))
         sheet_path = (
             output_dir
-            / f"{plot_kind}_{params_slug}_{example_key}_contact_sheet.png"
+            / f"{plot_kind}_{params_slug}_{example_key}_seed{seed}_aligned_sheet.png"
         )
         fig.savefig(sheet_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
         contact_sheets.append(str(sheet_path))
+        sheet_metadata.append(
+            {
+                "plot_kind": plot_kind,
+                "params_slug": params_slug,
+                "example_key": example_key,
+                "seed": seed,
+                "sheet_path": str(sheet_path),
+                "methods": methods,
+                "columns": [
+                    {
+                        "requested_budget_steps": int(budget),
+                        "T_seg": int(tseg),
+                    }
+                    for budget, tseg in combos
+                ],
+            }
+        )
 
-    return {"copied": copied, "contact_sheets": contact_sheets}
+    return {
+        "copied": copied,
+        "contact_sheets": contact_sheets,
+        "aligned_sheets": sheet_metadata,
+    }
 
 
 def _load_completed_runs(experiments_root: Path, exp_prefix: str) -> list[dict[str, Any]]:
@@ -814,52 +1130,37 @@ def main() -> None:
         "aggregate_rows": aggregate_rows,
         "pairwise_tests": pairwise_tests,
         "raw_rows": rows,
+        "notes": [
+            "Pairwise Wilcoxon tests are descriptive only. With very small shared seed counts they should not be interpreted as strong inferential evidence."
+        ],
     }
 
     _write_csv(output_csv, aggregate_rows)
 
-    plot_specs = [
-        ("w2_mean", "Held-out W2", "w2"),
-        ("l2_error_mean", "Held-out Posterior Mean L2", "l2"),
-        ("heldout_ppc_rmse_mean", "Held-out PPC RMSE", "ppc_rmse"),
-        ("coverage_90", "Coverage 90%", "coverage90"),
-        ("coverage_50", "Coverage 50%", "coverage50"),
-        ("train_time_s", "Training Time (s)", "train_time"),
-        ("sampling_time_mean_s", "Sampling Time / Case (s)", "sampling_time"),
-    ]
-    per_param_metric_keys = sorted(
-        {
-            key
-            for row in aggregate_rows
-            for key in row.keys()
-            if key.endswith("_rmse_phys")
-            or key.endswith("_rmse_norm")
-            or key.endswith("_mae_phys")
-            or key.endswith("_mae_norm")
-        }
-    )
-    for metric_key in per_param_metric_keys:
-        label = metric_key.replace("_", " ")
-        plot_specs.append((metric_key, label, metric_key))
+    plot_registry = _build_plot_registry(rows)
+    output["plot_registry"] = plot_registry
 
     generated_plots: list[str] = []
     for params in sorted({row["params"] for row in rows}):
-        for metric_key, metric_label, slug in plot_specs:
-            output_path = output_json.parent / f"{output_json.stem}_{slug}_{_slugify(params)}.png"
-            if _plot_metric_vs_budget(rows, params, metric_key, metric_label, output_path):
+        params_slug = _slugify(params)
+        for plot_spec in plot_registry["budget"]:
+            output_path = output_json.parent / f"{output_json.stem}_{plot_spec['slug']}_{params_slug}.png"
+            if _plot_metric_vs_budget(rows, params, plot_spec, output_path):
                 generated_plots.append(str(output_path))
-        tseg_w2_path = (
-            output_json.parent
-            / f"{output_json.stem}_w2_vs_tseg_{_slugify(params)}.png"
-        )
-        if _plot_metric_vs_tseg(
-            rows,
-            params,
-            "w2_mean",
-            "Held-out W2",
-            tseg_w2_path,
-        ):
-            generated_plots.append(str(tseg_w2_path))
+        for plot_spec in plot_registry["tseg"]:
+            tseg_path = (
+                output_json.parent
+                / f"{output_json.stem}_{plot_spec['slug']}_vs_tseg_{params_slug}.png"
+            )
+            if _plot_metric_vs_tseg(rows, params, plot_spec, tseg_path):
+                generated_plots.append(str(tseg_path))
+        for plot_spec in plot_registry["pareto"]:
+            pareto_path = (
+                output_json.parent
+                / f"{output_json.stem}_{plot_spec['slug']}_{params_slug}.png"
+            )
+            if _plot_pareto_scatter(rows, params, plot_spec, pareto_path):
+                generated_plots.append(str(pareto_path))
     output["generated_plots"] = generated_plots
 
     plot_collection_dir = output_json.parent / f"{args.exp_prefix}_plot_collection"
