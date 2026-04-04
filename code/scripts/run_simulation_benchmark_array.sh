@@ -11,7 +11,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:h200:1
+#SBATCH --gres=gpu:1
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=24:00:00
 #SBATCH --array=0-0%1
@@ -44,6 +44,7 @@ echo "Job ID:        ${SLURM_JOB_ID:-local}"
 echo "Array Task ID: ${TASK_ID}"
 echo "Manifest:      ${MANIFEST_PATH}"
 echo "Code dir:      ${CODE_DIR}"
+echo "GPU request:   ${SLURM_JOB_GRES:-gpu:1}"
 echo "=================================================="
 
 cd "${CODE_DIR}"
