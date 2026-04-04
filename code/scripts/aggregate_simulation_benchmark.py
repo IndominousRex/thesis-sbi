@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from scipy.stats import wilcoxon
+from scipy.stats import rankdata, wilcoxon
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,8 +89,32 @@ def _metric_summary(values: list[float]) -> dict[str, Any]:
         "median": float(np.median(arr)),
         "min": float(np.min(arr)),
         "max": float(np.max(arr)),
-        "ci95": [float(ci_low), float(ci_high)],
+        "quantile_interval_95_empirical": [float(ci_low), float(ci_high)],
     }
+
+
+def _require_consistent_value(group_rows: list[dict[str, Any]], field: str) -> Any:
+    values = {row.get(field) for row in group_rows}
+    if len(values) > 1:
+        raise ValueError(
+            f"Inconsistent {field} within aggregate group: {sorted(values, key=str)}"
+        )
+    return next(iter(values)) if values else None
+
+
+def _budget_to_label(budget: int | float) -> str:
+    return f"{float(budget):.0e}"
+
+
+def _format_budget_axis(ax: Any) -> None:
+    tick_values = list(ax.get_xticks())
+    if not tick_values:
+        return
+    ax.set_xticklabels([_budget_to_label(v) for v in tick_values], rotation=0)
+
+
+def _metric_direction(plot_spec: dict[str, Any]) -> str:
+    return str(plot_spec.get("direction", "lower"))
 
 
 def _flatten_per_parameter_metrics(
@@ -236,6 +260,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "slug": "w2",
             "figure_families": ["budget", "tseg"],
             "category": "posterior_quality",
+            "direction": "lower",
         },
         {
             "metric_key": "l2_error_mean",
@@ -243,6 +268,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "slug": "l2",
             "figure_families": ["budget"],
             "category": "posterior_quality",
+            "direction": "lower",
         },
         {
             "metric_key": "heldout_ppc_rmse_mean",
@@ -250,6 +276,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "slug": "ppc_rmse",
             "figure_families": ["budget", "tseg"],
             "category": "predictive_quality",
+            "direction": "lower",
         },
         {
             "metric_key": "heldout_ppc_w2_mean",
@@ -257,6 +284,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "slug": "ppc_w2",
             "figure_families": ["budget"],
             "category": "predictive_quality",
+            "direction": "lower",
         },
         {
             "metric_key": "coverage_50",
@@ -265,6 +293,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "figure_families": ["budget"],
             "category": "calibration",
             "reference_lines": [0.5],
+            "direction": "target",
         },
         {
             "metric_key": "coverage_90",
@@ -273,6 +302,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "figure_families": ["budget"],
             "category": "calibration",
             "reference_lines": [0.9],
+            "direction": "target",
         },
         {
             "metric_key": "coverage_curve_mae",
@@ -280,6 +310,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "slug": "coverage_curve_mae",
             "figure_families": ["budget", "tseg"],
             "category": "calibration",
+            "direction": "lower",
         },
         {
             "metric_key": "train_time_s",
@@ -287,6 +318,8 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "slug": "train_time",
             "figure_families": ["budget"],
             "category": "runtime",
+            "direction": "lower",
+            "log_y": True,
         },
         {
             "metric_key": "sampling_time_mean_s",
@@ -294,6 +327,8 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "slug": "sampling_time",
             "figure_families": ["budget"],
             "category": "runtime",
+            "direction": "lower",
+            "log_y": True,
         },
     ]
 
@@ -323,6 +358,7 @@ def _per_parameter_plot_specs(rows: list[dict[str, Any]]) -> list[dict[str, Any]
                 "slug": key,
                 "figure_families": ["budget"],
                 "category": "per_parameter",
+                "direction": "lower" if "bias_mean" not in suffix else "signed",
             }
             if reference_lines is not None:
                 spec["reference_lines"] = reference_lines
@@ -355,11 +391,44 @@ def _build_plot_registry(rows: list[dict[str, Any]]) -> dict[str, list[dict[str,
     base_specs = _base_plot_specs()
     per_param_specs = _per_parameter_plot_specs(rows)
     all_specs = base_specs + per_param_specs
+    base_by_key = {spec["metric_key"]: spec for spec in base_specs}
     return {
         "all": all_specs,
         "budget": [spec for spec in all_specs if "budget" in spec["figure_families"]],
         "tseg": [spec for spec in all_specs if "tseg" in spec["figure_families"]],
         "pareto": _pareto_plot_specs(),
+        "difference_budget": [
+            base_by_key[key]
+            for key in [
+                "w2_mean",
+                "l2_error_mean",
+                "heldout_ppc_rmse_mean",
+                "coverage_curve_mae",
+                "train_time_s",
+                "sampling_time_mean_s",
+            ]
+            if key in base_by_key
+        ],
+        "difference_tseg": [
+            base_by_key[key]
+            for key in [
+                "w2_mean",
+                "heldout_ppc_rmse_mean",
+                "coverage_curve_mae",
+            ]
+            if key in base_by_key
+        ],
+        "heatmap": [
+            base_by_key[key]
+            for key in [
+                "w2_mean",
+                "heldout_ppc_rmse_mean",
+                "coverage_curve_mae",
+                "train_time_s",
+                "sampling_time_mean_s",
+            ]
+            if key in base_by_key
+        ],
     }
 
 
@@ -442,10 +511,13 @@ def _plot_metric_vs_budget(
                 }
             )
         )
+        _format_budget_axis(ax)
         if x_limits is not None:
             ax.set_xlim(*x_limits)
         if y_limits is not None:
             ax.set_ylim(*y_limits)
+        if plot_spec.get("log_y") and all_ys and min(all_ys) > 0:
+            ax.set_yscale("log")
         ax.grid(True, alpha=0.3)
         if ax.get_legend_handles_labels()[0]:
             ax.legend()
@@ -552,6 +624,8 @@ def _plot_metric_vs_tseg(
             ax.set_xlim(*x_limits)
         if y_limits is not None:
             ax.set_ylim(*y_limits)
+        if plot_spec.get("log_y") and all_ys and min(all_ys) > 0:
+            ax.set_yscale("log")
         ax.grid(True, alpha=0.3)
         if ax.get_legend_handles_labels()[0]:
             ax.legend()
@@ -706,6 +780,505 @@ def _plot_pareto_scatter(
     return True
 
 
+def _plot_pareto_aggregate_scatter(
+    raw_rows: list[dict[str, Any]],
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    plot_spec: dict[str, Any],
+    output_path: Path,
+) -> bool:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib.lines import Line2D
+    except Exception:
+        return False
+
+    x_metric_key = plot_spec["x_metric_key"]
+    y_metric_key = plot_spec["y_metric_key"]
+    background_rows = [
+        row
+        for row in raw_rows
+        if row["params"] == params
+        and row.get(x_metric_key) is not None
+        and row.get(y_metric_key) is not None
+    ]
+    summary_rows = [
+        row
+        for row in aggregate_rows
+        if row["params"] == params
+        and isinstance(row.get(x_metric_key), dict)
+        and isinstance(row.get(y_metric_key), dict)
+        and row[x_metric_key].get("mean") is not None
+        and row[y_metric_key].get("mean") is not None
+    ]
+    if not summary_rows:
+        return False
+
+    fig, ax = plt.subplots(figsize=(8.5, 6.5))
+    methods = sorted({row["method"] for row in summary_rows})
+    method_colors = _method_color_map(methods, plt)
+    tsegs = sorted({int(row["T_seg"]) for row in summary_rows})
+    marker_cycle = ["o", "s", "^", "D", "P", "X", "v", "<", ">"]
+    tseg_markers = {
+        tseg: marker_cycle[idx % len(marker_cycle)] for idx, tseg in enumerate(tsegs)
+    }
+
+    for row in background_rows:
+        ax.scatter(
+            float(row[x_metric_key]),
+            float(row[y_metric_key]),
+            color=method_colors[row["method"]],
+            marker=tseg_markers[int(row["T_seg"])],
+            s=28,
+            alpha=0.18,
+            edgecolors="none",
+            zorder=1,
+        )
+
+    summary_points = [
+        (
+            float(row[x_metric_key]["mean"]),
+            float(row[y_metric_key]["mean"]),
+        )
+        for row in summary_rows
+    ]
+    pareto_mask = _pareto_front_mask(summary_points)
+    for row, is_front in zip(summary_rows, pareto_mask):
+        x_val = float(row[x_metric_key]["mean"])
+        y_val = float(row[y_metric_key]["mean"])
+        ax.scatter(
+            x_val,
+            y_val,
+            color=method_colors[row["method"]],
+            marker=tseg_markers[int(row["T_seg"])],
+            s=110 if is_front else 80,
+            alpha=0.95,
+            edgecolors="black" if is_front else "white",
+            linewidths=0.6,
+            zorder=3,
+        )
+        if is_front:
+            label = (
+                f"{row['method'].upper()} "
+                f"b={_budget_to_label(int(row['requested_budget_steps']))} "
+                f"T={int(row['T_seg'])}"
+            )
+            ax.annotate(
+                label,
+                (x_val, y_val),
+                xytext=(5, 4),
+                textcoords="offset points",
+                fontsize=8,
+            )
+
+    if plot_spec.get("log_x"):
+        ax.set_xscale("log")
+    ax.set_xlabel(f"{plot_spec['x_label']} (aggregate mean)")
+    ax.set_ylabel(f"{plot_spec['y_label']} (aggregate mean)")
+    ax.set_title(f"Aggregate Pareto | {plot_spec['y_label']} vs {plot_spec['x_label']} | params={params}")
+    ax.grid(True, alpha=0.3)
+
+    method_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="none",
+            markerfacecolor=method_colors[method],
+            markeredgecolor="none",
+            markersize=8,
+            label=method.upper(),
+        )
+        for method in methods
+    ]
+    tseg_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker=tseg_markers[tseg],
+            color="black",
+            linestyle="None",
+            markersize=8,
+            label=f"T_seg={tseg}",
+        )
+        for tseg in tsegs
+    ]
+    first_legend = ax.legend(handles=method_handles, title="Method", loc="upper right")
+    ax.add_artist(first_legend)
+    ax.legend(handles=tseg_handles, title="T_seg", loc="lower left")
+
+    fig.text(
+        0.5,
+        0.02,
+        "Large points are aggregate means by method/budget/T_seg; faint points show individual seed runs in the background.",
+        ha="center",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0.05, 1, 0.98))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _choose_baseline_method(rows: list[dict[str, Any]]) -> str | None:
+    methods = sorted({str(row["method"]) for row in rows})
+    if not methods:
+        return None
+    if "npe" in methods:
+        return "npe"
+    return methods[0]
+
+
+def _difference_axis_limits(
+    delta_groups: list[list[tuple[float, float]]],
+    *,
+    x_pad_frac: float = 0.03,
+    y_pad_frac: float = 0.08,
+) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+    xs = [x for group in delta_groups for x, _ in group]
+    ys = [y for group in delta_groups for _, y in group]
+    if not xs or not ys:
+        return None, None
+    return _compute_axis_limits(xs, ys, x_pad_frac=x_pad_frac, y_pad_frac=y_pad_frac)
+
+
+def _plot_metric_difference_vs_budget(
+    raw_rows: list[dict[str, Any]],
+    params: str,
+    plot_spec: dict[str, Any],
+    output_path: Path,
+) -> bool:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    metric_key = plot_spec["metric_key"]
+    metric_label = plot_spec["metric_label"]
+    param_rows = [row for row in raw_rows if row["params"] == params and row.get(metric_key) is not None]
+    if not param_rows:
+        return False
+
+    baseline = _choose_baseline_method(param_rows)
+    methods = [method for method in sorted({row["method"] for row in param_rows}) if method != baseline]
+    if not baseline or not methods:
+        return False
+
+    tsegs = sorted({int(row["T_seg"]) for row in param_rows})
+    ncols = min(3, len(tsegs))
+    nrows = int(np.ceil(len(tsegs) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    axes_flat = axes.flatten()
+    method_colors = _method_color_map([baseline] + methods, plt)
+
+    grouped_deltas: dict[int, dict[str, list[tuple[float, float, int]]]] = {}
+    all_delta_points: list[list[tuple[float, float]]] = []
+    for tseg in tsegs:
+        tseg_rows = [row for row in param_rows if int(row["T_seg"]) == tseg]
+        rows_by_method_seed_budget = {
+            (
+                str(row["method"]),
+                int(row["seed"]),
+                int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0),
+            ): row
+            for row in tseg_rows
+        }
+        method_delta_map: dict[str, list[tuple[float, float, int]]] = {}
+        for method in methods:
+            deltas_for_method: list[tuple[float, float, int]] = []
+            candidate_seeds = sorted({int(row["seed"]) for row in tseg_rows if row["method"] == method})
+            budgets = sorted(
+                {
+                    int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
+                    for row in tseg_rows
+                    if row["method"] == method
+                }
+            )
+            for seed in candidate_seeds:
+                for budget in budgets:
+                    row_method = rows_by_method_seed_budget.get((method, seed, budget))
+                    row_base = rows_by_method_seed_budget.get((baseline, seed, budget))
+                    if row_method is None or row_base is None:
+                        continue
+                    delta = float(row_method[metric_key]) - float(row_base[metric_key])
+                    deltas_for_method.append((float(budget), delta, seed))
+            if deltas_for_method:
+                method_delta_map[method] = deltas_for_method
+                all_delta_points.append([(x, y) for x, y, _ in deltas_for_method])
+        grouped_deltas[tseg] = method_delta_map
+
+    x_limits, y_limits = _difference_axis_limits(all_delta_points)
+    if y_limits is None:
+        plt.close(fig)
+        return False
+
+    for ax_idx, tseg in enumerate(tsegs):
+        ax = axes_flat[ax_idx]
+        seed_offsets = _compute_seed_offsets(
+            sorted({seed for deltas in grouped_deltas[tseg].values() for _, _, seed in deltas}),
+            [x for deltas in grouped_deltas[tseg].values() for x, _, _ in deltas],
+        )
+        for method in methods:
+            deltas = grouped_deltas[tseg].get(method, [])
+            if not deltas:
+                continue
+            for seed in sorted({seed for _, _, seed in deltas}):
+                seed_points = sorted((x, y) for x, y, s in deltas if s == seed)
+                xs = [x + seed_offsets.get(seed, 0.0) for x, _ in seed_points]
+                ys = [y for _, y in seed_points]
+                if len(xs) >= 2:
+                    ax.plot(xs, ys, color=method_colors[method], alpha=0.22, linewidth=1.0, zorder=1)
+                ax.scatter(xs, ys, color=method_colors[method], alpha=0.45, s=28, zorder=2)
+
+            mean_by_budget: dict[float, list[float]] = {}
+            for x_val, y_val, _ in deltas:
+                mean_by_budget.setdefault(x_val, []).append(y_val)
+            xs_mean = sorted(mean_by_budget)
+            ys_mean = [float(np.mean(mean_by_budget[x])) for x in xs_mean]
+            ax.plot(xs_mean, ys_mean, color=method_colors[method], marker="o", linewidth=2.0, label=method.upper(), zorder=3)
+
+        ax.axhline(0.0, color="0.35", linestyle="--", linewidth=1.0, zorder=0)
+        ax.set_title(f"T_seg={tseg} | baseline={baseline.upper()}")
+        ax.set_xlabel("Requested Budget Steps")
+        ax.set_ylabel(f"{metric_label} delta vs {baseline.upper()}")
+        budget_ticks = sorted({int(x) for deltas in grouped_deltas[tseg].values() for x, _, _ in deltas})
+        ax.set_xticks(budget_ticks)
+        _format_budget_axis(ax)
+        if x_limits is not None:
+            ax.set_xlim(*x_limits)
+        if y_limits is not None:
+            ax.set_ylim(*y_limits)
+        ax.grid(True, alpha=0.3)
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend()
+
+    for ax in axes_flat[len(tsegs):]:
+        ax.axis("off")
+
+    fig.suptitle(f"{metric_label} delta vs baseline across budgets | params={params}")
+    fig.text(0.5, 0.02, f"Delta = method - {baseline.upper()}. Negative values are better for lower-is-better metrics.", ha="center", fontsize=9)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_metric_difference_vs_tseg(
+    raw_rows: list[dict[str, Any]],
+    params: str,
+    plot_spec: dict[str, Any],
+    output_path: Path,
+) -> bool:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    metric_key = plot_spec["metric_key"]
+    metric_label = plot_spec["metric_label"]
+    param_rows = [row for row in raw_rows if row["params"] == params and row.get(metric_key) is not None]
+    if not param_rows:
+        return False
+
+    baseline = _choose_baseline_method(param_rows)
+    methods = [method for method in sorted({row["method"] for row in param_rows}) if method != baseline]
+    if not baseline or not methods:
+        return False
+
+    budgets = sorted(
+        {int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0) for row in param_rows}
+    )
+    ncols = min(3, len(budgets))
+    nrows = int(np.ceil(len(budgets) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    axes_flat = axes.flatten()
+    method_colors = _method_color_map([baseline] + methods, plt)
+
+    grouped_deltas: dict[int, dict[str, list[tuple[float, float, int]]]] = {}
+    all_delta_points: list[list[tuple[float, float]]] = []
+    for budget in budgets:
+        budget_rows = [
+            row
+            for row in param_rows
+            if int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0) == budget
+        ]
+        rows_by_method_seed_tseg = {
+            (str(row["method"]), int(row["seed"]), int(row["T_seg"])): row
+            for row in budget_rows
+        }
+        method_delta_map: dict[str, list[tuple[float, float, int]]] = {}
+        for method in methods:
+            deltas_for_method: list[tuple[float, float, int]] = []
+            candidate_seeds = sorted({int(row["seed"]) for row in budget_rows if row["method"] == method})
+            tsegs = sorted({int(row["T_seg"]) for row in budget_rows if row["method"] == method})
+            for seed in candidate_seeds:
+                for tseg in tsegs:
+                    row_method = rows_by_method_seed_tseg.get((method, seed, tseg))
+                    row_base = rows_by_method_seed_tseg.get((baseline, seed, tseg))
+                    if row_method is None or row_base is None:
+                        continue
+                    delta = float(row_method[metric_key]) - float(row_base[metric_key])
+                    deltas_for_method.append((float(tseg), delta, seed))
+            if deltas_for_method:
+                method_delta_map[method] = deltas_for_method
+                all_delta_points.append([(x, y) for x, y, _ in deltas_for_method])
+        grouped_deltas[budget] = method_delta_map
+
+    x_limits, y_limits = _difference_axis_limits(all_delta_points)
+    if y_limits is None:
+        plt.close(fig)
+        return False
+
+    for ax_idx, budget in enumerate(budgets):
+        ax = axes_flat[ax_idx]
+        seed_offsets = _compute_seed_offsets(
+            sorted({seed for deltas in grouped_deltas[budget].values() for _, _, seed in deltas}),
+            [x for deltas in grouped_deltas[budget].values() for x, _, _ in deltas],
+        )
+        for method in methods:
+            deltas = grouped_deltas[budget].get(method, [])
+            if not deltas:
+                continue
+            for seed in sorted({seed for _, _, seed in deltas}):
+                seed_points = sorted((x, y) for x, y, s in deltas if s == seed)
+                xs = [x + seed_offsets.get(seed, 0.0) for x, _ in seed_points]
+                ys = [y for _, y in seed_points]
+                if len(xs) >= 2:
+                    ax.plot(xs, ys, color=method_colors[method], alpha=0.22, linewidth=1.0, zorder=1)
+                ax.scatter(xs, ys, color=method_colors[method], alpha=0.45, s=28, zorder=2)
+
+            mean_by_tseg: dict[float, list[float]] = {}
+            for x_val, y_val, _ in deltas:
+                mean_by_tseg.setdefault(x_val, []).append(y_val)
+            xs_mean = sorted(mean_by_tseg)
+            ys_mean = [float(np.mean(mean_by_tseg[x])) for x in xs_mean]
+            ax.plot(xs_mean, ys_mean, color=method_colors[method], marker="o", linewidth=2.0, label=method.upper(), zorder=3)
+
+        ax.axhline(0.0, color="0.35", linestyle="--", linewidth=1.0, zorder=0)
+        ax.set_title(f"Budget={_budget_to_label(budget)} | baseline={baseline.upper()}")
+        ax.set_xlabel("T_seg")
+        ax.set_ylabel(f"{metric_label} delta vs {baseline.upper()}")
+        ax.set_xticks(sorted({int(x) for deltas in grouped_deltas[budget].values() for x, _, _ in deltas}))
+        if x_limits is not None:
+            ax.set_xlim(*x_limits)
+        if y_limits is not None:
+            ax.set_ylim(*y_limits)
+        ax.grid(True, alpha=0.3)
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend()
+
+    for ax in axes_flat[len(budgets):]:
+        ax.axis("off")
+
+    fig.suptitle(f"{metric_label} delta vs baseline across T_seg | params={params}")
+    fig.text(0.5, 0.02, f"Delta = method - {baseline.upper()}. Negative values are better for lower-is-better metrics.", ha="center", fontsize=9)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_metric_rank_heatmap(
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    plot_spec: dict[str, Any],
+    output_path: Path,
+) -> bool:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    metric_key = plot_spec["metric_key"]
+    param_rows = [
+        row
+        for row in aggregate_rows
+        if row["params"] == params
+        and isinstance(row.get(metric_key), dict)
+        and row[metric_key].get("mean") is not None
+    ]
+    if not param_rows:
+        return False
+
+    methods = sorted({str(row["method"]) for row in param_rows})
+    combos = sorted(
+        {
+            (
+                int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0),
+                int(row["T_seg"]),
+            )
+            for row in param_rows
+        }
+    )
+    if not methods or not combos:
+        return False
+
+    heat = np.full((len(methods), len(combos)), np.nan, dtype=np.float64)
+    method_to_idx = {method: idx for idx, method in enumerate(methods)}
+    combo_to_idx = {combo: idx for idx, combo in enumerate(combos)}
+    direction = _metric_direction(plot_spec)
+
+    for combo in combos:
+        combo_rows = [
+            row
+            for row in param_rows
+            if (
+                int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0),
+                int(row["T_seg"]),
+            )
+            == combo
+        ]
+        values = np.asarray([float(row[metric_key]["mean"]) for row in combo_rows], dtype=np.float64)
+        if direction == "higher":
+            ranks = rankdata(-values, method="average")
+        else:
+            ranks = rankdata(values, method="average")
+        for row, rank in zip(combo_rows, ranks):
+            heat[method_to_idx[str(row["method"])], combo_to_idx[combo]] = float(rank)
+
+    fig_width = max(8.0, 1.2 * len(combos))
+    fig, ax = plt.subplots(figsize=(fig_width, 3.8 + 0.45 * len(methods)))
+    im = ax.imshow(heat, aspect="auto", cmap="viridis_r", vmin=1, vmax=max(len(methods), 1))
+    ax.set_yticks(range(len(methods)))
+    ax.set_yticklabels([method.upper() for method in methods])
+    ax.set_xticks(range(len(combos)))
+    ax.set_xticklabels(
+        [f"b={_budget_to_label(budget)}\nT={tseg}" for budget, tseg in combos],
+        rotation=45,
+        ha="right",
+    )
+    ax.set_title(f"Method rank heatmap | {plot_spec['metric_label']} | params={params}")
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("Rank (1 = best)")
+
+    for row_idx in range(len(methods)):
+        for col_idx in range(len(combos)):
+            val = heat[row_idx, col_idx]
+            if not np.isnan(val):
+                ax.text(col_idx, row_idx, f"{val:.1f}", ha="center", va="center", fontsize=8, color="white")
+
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
 def _collect_plot_gallery(
     completed_runs: list[dict[str, Any]],
     output_dir: Path,
@@ -716,7 +1289,13 @@ def _collect_plot_gallery(
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except Exception:
-        return {"copied": [], "contact_sheets": []}
+        return {
+            "copied": [],
+            "contact_sheets": [],
+            "aligned_sheets": [],
+            "comparison_sheets_by_seed": [],
+            "comparison_sheets_by_method": [],
+        }
 
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -847,10 +1426,144 @@ def _collect_plot_gallery(
             }
         )
 
+    comparison_sheets_by_seed: list[dict[str, Any]] = []
+    group_by_budget_tseg: dict[tuple[str, str, str, int, int], list[dict[str, Any]]] = {}
+    for entry in copied:
+        group_by_budget_tseg.setdefault(
+            (
+                str(entry["plot_kind"]),
+                str(entry["params_slug"]),
+                str(entry["example_key"]),
+                int(entry["requested_budget_steps"]),
+                int(entry["T_seg"]),
+            ),
+            [],
+        ).append(entry)
+
+    for (plot_kind, params_slug, example_key, budget, tseg), entries in group_by_budget_tseg.items():
+        methods = sorted({str(entry["method"]) for entry in entries})
+        seeds = sorted({int(entry["seed"]) for entry in entries})
+        if not methods or not seeds:
+            continue
+        entry_lookup = {
+            (str(entry["method"]), int(entry["seed"])): entry
+            for entry in entries
+        }
+        fig, axes = plt.subplots(
+            len(methods),
+            len(seeds),
+            figsize=(3.3 * len(seeds), 3.0 * len(methods)),
+            squeeze=False,
+        )
+        for row_idx, method in enumerate(methods):
+            for col_idx, seed in enumerate(seeds):
+                ax = axes[row_idx][col_idx]
+                entry = entry_lookup.get((method, seed))
+                if entry is None:
+                    ax.axis("off")
+                    ax.text(0.5, 0.5, "No plot", ha="center", va="center", fontsize=9, color="0.4")
+                else:
+                    image = plt.imread(entry["copied_to"])
+                    ax.imshow(image)
+                    ax.axis("off")
+                if row_idx == 0:
+                    ax.set_title(f"seed={seed}", fontsize=9)
+                if col_idx == 0:
+                    ax.set_ylabel(method.upper(), fontsize=10)
+        fig.suptitle(
+            f"{plot_kind.upper()} comparison | params={params_slug} | {example_key} | b={_budget_to_label(budget)} | T={tseg}",
+            fontsize=12,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        sheet_path = output_dir / f"{plot_kind}_{params_slug}_{example_key}_b{budget}_t{tseg}_methods_by_seed.png"
+        fig.savefig(sheet_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        contact_sheets.append(str(sheet_path))
+        comparison_sheets_by_seed.append(
+            {
+                "plot_kind": plot_kind,
+                "params_slug": params_slug,
+                "example_key": example_key,
+                "requested_budget_steps": int(budget),
+                "T_seg": int(tseg),
+                "sheet_path": str(sheet_path),
+                "methods": methods,
+                "seeds": seeds,
+            }
+        )
+
+    comparison_sheets_by_method: list[dict[str, Any]] = []
+    group_by_method_seed: dict[tuple[str, str, str, str, int], list[dict[str, Any]]] = {}
+    for entry in copied:
+        group_by_method_seed.setdefault(
+            (
+                str(entry["plot_kind"]),
+                str(entry["params_slug"]),
+                str(entry["example_key"]),
+                str(entry["method"]),
+                int(entry["seed"]),
+            ),
+            [],
+        ).append(entry)
+
+    for (plot_kind, params_slug, example_key, method, seed), entries in group_by_method_seed.items():
+        budgets = sorted({int(entry["requested_budget_steps"]) for entry in entries})
+        tsegs = sorted({int(entry["T_seg"]) for entry in entries})
+        if not budgets or not tsegs:
+            continue
+        entry_lookup = {
+            (int(entry["requested_budget_steps"]), int(entry["T_seg"])): entry
+            for entry in entries
+        }
+        fig, axes = plt.subplots(
+            len(budgets),
+            len(tsegs),
+            figsize=(3.2 * len(tsegs), 3.0 * len(budgets)),
+            squeeze=False,
+        )
+        for row_idx, budget in enumerate(budgets):
+            for col_idx, tseg_col in enumerate(tsegs):
+                ax = axes[row_idx][col_idx]
+                entry = entry_lookup.get((budget, tseg_col))
+                if entry is None:
+                    ax.axis("off")
+                    ax.text(0.5, 0.5, "No plot", ha="center", va="center", fontsize=9, color="0.4")
+                else:
+                    image = plt.imread(entry["copied_to"])
+                    ax.imshow(image)
+                    ax.axis("off")
+                if row_idx == 0:
+                    ax.set_title(f"T={tseg_col}", fontsize=9)
+                if col_idx == 0:
+                    ax.set_ylabel(f"b={_budget_to_label(budget)}", fontsize=10)
+        fig.suptitle(
+            f"{plot_kind.upper()} comparison | params={params_slug} | {example_key} | {method.upper()} | seed={seed}",
+            fontsize=12,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        sheet_path = output_dir / f"{plot_kind}_{params_slug}_{example_key}_{method}_seed{seed}_budget_by_tseg.png"
+        fig.savefig(sheet_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        contact_sheets.append(str(sheet_path))
+        comparison_sheets_by_method.append(
+            {
+                "plot_kind": plot_kind,
+                "params_slug": params_slug,
+                "example_key": example_key,
+                "method": method,
+                "seed": seed,
+                "sheet_path": str(sheet_path),
+                "budgets": budgets,
+                "tsegs": tsegs,
+            }
+        )
+
     return {
         "copied": copied,
         "contact_sheets": contact_sheets,
         "aligned_sheets": sheet_metadata,
+        "comparison_sheets_by_seed": comparison_sheets_by_seed,
+        "comparison_sheets_by_method": comparison_sheets_by_method,
     }
 
 
@@ -986,8 +1699,10 @@ def _build_aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "T_seg": tseg,
             "num_runs": len(group_rows),
             "requested_budget_steps": requested_budget_steps,
-            "effective_budget_steps": group_rows[0]["effective_budget_steps"],
-            "total_budget_steps": group_rows[0]["total_budget_steps"],
+            "effective_budget_steps": _require_consistent_value(
+                group_rows, "effective_budget_steps"
+            ),
+            "total_budget_steps": _require_consistent_value(group_rows, "total_budget_steps"),
         }
         candidate_fields = sorted(
             {field for row in group_rows for field in row.keys() if field not in ignore_fields}
@@ -1002,6 +1717,10 @@ def _build_aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     pairwise_tests: list[dict[str, Any]] = []
+    metric_directions = {
+        "w2_mean": "lower",
+        "heldout_ppc_rmse_mean": "lower",
+    }
     group_keys = sorted(
         {
             (
@@ -1039,6 +1758,23 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     for s in shared_seeds
                     if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None
                 ]
+                shared_metric_seeds = [
+                    s
+                    for s in shared_seeds
+                    if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None
+                ]
+                deltas = [float(a - b) for a, b in zip(x, y)]
+                direction = metric_directions.get(metric_key, "lower")
+                if direction == "lower":
+                    wins_method_a = int(sum(a < b for a, b in zip(x, y)))
+                    wins_method_b = int(sum(a > b for a, b in zip(x, y)))
+                elif direction == "higher":
+                    wins_method_a = int(sum(a > b for a, b in zip(x, y)))
+                    wins_method_b = int(sum(a < b for a, b in zip(x, y)))
+                else:
+                    wins_method_a = int(sum(a < b for a, b in zip(x, y)))
+                    wins_method_b = int(sum(a > b for a, b in zip(x, y)))
+                ties = int(len(deltas) - wins_method_a - wins_method_b)
                 pvalue = None
                 stat = None
                 if len(x) >= 2 and len(y) >= 2:
@@ -1057,7 +1793,22 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         "metric": metric_key,
                         "method_a": method_a,
                         "method_b": method_b,
-                        "num_shared_seeds": len(shared_seeds),
+                        "num_shared_seeds": len(shared_metric_seeds),
+                        "delta_definition": "method_a_minus_method_b",
+                        "delta_mean": float(np.mean(deltas)) if deltas else None,
+                        "delta_median": float(np.median(deltas)) if deltas else None,
+                        "wins_method_a": wins_method_a,
+                        "wins_method_b": wins_method_b,
+                        "ties": ties,
+                        "paired_deltas": [
+                            {
+                                "seed": int(seed),
+                                "method_a_value": float(a_val),
+                                "method_b_value": float(b_val),
+                                "delta": float(a_val - b_val),
+                            }
+                            for seed, a_val, b_val in zip(shared_metric_seeds, x, y)
+                        ],
                         "statistic": stat,
                         "pvalue": pvalue,
                     }
@@ -1095,7 +1846,10 @@ def _write_csv(output_csv: Path, aggregate_rows: list[dict[str, Any]]) -> None:
             if isinstance(value, dict) and value.get("mean") is not None
         }
     )
-    fieldnames = base_fields + [f"{field}_mean" for field in metric_fields]
+    summary_suffixes = ["n", "mean", "std", "min", "max"]
+    fieldnames = base_fields + [
+        f"{field}_{suffix}" for field in metric_fields for suffix in summary_suffixes
+    ]
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     with output_csv.open("w", encoding="utf-8", newline="") as f:
@@ -1104,7 +1858,9 @@ def _write_csv(output_csv: Path, aggregate_rows: list[dict[str, Any]]) -> None:
         for row in aggregate_rows:
             out_row = {field: row.get(field) for field in base_fields}
             for field in metric_fields:
-                out_row[f"{field}_mean"] = row.get(field, {}).get("mean")
+                summary = row.get(field, {})
+                for suffix in summary_suffixes:
+                    out_row[f"{field}_{suffix}"] = summary.get(suffix)
             writer.writerow(out_row)
 
 
@@ -1169,6 +1925,41 @@ def main() -> None:
             )
             if _plot_pareto_scatter(rows, params, plot_spec, pareto_path):
                 generated_plots.append(str(pareto_path))
+            pareto_aggregate_path = (
+                output_json.parent
+                / f"{output_json.stem}_{plot_spec['slug']}_aggregate_{params_slug}.png"
+            )
+            if _plot_pareto_aggregate_scatter(
+                rows, aggregate_rows, params, plot_spec, pareto_aggregate_path
+            ):
+                generated_plots.append(str(pareto_aggregate_path))
+        for plot_spec in plot_registry["difference_budget"]:
+            delta_budget_path = (
+                output_json.parent
+                / f"{output_json.stem}_{plot_spec['slug']}_delta_vs_baseline_{params_slug}.png"
+            )
+            if _plot_metric_difference_vs_budget(
+                rows, params, plot_spec, delta_budget_path
+            ):
+                generated_plots.append(str(delta_budget_path))
+        for plot_spec in plot_registry["difference_tseg"]:
+            delta_tseg_path = (
+                output_json.parent
+                / f"{output_json.stem}_{plot_spec['slug']}_delta_vs_baseline_tseg_{params_slug}.png"
+            )
+            if _plot_metric_difference_vs_tseg(
+                rows, params, plot_spec, delta_tseg_path
+            ):
+                generated_plots.append(str(delta_tseg_path))
+        for plot_spec in plot_registry["heatmap"]:
+            heatmap_path = (
+                output_json.parent
+                / f"{output_json.stem}_{plot_spec['slug']}_rank_heatmap_{params_slug}.png"
+            )
+            if _plot_metric_rank_heatmap(
+                aggregate_rows, params, plot_spec, heatmap_path
+            ):
+                generated_plots.append(str(heatmap_path))
     output["generated_plots"] = generated_plots
 
     plot_collection_dir = output_json.parent / f"{args.exp_prefix}_plot_collection"
