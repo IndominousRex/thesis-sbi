@@ -139,6 +139,8 @@ def _compute_seed_offsets(
 ) -> dict[int, float]:
     if not seeds:
         return {}
+    if not x_values:
+        return {seed: 0.0 for seed in seeds}
     if len(seeds) == 1:
         return {seeds[0]: 0.0}
 
@@ -408,6 +410,9 @@ def _plot_metric_vs_budget(
             continue
         all_xs.append(float(row["requested_budget_steps"]) + seed_offsets.get(int(row["seed"]), 0.0))
         all_ys.append(float(row[metric_key]))
+    if not all_ys:
+        plt.close(fig)
+        return False
     x_limits, y_limits = _compute_axis_limits(all_xs, all_ys)
 
     for ax_idx, tseg in enumerate(tsegs):
@@ -515,6 +520,9 @@ def _plot_metric_vs_tseg(
             continue
         all_xs.append(float(row["T_seg"]) + seed_offsets.get(int(row["seed"]), 0.0))
         all_ys.append(float(row[metric_key]))
+    if not all_ys:
+        plt.close(fig)
+        return False
     x_limits, y_limits = _compute_axis_limits(all_xs, all_ys)
 
     for ax_idx, budget in enumerate(budgets):
