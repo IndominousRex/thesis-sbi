@@ -30,7 +30,7 @@ def active_param_type(value: str):
     parts = [p.strip().lower() for p in value.split(",") if p.strip()]
 
     if not parts:
-        return PARAMETER_ORDER
+        raise argparse.ArgumentTypeError("At least one parameter must be provided.")
 
     cleaned = []
     for p in parts:
@@ -234,10 +234,8 @@ def create_config(
         "reuse_dataset": False if independent_datasets else reuse_dataset,
         # Diagnostics
         "run_sbc": run_sbc,
-        "run_swd": False,
         "run_one_step_rmse": True,
         "run_posterior_plots": True,
-        "run_lc2st": method == "npe",  # Only for NPE
         "unify_eval_budgets": True,
         "num_sbc_samples": 400,
         "num_posterior_samples_sbc": 2000,
@@ -261,7 +259,6 @@ def create_config(
                 "batch_sim": min(32, num_simulations),
                 "training_batch_size": 32,
                 "num_epochs": 2,
-                "stop_after_epochs": 1,
                 "encoder_hidden": 8,
                 "embedding_output_dim": 16,
                 "maf_hidden_features": 32,
@@ -269,7 +266,6 @@ def create_config(
                 "run_sbc": False,
                 "run_one_step_rmse": False,
                 "run_posterior_plots": False,
-                "run_lc2st": False,
                 "run_simulated_test_eval": False,
                 "run_simulated_ppc": False,
                 "num_test_simulations": 0,
@@ -292,9 +288,7 @@ def create_config(
                 "num_simulated_ppc_plot_examples": 1,
                 "simulated_test_ppc_samples": 20,
                 "num_epochs": 20,
-                "stop_after_epochs": 5,
                 "run_posterior_plots": False,
-                "run_lc2st": False,
                 "no_plots": True,
             }
         )
@@ -327,7 +321,6 @@ def create_config(
                     "fnpe_num_outer_epochs": 8,
                     "fnpe_num_inner_epochs": 4,
                     "fnpe_batch_size": 256,
-                    "fnpe_validation_size": 0,
                 }
             )
 
@@ -361,7 +354,6 @@ def create_config(
                         "fnpe_num_outer_epochs": 4,
                         "fnpe_num_inner_epochs": 2,
                         "fnpe_batch_size": 64,
-                        "fnpe_validation_size": 0,
                         "fnpe_pilot_fraction": 0.05,
                         "fnpe_pilot_length": 256,
                         "num_test_simulations": 3,
@@ -405,7 +397,6 @@ def create_config(
                     "fnpe_num_outer_epochs": 2,
                     "fnpe_num_inner_epochs": 2,
                     "fnpe_batch_size": 64,
-                    "fnpe_validation_size": 0,
                 }
             )
         else:
@@ -447,6 +438,8 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
     shared_dataset_id = None
 
     use_dataset_cache = bool(args.cache_datasets or args.reuse_datasets)
+    if not args.independent_datasets and not use_dataset_cache:
+        use_dataset_cache = True
 
     if shared_methods and not args.independent_datasets and use_dataset_cache:
         seed_cfg = create_config(
@@ -464,8 +457,8 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             checkpoint=args.checkpoint,
             do_train=not args.eval_only,
             dataset_id=None,
-            cache_dataset=args.cache_datasets,
-            reuse_dataset=args.reuse_datasets,
+            cache_dataset=use_dataset_cache,
+            reuse_dataset=use_dataset_cache,
             independent_datasets=args.independent_datasets,
         )
         shared_dataset_id = seed_cfg.dataset_id
@@ -486,12 +479,8 @@ def _create_method_configs(args) -> tuple[dict[str, ExperimentConfig], str | Non
             checkpoint=args.checkpoint,
             do_train=not args.eval_only,
             dataset_id=shared_dataset_id,
-            cache_dataset=args.cache_datasets,
-            reuse_dataset=(
-                method != "fnpe"
-                and args.reuse_datasets
-                and shared_dataset_id is not None
-            ),
+            cache_dataset=use_dataset_cache,
+            reuse_dataset=(not args.independent_datasets and use_dataset_cache),
             independent_datasets=args.independent_datasets,
         )
         configs_used[method] = cfg
@@ -727,7 +716,7 @@ def run_comparison(args):
     else:
         sample_cfg = next(iter(configs_used.values()))
         print(
-            "[INFO] Dataset mode: fresh deterministic regeneration "
+            "[INFO] Dataset mode: shared cached deterministic artifacts "
             f"(sim_seed={sample_cfg.sim_seed}, benchmark_eval_seed={sample_cfg.benchmark_eval_seed})"
         )
     if "fnpe" in args.methods:

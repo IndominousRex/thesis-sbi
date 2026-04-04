@@ -309,6 +309,8 @@ def wasserstein2_posterior_vs_true(
         ]
     )
     coverage_curve_mae = float(np.mean(np.abs(coverage_empirical - coverage_alphas)))
+    coverage_50_abs_error = float(abs(coverage_50 - 0.50))
+    coverage_90_abs_error = float(abs(coverage_90 - 0.90))
 
     # 4. Sliced Wasserstein between aggregated posteriors and true point mass
     # (This gives a distributional distance measure)
@@ -323,6 +325,17 @@ def wasserstein2_posterior_vs_true(
         num_projections=num_projections,
     )
 
+    posterior_std = theta_samples_np.std(axis=1, ddof=1 if K > 1 else 0)
+    q05 = np.quantile(theta_samples_np, 0.05, axis=1)
+    q50 = np.quantile(theta_samples_np, 0.50, axis=1)
+    q95 = np.quantile(theta_samples_np, 0.95, axis=1)
+    mean_abs_error = np.abs(posterior_mean - theta_true_np)
+    spread_l2 = np.linalg.norm(posterior_std, axis=1)
+    entropy_diag_gaussian = 0.5 * np.sum(
+        np.log(2.0 * np.pi * np.e * np.maximum(posterior_std**2, 1e-12)),
+        axis=1,
+    )
+
     return {
         "w2_mean": float(np.mean(w2_per_case)),
         "w2_std": float(np.std(w2_per_case)),
@@ -330,11 +343,29 @@ def wasserstein2_posterior_vs_true(
         "swd_posterior_vs_true": float(swd),
         "coverage_90": float(coverage_90),
         "coverage_50": float(coverage_50),
+        "coverage_50_abs_error": coverage_50_abs_error,
+        "coverage_90_abs_error": coverage_90_abs_error,
         "coverage_curve_alpha": [float(a) for a in coverage_alphas],
         "coverage_curve_empirical": [float(c) for c in coverage_empirical],
         "coverage_curve_mae": coverage_curve_mae,
         "l2_error_mean": float(np.mean(l2_errors)),
         "l2_error_std": float(np.std(l2_errors)),
+        "per_case": {
+            "w2": [float(v) for v in w2_per_case],
+            "l2_error": [float(v) for v in l2_errors],
+            "posterior_mean": posterior_mean.tolist(),
+            "posterior_std": posterior_std.tolist(),
+            "posterior_quantiles": {
+                "q05": q05.tolist(),
+                "q50": q50.tolist(),
+                "q95": q95.tolist(),
+            },
+            "posterior_mean_abs_error": mean_abs_error.tolist(),
+            "posterior_spread_l2": [float(v) for v in spread_l2],
+            "posterior_entropy_diag_gaussian": [
+                float(v) for v in entropy_diag_gaussian
+            ],
+        },
     }
 
 

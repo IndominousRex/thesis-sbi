@@ -1,4 +1,5 @@
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, Any
+import time
 
 import numpy as np
 import pandas as pd
@@ -386,7 +387,8 @@ def posterior_predictive_from_real(
     device: torch.device,
     K_ppc: int = 200,
     state0: Optional[jnp.ndarray] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    return_metadata: bool = False,
+) -> Tuple[np.ndarray, np.ndarray] | Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     Posterior predictive simulation for a real (or simulated) window.
 
@@ -437,6 +439,7 @@ def posterior_predictive_from_real(
     )
 
     # 4) Sample parameters from p(theta | x_real)
+    sample_start = time.time()
     with torch.no_grad():
         x_cond = normalizer.normalize_x(x_obs_full, cfg.obs_dim).to(device)
         samples = posterior.sample((K_ppc,), x=x_cond)
@@ -448,12 +451,14 @@ def posterior_predictive_from_real(
             samples = samples[:, 0, :]
         elif samples.ndim != 2:
             raise ValueError(f"Unexpected posterior sample shape {samples.shape}")
+    posterior_sampling_time_s = float(time.time() - sample_start)
 
     samples_phys = normalizer.unnormalize_theta(samples)
     thetas = samples_phys.cpu().numpy().astype(np.float32)  # (K_ppc, d_active)
 
     # 5) Simulate y for each theta using the JAX vehicle model
     #    This uses rollout_with_states + vehicle_fy under the hood.
+    sim_start = time.time()
     y_ppc = simulate_y_batch_for_thetas(
         theta_batch_np=thetas,
         controls=ctrls_model,
@@ -461,5 +466,13 @@ def posterior_predictive_from_real(
         cfg=cfg,
         state0=state0_real,
     )  # (K_ppc, T_event, obs_dim)
+    ppc_simulation_time_s = float(time.time() - sim_start)
+
+    if return_metadata:
+        return y_real, y_ppc, {
+            "posterior_sampling_time_s": posterior_sampling_time_s,
+            "ppc_simulation_time_s": ppc_simulation_time_s,
+            "posterior_samples_phys": thetas,
+        }
 
     return y_real, y_ppc

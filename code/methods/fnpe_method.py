@@ -311,7 +311,6 @@ class FNPEMethod(BaseMethod):
         num_outer_epochs: int = 100,
         num_inner_epochs: int = 50,
         batch_size: int = 1000,
-        validation_size: int = 1000,
         learning_rate: float = 5e-4,
         clip_max_norm: float = 20.0,
         optimizer_name: str = "adamw",
@@ -323,13 +322,6 @@ class FNPEMethod(BaseMethod):
         pilot_length: int = 500,  # Length of each pilot trajectory
         proposal_noise: float = 0.03,  # Noise scale: noise = proposal_noise * std(pool)
         gauss_posterior_precission_scale: Optional[float] = None,
-        # Deprecated compatibility knobs from the old trainer.
-        num_epochs: Optional[int] = None,
-        steps_per_epoch: Optional[int] = None,
-        stop_after_epochs: Optional[int] = None,
-        validation_fraction: Optional[float] = None,
-        ema_loss_decay: Optional[float] = None,
-        convergence_std_threshold: Optional[float] = None,
     ):
         # Note: FNPE doesn't use torch prior/device directly
         super().__init__(cfg, prior, device)
@@ -342,7 +334,6 @@ class FNPEMethod(BaseMethod):
         self.num_outer_epochs = int(num_outer_epochs)
         self.num_inner_epochs = int(num_inner_epochs)
         self.batch_size = int(batch_size)
-        self.validation_size = int(validation_size)
         self.learning_rate = float(learning_rate)
         self.clip_max_norm = float(clip_max_norm)
         self.optimizer_name = str(optimizer_name).lower()

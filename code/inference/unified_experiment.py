@@ -12,6 +12,8 @@ import json
 import os
 import pickle
 import time
+import hashlib
+import traceback
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List
@@ -95,6 +97,161 @@ def tensor_to_python(x):
         else:
             return x.cpu().numpy().tolist()
     return x
+
+
+def _write_json(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, default=tensor_to_python)
+
+
+def _update_run_status(
+    status_path: Path,
+    *,
+    state: str,
+    stage: str,
+    exp_dir: Path,
+    completed_stages: Optional[List[str]] = None,
+    error: Optional[Dict[str, Any]] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    payload: Dict[str, Any] = {
+        "state": state,
+        "stage": stage,
+        "exp_dir": str(exp_dir),
+        "updated_at": datetime.now().isoformat(),
+    }
+    if completed_stages is not None:
+        payload["completed_stages"] = list(completed_stages)
+    if error is not None:
+        payload["error"] = error
+    if extra:
+        payload.update(extra)
+    _write_json(status_path, payload)
+
+
+def _hash_payload(*items: Any) -> str:
+    digest = hashlib.sha256()
+    for item in items:
+        if item is None:
+            digest.update(b"<none>")
+            continue
+        if isinstance(item, torch.Tensor):
+            arr = item.detach().cpu().contiguous().numpy()
+        elif isinstance(item, np.ndarray):
+            arr = np.ascontiguousarray(item)
+        else:
+            digest.update(json.dumps(item, sort_keys=True, default=tensor_to_python).encode("utf-8"))
+            continue
+        digest.update(str(arr.shape).encode("utf-8"))
+        digest.update(str(arr.dtype).encode("utf-8"))
+        digest.update(arr.tobytes())
+    return digest.hexdigest()
+
+
+def _dataset_artifact_metadata(
+    *,
+    role: str,
+    bundle: Dict[str, Any],
+    cache_path: Path,
+    cache_hit: bool,
+    cache_enabled: bool,
+    config_hash: Optional[str],
+) -> Dict[str, Any]:
+    theta = bundle.get("theta")
+    x = bundle.get("x")
+    state0 = bundle.get("state0")
+    acceptance = bundle.get("acceptance", {})
+    artifact_hash = bundle.get("artifact_hash")
+    if artifact_hash is None:
+        artifact_hash = _hash_payload(theta, x, state0)
+
+    metadata = {
+        "role": role,
+        "cache_path": str(cache_path),
+        "cache_enabled": bool(cache_enabled),
+        "cache_hit": bool(cache_hit),
+        "config_hash": config_hash,
+        "artifact_hash": str(artifact_hash),
+        "num_examples": int(theta.shape[0]) if isinstance(theta, torch.Tensor) else None,
+        "theta_shape": list(theta.shape) if isinstance(theta, torch.Tensor) else None,
+        "x_shape": list(x.shape) if isinstance(x, torch.Tensor) else None,
+        "state0_shape": list(state0.shape) if isinstance(state0, torch.Tensor) else None,
+        "acceptance": acceptance,
+    }
+    cached_meta = bundle.get("cache_metadata")
+    if isinstance(cached_meta, dict):
+        metadata["cache_metadata"] = cached_meta
+    return metadata
+
+
+def _posterior_case_summary(
+    *,
+    theta_true_np: np.ndarray,
+    theta_samples_np: np.ndarray,
+    param_names: List[str],
+) -> Dict[str, Any]:
+    theta_true_np = np.asarray(theta_true_np, dtype=np.float64).reshape(-1)
+    theta_samples_np = np.asarray(theta_samples_np, dtype=np.float64)
+    if theta_samples_np.ndim != 2:
+        theta_samples_np = theta_samples_np.reshape(-1, theta_samples_np.shape[-1])
+
+    posterior_mean = theta_samples_np.mean(axis=0)
+    posterior_std = theta_samples_np.std(axis=0, ddof=1 if theta_samples_np.shape[0] > 1 else 0)
+    q05, q50, q95 = np.quantile(theta_samples_np, [0.05, 0.5, 0.95], axis=0)
+    mean_abs_error = np.abs(posterior_mean - theta_true_np)
+    sq_dists = np.sum((theta_samples_np - theta_true_np[None, :]) ** 2, axis=1)
+    w2_pointmass = float(np.sqrt(np.mean(sq_dists)))
+    l2_posterior_mean = float(np.linalg.norm(posterior_mean - theta_true_np))
+    entropy_diag_gaussian = float(
+        0.5
+        * np.sum(
+            np.log(2.0 * np.pi * np.e * np.maximum(posterior_std**2, 1e-12))
+        )
+    )
+
+    return {
+        "theta_true": {
+            name: float(value) for name, value in zip(param_names, theta_true_np)
+        },
+        "posterior_mean": {
+            name: float(value) for name, value in zip(param_names, posterior_mean)
+        },
+        "posterior_std": {
+            name: float(value) for name, value in zip(param_names, posterior_std)
+        },
+        "posterior_quantiles": {
+            "q05": {name: float(value) for name, value in zip(param_names, q05)},
+            "q50": {name: float(value) for name, value in zip(param_names, q50)},
+            "q95": {name: float(value) for name, value in zip(param_names, q95)},
+        },
+        "mean_abs_error_per_parameter": {
+            name: float(value) for name, value in zip(param_names, mean_abs_error)
+        },
+        "posterior_mean_l2_error": l2_posterior_mean,
+        "posterior_w2_pointmass": w2_pointmass,
+        "posterior_spread_l2": float(np.linalg.norm(posterior_std)),
+        "posterior_entropy_diag_gaussian": entropy_diag_gaussian,
+    }
+
+
+def _figure_metadata_entry(
+    *,
+    figure_type: str,
+    file_path: Path,
+    example_idx: int,
+    theta_true_np: np.ndarray,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    entry = {
+        "figure_type": figure_type,
+        "file_path": str(file_path),
+        "example_idx": int(example_idx),
+        "theta_true": np.asarray(theta_true_np, dtype=np.float32).reshape(-1).tolist(),
+    }
+    if extra:
+        entry.update(extra)
+    return entry
 
 
 def _sample_theta_from_prior_cpu(prior_cpu, seed: int) -> torch.Tensor:
@@ -435,7 +592,7 @@ def get_or_generate_training_dataset(
     prior,
     simulator,
     device: torch.device,
-) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]:
+) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any], Dict[str, Any]]:
     """
     Get the shared training dataset from cache or generate a new one.
 
@@ -451,7 +608,15 @@ def get_or_generate_training_dataset(
     if cfg.reuse_dataset and cache_path.exists():
         print(f"[DATA] Loading cached dataset from {cache_path}")
         cached = torch.load(cache_path, weights_only=False)
-        return cached["theta"], cached["x"], cached.get("region_metadata", region_meta)
+        meta = _dataset_artifact_metadata(
+            role="training",
+            bundle=cached,
+            cache_path=cache_path,
+            cache_hit=True,
+            cache_enabled=bool(cfg.cache_dataset or cfg.reuse_dataset),
+            config_hash=cfg.dataset_id,
+        )
+        return cached["theta"], cached["x"], cached.get("region_metadata", region_meta), meta
 
     if cfg.cache_dataset or cfg.reuse_dataset:
         _acquire_cache_lock(lock_path)
@@ -463,11 +628,26 @@ def get_or_generate_training_dataset(
                     cached["theta"],
                     cached["x"],
                     cached.get("region_metadata", region_meta),
+                    _dataset_artifact_metadata(
+                        role="training",
+                        bundle=cached,
+                        cache_path=cache_path,
+                        cache_hit=True,
+                        cache_enabled=bool(cfg.cache_dataset or cfg.reuse_dataset),
+                        config_hash=cfg.dataset_id,
+                    ),
                 )
             print(f"[DATA] Generating {cfg.num_simulations} train simulations...")
             bundle = _generate_train_dataset_with_holdout(
                 cfg, prior, simulator, region_meta
             )
+            artifact_hash = _hash_payload(bundle["theta"], bundle["x"])
+            bundle["artifact_hash"] = artifact_hash
+            bundle["cache_metadata"] = {
+                "created_at": datetime.now().isoformat(),
+                "role": "training",
+                "config_hash": cfg.dataset_id,
+            }
             if cfg.cache_dataset:
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
                 print(f"[DATA] Caching training dataset to {cache_path}")
@@ -478,16 +658,43 @@ def get_or_generate_training_dataset(
                         "region_metadata": bundle["region_metadata"],
                         "acceptance": bundle["acceptance"],
                         "config_hash": cfg.dataset_id,
+                        "artifact_hash": artifact_hash,
+                        "cache_metadata": bundle["cache_metadata"],
                     },
                     cache_path,
                 )
-            return bundle["theta"], bundle["x"], bundle["region_metadata"]
+            return (
+                bundle["theta"],
+                bundle["x"],
+                bundle["region_metadata"],
+                _dataset_artifact_metadata(
+                    role="training",
+                    bundle=bundle,
+                    cache_path=cache_path,
+                    cache_hit=False,
+                    cache_enabled=bool(cfg.cache_dataset or cfg.reuse_dataset),
+                    config_hash=cfg.dataset_id,
+                ),
+            )
         finally:
             _release_cache_lock(lock_path)
 
     print(f"[DATA] Generating {cfg.num_simulations} train simulations...")
     bundle = _generate_train_dataset_with_holdout(cfg, prior, simulator, region_meta)
-    return bundle["theta"], bundle["x"], bundle["region_metadata"]
+    bundle["artifact_hash"] = _hash_payload(bundle["theta"], bundle["x"])
+    return (
+        bundle["theta"],
+        bundle["x"],
+        bundle["region_metadata"],
+        _dataset_artifact_metadata(
+            role="training",
+            bundle=bundle,
+            cache_path=cache_path,
+            cache_hit=False,
+            cache_enabled=bool(cfg.cache_dataset or cfg.reuse_dataset),
+            config_hash=cfg.dataset_id,
+        ),
+    )
 
 
 def get_or_generate_test_dataset(
@@ -495,7 +702,7 @@ def get_or_generate_test_dataset(
     prior,
     simulator,
     device: torch.device,
-) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any], torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, Any], torch.Tensor, Dict[str, Any]]:
     """
     Get the shared held-out synthetic test dataset from cache or generate it.
 
@@ -512,6 +719,14 @@ def get_or_generate_test_dataset(
             torch.empty(0, cfg.T_seg, cfg.obs_dim + 4, dtype=torch.float32),
             region_meta,
             torch.empty(0, cfg.state_dim, dtype=torch.float32),
+            {
+                "role": "heldout_test",
+                "cache_enabled": bool(cfg.cache_dataset or cfg.reuse_dataset),
+                "cache_hit": False,
+                "cache_path": str(cfg.get_test_dataset_cache_path()),
+                "config_hash": cfg.test_dataset_id,
+                "acceptance": {"accepted": 0, "attempted": 0, "acceptance_rate": 0.0},
+            },
         )
 
     cache_path = cfg.get_test_dataset_cache_path()
@@ -526,6 +741,14 @@ def get_or_generate_test_dataset(
             cached["x"],
             cached.get("region_metadata", region_meta),
             cached.get("state0", torch.empty(0, cfg.state_dim, dtype=torch.float32)),
+            _dataset_artifact_metadata(
+                role="heldout_test",
+                bundle=cached,
+                cache_path=cache_path,
+                cache_hit=True,
+                cache_enabled=bool(cfg.cache_dataset or cfg.reuse_dataset),
+                config_hash=cfg.test_dataset_id,
+            ),
         )
 
     if cfg.cache_dataset or cfg.reuse_dataset:
@@ -540,6 +763,14 @@ def get_or_generate_test_dataset(
                     cached.get("region_metadata", region_meta),
                     cached.get(
                         "state0", torch.empty(0, cfg.state_dim, dtype=torch.float32)
+                    ),
+                    _dataset_artifact_metadata(
+                        role="heldout_test",
+                        bundle=cached,
+                        cache_path=cache_path,
+                        cache_hit=True,
+                        cache_enabled=bool(cfg.cache_dataset or cfg.reuse_dataset),
+                        config_hash=cfg.test_dataset_id,
                     ),
                 )
             print(f"[DATA] Generating {cfg.num_test_simulations} held-out test simulations...")
@@ -559,6 +790,15 @@ def get_or_generate_test_dataset(
                 cfg.random_seed = original_seed
                 cfg.sim_seed = original_sim_seed
                 setup_environment(cfg.sim_seed)
+            artifact_hash = _hash_payload(
+                bundle["theta"], bundle["x"], bundle["state0"]
+            )
+            bundle["artifact_hash"] = artifact_hash
+            bundle["cache_metadata"] = {
+                "created_at": datetime.now().isoformat(),
+                "role": "heldout_test",
+                "config_hash": cfg.test_dataset_id,
+            }
             if cfg.cache_dataset:
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
                 print(f"[DATA] Caching held-out test dataset to {cache_path}")
@@ -570,6 +810,8 @@ def get_or_generate_test_dataset(
                         "region_metadata": bundle["region_metadata"],
                         "acceptance": bundle["acceptance"],
                         "config_hash": cfg.test_dataset_id,
+                        "artifact_hash": artifact_hash,
+                        "cache_metadata": bundle["cache_metadata"],
                     },
                     cache_path,
                 )
@@ -578,6 +820,14 @@ def get_or_generate_test_dataset(
                 bundle["x"],
                 bundle["region_metadata"],
                 bundle["state0"],
+                _dataset_artifact_metadata(
+                    role="heldout_test",
+                    bundle=bundle,
+                    cache_path=cache_path,
+                    cache_hit=False,
+                    cache_enabled=bool(cfg.cache_dataset or cfg.reuse_dataset),
+                    config_hash=cfg.test_dataset_id,
+                ),
             )
         finally:
             _release_cache_lock(lock_path)
@@ -597,7 +847,23 @@ def get_or_generate_test_dataset(
         cfg.sim_seed = original_sim_seed
         setup_environment(cfg.sim_seed)
 
-    return bundle["theta"], bundle["x"], bundle["region_metadata"], bundle["state0"]
+    bundle["artifact_hash"] = _hash_payload(
+        bundle["theta"], bundle["x"], bundle["state0"]
+    )
+    return (
+        bundle["theta"],
+        bundle["x"],
+        bundle["region_metadata"],
+        bundle["state0"],
+        _dataset_artifact_metadata(
+            role="heldout_test",
+            bundle=bundle,
+            cache_path=cache_path,
+            cache_hit=False,
+            cache_enabled=bool(cfg.cache_dataset or cfg.reuse_dataset),
+            config_hash=cfg.test_dataset_id,
+        ),
+    )
 
 
 def get_or_generate_dataset(
@@ -609,7 +875,7 @@ def get_or_generate_dataset(
     """
     Backwards-compatible wrapper around the shared training dataset cache.
     """
-    theta_train, x_train, region_metadata = get_or_generate_training_dataset(
+    theta_train, x_train, region_metadata, _ = get_or_generate_training_dataset(
         cfg, prior, simulator, device
     )
     return theta_train, x_train, region_metadata
@@ -893,7 +1159,17 @@ def compute_heldout_posterior_stats(
     sq_dist = np.sum((theta_samples_np - theta_true_np[:, None, :]) ** 2, axis=2)
     w2_per_case = np.sqrt(np.mean(sq_dist, axis=1))
     posterior_mean = theta_samples_np.mean(axis=1)
+    posterior_std = theta_samples_np.std(axis=1, ddof=1 if K > 1 else 0)
+    q05 = np.quantile(theta_samples_np, 0.05, axis=1)
+    q50 = np.quantile(theta_samples_np, 0.50, axis=1)
+    q95 = np.quantile(theta_samples_np, 0.95, axis=1)
     l2_per_case = np.sqrt(np.sum((posterior_mean - theta_true_np) ** 2, axis=1))
+    mean_abs_error = np.abs(posterior_mean - theta_true_np)
+    spread_l2 = np.linalg.norm(posterior_std, axis=1)
+    entropy_diag_gaussian = 0.5 * np.sum(
+        np.log(2.0 * np.pi * np.e * np.maximum(posterior_std**2, 1e-12)),
+        axis=1,
+    )
 
     rng = np.random.default_rng(int(cfg.random_seed))
     boot_idx = rng.integers(0, N, size=(bootstrap_samples, N))
@@ -938,11 +1214,24 @@ def compute_heldout_posterior_stats(
             "count": int(overall_flat.sum()),
             "n": int(overall_flat.size),
             "pvalue": float(overall_test.pvalue),
+            "abs_error_to_nominal": float(abs(np.mean(overall_flat) - level)),
         }
 
     return {
         "rank_uniformity": rank_uniformity,
         "coverage_tests": coverage_tests,
+        "coverage_distance_summary": {
+            "coverage_50_abs_error": float(
+                abs(
+                    coverage_tests["coverage_50"]["overall"]["empirical"] - 0.50
+                )
+            ),
+            "coverage_90_abs_error": float(
+                abs(
+                    coverage_tests["coverage_90"]["overall"]["empirical"] - 0.90
+                )
+            ),
+        },
         "bootstrap_ci": {
             "w2_mean_95": [
                 float(np.quantile(w2_boot, 0.025)),
@@ -951,6 +1240,22 @@ def compute_heldout_posterior_stats(
             "l2_error_mean_95": [
                 float(np.quantile(l2_boot, 0.025)),
                 float(np.quantile(l2_boot, 0.975)),
+            ],
+        },
+        "per_case": {
+            "w2": [float(v) for v in w2_per_case],
+            "l2_error": [float(v) for v in l2_per_case],
+            "posterior_mean": posterior_mean.tolist(),
+            "posterior_std": posterior_std.tolist(),
+            "posterior_quantiles": {
+                "q05": q05.tolist(),
+                "q50": q50.tolist(),
+                "q95": q95.tolist(),
+            },
+            "posterior_mean_abs_error": mean_abs_error.tolist(),
+            "posterior_spread_l2": [float(v) for v in spread_l2],
+            "posterior_entropy_diag_gaussian": [
+                float(v) for v in entropy_diag_gaussian
             ],
         },
         "num_cases": int(N),
@@ -963,6 +1268,7 @@ def run_simulated_ppc_diagnostic(
     fig_dir: Path,
     posterior,
     x_test_phys: torch.Tensor,
+    theta_test_phys: Optional[torch.Tensor],
     state0_test_phys: Optional[torch.Tensor],
     normalizer: Normalizer,
     device: torch.device,
@@ -977,13 +1283,15 @@ def run_simulated_ppc_diagnostic(
         return {}
 
     per_example: List[Dict[str, Any]] = []
+    figure_metadata: List[Dict[str, Any]] = []
+    ppc_times: List[float] = []
     for ex_idx in range(total):
         x_case = x_test_phys[ex_idx : ex_idx + 1].to(device)
         controls = _controls_dict_from_x_case(x_test_phys[ex_idx], cfg.obs_dim)
         state0_case = None
         if state0_test_phys is not None and ex_idx < int(state0_test_phys.shape[0]):
             state0_case = state0_test_phys[ex_idx].detach().cpu().numpy()
-        y_real, y_ppc = posterior_predictive_from_real(
+        y_real, y_ppc, ppc_meta = posterior_predictive_from_real(
             posterior,
             x_case,
             controls,
@@ -992,7 +1300,28 @@ def run_simulated_ppc_diagnostic(
             device=device,
             K_ppc=num_posterior_samples,
             state0=state0_case,
+            return_metadata=True,
         )
+        ppc_times.append(
+            float(ppc_meta["posterior_sampling_time_s"])
+            + float(ppc_meta["ppc_simulation_time_s"])
+        )
+        theta_true_np = None
+        if theta_test_phys is not None and ex_idx < int(theta_test_phys.shape[0]):
+            theta_true_np = (
+                theta_test_phys[ex_idx].detach().cpu().numpy().astype(np.float32)
+            )
+        posterior_summary = (
+            _posterior_case_summary(
+                theta_true_np=theta_true_np,
+                theta_samples_np=np.asarray(ppc_meta["posterior_samples_phys"], dtype=np.float32),
+                param_names=list(cfg.active_parameters),
+            )
+            if theta_true_np is not None
+            else None
+        )
+        metrics = real_data_trajectory_metrics(y_real, y_ppc, normalize_w2=True)
+        plot_path = None
         if not cfg.no_plots and ex_idx < int(num_plot_examples):
             ppc_path = fig_dir / f"ppc_timeseries_simulated_test_ex{ex_idx}.png"
             plot_ppc_trajectories(
@@ -1006,9 +1335,40 @@ def run_simulated_ppc_diagnostic(
                 max_dims=cfg.obs_dim,
                 title=f"PPC on Held-out Simulated Test Case {ex_idx}",
             )
-
-        metrics = real_data_trajectory_metrics(y_real, y_ppc, normalize_w2=True)
-        per_example.append({"example_idx": ex_idx, "metrics": metrics})
+            plot_path = ppc_path
+            if theta_true_np is not None:
+                figure_metadata.append(
+                    _figure_metadata_entry(
+                        figure_type="heldout_simulated_ppc",
+                        file_path=ppc_path,
+                        example_idx=ex_idx,
+                        theta_true_np=theta_true_np,
+                        extra={
+                            "ppc_rmse": float(metrics["rmse_overall"]),
+                            "ppc_w2": float(metrics["w2"]),
+                            "difficulty_score": float(metrics["rmse_overall"]),
+                        },
+                    )
+                )
+        if plot_path is not None and theta_true_np is not None:
+            figure_metadata[-1]["ppc_rmse"] = float(metrics["rmse_overall"])
+            figure_metadata[-1]["ppc_w2"] = float(metrics["w2"])
+        per_example.append(
+            {
+                "example_idx": ex_idx,
+                "theta_true": theta_true_np.tolist() if theta_true_np is not None else None,
+                "metrics": metrics,
+                "posterior_summary": posterior_summary,
+                "timing_s": {
+                    "posterior_sampling_time_s": float(ppc_meta["posterior_sampling_time_s"]),
+                    "ppc_simulation_time_s": float(ppc_meta["ppc_simulation_time_s"]),
+                    "total_case_time_s": float(
+                        ppc_meta["posterior_sampling_time_s"] + ppc_meta["ppc_simulation_time_s"]
+                    ),
+                },
+                "figure_path": str(plot_path) if plot_path is not None else None,
+            }
+        )
 
     rmse_vals = [float(item["metrics"]["rmse_overall"]) for item in per_example]
     w2_vals = [float(item["metrics"]["w2"]) for item in per_example]
@@ -1020,14 +1380,22 @@ def run_simulated_ppc_diagnostic(
         "rmse_std": float(np.std(rmse_vals)),
         "w2_mean": float(np.mean(w2_vals)),
         "w2_std": float(np.std(w2_vals)),
+        "ppc_time_mean_s": float(np.mean(ppc_times)) if ppc_times else None,
+        "ppc_time_total_s": float(np.sum(ppc_times)) if ppc_times else None,
     }
-    return {"per_example": per_example, "aggregate": aggregate}
+    return {
+        "per_example": per_example,
+        "per_case": per_example,
+        "aggregate": aggregate,
+        "figure_metadata": figure_metadata,
+    }
 
 
 def build_budget_metadata(
     cfg: ExperimentConfig, training_summary: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Compute benchmark budget metadata for reporting and aggregation."""
+    cfg.assert_budget_resolution_ready("build_budget_metadata")
     training_summary = training_summary or {}
     if cfg.method == "fnpe":
         num_pilots = int(round(cfg.fnpe_num_simulations * cfg.fnpe_pilot_fraction))
@@ -1117,12 +1485,13 @@ def run_parameter_posterior_plots(
     num_posterior_samples: int = 5000,
     method=None,  # Pass method for FNPE to use its own data generation
     examples: Optional[List[Dict[str, Any]]] = None,
-) -> None:
+) -> List[Dict[str, Any]]:
     """Generate prior vs posterior marginal plots."""
     if cfg.no_plots:
-        return
+        return []
 
     param_names = list(cfg.active_parameters)
+    figure_metadata: List[Dict[str, Any]] = []
 
     # For FNPE, use JAX-based prior sampling and simulator but unified posterior interface
     if cfg.method == "fnpe" and method is not None and hasattr(method, "task"):
@@ -1176,7 +1545,25 @@ def run_parameter_posterior_plots(
                 out_path=grid_path,
                 example_id=f"ex{ex_idx}",
             )
-        return
+            posterior_summary = _posterior_case_summary(
+                theta_true_np=theta_true_np,
+                theta_samples_np=theta_post_np,
+                param_names=param_names,
+            )
+            figure_metadata.append(
+                _figure_metadata_entry(
+                    figure_type="prior_posterior_grid",
+                    file_path=grid_path,
+                    example_idx=ex_idx,
+                    theta_true_np=theta_true_np,
+                    extra={
+                        "difficulty_score_l2": posterior_summary["posterior_mean_l2_error"],
+                        "difficulty_score_w2": posterior_summary["posterior_w2_pointmass"],
+                        "posterior_summary": posterior_summary,
+                    },
+                )
+            )
+        return figure_metadata
 
     # Standard path for NPE/NPSE
     with torch.no_grad():
@@ -1219,6 +1606,26 @@ def run_parameter_posterior_plots(
             out_path=grid_path,
             example_id=f"ex{ex_idx}",
         )
+        posterior_summary = _posterior_case_summary(
+            theta_true_np=theta_true_np,
+            theta_samples_np=theta_post_np,
+            param_names=param_names,
+        )
+        figure_metadata.append(
+            _figure_metadata_entry(
+                figure_type="prior_posterior_grid",
+                file_path=grid_path,
+                example_idx=ex_idx,
+                theta_true_np=theta_true_np,
+                extra={
+                    "difficulty_score_l2": posterior_summary["posterior_mean_l2_error"],
+                    "difficulty_score_w2": posterior_summary["posterior_w2_pointmass"],
+                    "posterior_summary": posterior_summary,
+                },
+            )
+        )
+
+    return figure_metadata
 
 
 def run_sbc_diagnostic(
@@ -1319,7 +1726,7 @@ def run_pairplot_diagnostic(
     num_examples: int = 3,
     method=None,
     examples: Optional[List[Dict[str, Any]]] = None,
-) -> None:
+) -> List[Dict[str, Any]]:
     """
     Run pairplot visualization diagnostic.
 
@@ -1338,11 +1745,12 @@ def run_pairplot_diagnostic(
         method: The method object (for FNPE-specific handling)
     """
     if cfg.no_plots:
-        return
+        return []
 
     print("[PAIRPLOT] Generating pairplot visualizations...")
 
     param_names = list(cfg.active_parameters)
+    figure_metadata: List[Dict[str, Any]] = []
 
     # Outside strict comparison mode, keep slower methods lighter.
     if not getattr(cfg, "unify_eval_budgets", False) and cfg.method in ["npse", "fnpe"]:
@@ -1382,7 +1790,25 @@ def run_pairplot_diagnostic(
                 title="Posterior Pairplot",
                 example_id=f"ex{ex_idx}",
             )
-        return
+            posterior_summary = _posterior_case_summary(
+                theta_true_np=theta_true_np,
+                theta_samples_np=theta_post_np,
+                param_names=param_names,
+            )
+            figure_metadata.append(
+                _figure_metadata_entry(
+                    figure_type="pairplot",
+                    file_path=pairplot_path,
+                    example_idx=ex_idx,
+                    theta_true_np=theta_true_np,
+                    extra={
+                        "difficulty_score_l2": posterior_summary["posterior_mean_l2_error"],
+                        "difficulty_score_w2": posterior_summary["posterior_w2_pointmass"],
+                        "posterior_summary": posterior_summary,
+                    },
+                )
+            )
+        return figure_metadata
 
     # Standard path for NPE/NPSE
     if examples is None:
@@ -1422,6 +1848,26 @@ def run_pairplot_diagnostic(
             title="Posterior Pairplot",
             example_id=f"ex{ex_idx}",
         )
+        posterior_summary = _posterior_case_summary(
+            theta_true_np=theta_true_np,
+            theta_samples_np=theta_post_np,
+            param_names=param_names,
+        )
+        figure_metadata.append(
+            _figure_metadata_entry(
+                figure_type="pairplot",
+                file_path=pairplot_path,
+                example_idx=ex_idx,
+                theta_true_np=theta_true_np,
+                extra={
+                    "difficulty_score_l2": posterior_summary["posterior_mean_l2_error"],
+                    "difficulty_score_w2": posterior_summary["posterior_w2_pointmass"],
+                    "posterior_summary": posterior_summary,
+                },
+            )
+        )
+
+    return figure_metadata
 
 
 def run_c2st_diagnostic(
@@ -1566,7 +2012,7 @@ def run_diffusion_traces_diagnostic(
     num_examples: int = 2,
     method=None,
     examples: Optional[List[Dict[str, Any]]] = None,
-) -> None:
+) -> List[Dict[str, Any]]:
     """
     Run diffusion trace visualization for FNPE.
 
@@ -1589,20 +2035,21 @@ def run_diffusion_traces_diagnostic(
         method: The method object (for FNPE-specific handling)
     """
     if cfg.no_plots:
-        return
+        return []
 
     # Only for FNPE with trace support
     if cfg.method != "fnpe":
         print("[TRACES] Diffusion traces only available for FNPE, skipping...")
-        return
+        return []
 
     if not hasattr(posterior, "sample_with_traces"):
         print("[TRACES] Posterior doesn't support sample_with_traces, skipping...")
-        return
+        return []
 
     print("[TRACES] Generating diffusion trace plots...")
 
     param_names = list(cfg.active_parameters)
+    figure_metadata: List[Dict[str, Any]] = []
 
     # Use shared examples if provided (preferred for consistency)
     if method is not None and hasattr(method, "task"):
@@ -1638,8 +2085,20 @@ def run_diffusion_traces_diagnostic(
                     example_id=f"ex{ex_idx}",
                     max_traces=num_traces,
                 )
+                figure_metadata.append(
+                    _figure_metadata_entry(
+                        figure_type="diffusion_traces",
+                        file_path=trace_path,
+                        example_idx=ex_idx,
+                        theta_true_np=theta_true_np,
+                        extra={"num_traces": int(num_traces)},
+                    )
+                )
             except Exception as e:
                 print(f"[TRACES] Failed to get traces for example {ex_idx}: {e}")
+        return figure_metadata
+
+    return figure_metadata
 
 
 def run_swd_diagnostic(
@@ -1738,6 +2197,7 @@ def run_w2_posterior_diagnostic(
     if sample_times_s:
         w2_results["sampling_time_mean_s"] = float(np.mean(sample_times_s))
         w2_results["sampling_time_std_s"] = float(np.std(sample_times_s))
+        w2_results["sampling_time_total_s"] = float(np.sum(sample_times_s))
 
     if (
         not cfg.no_plots
@@ -2340,27 +2800,98 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     exp_dir = make_experiment_dir(cfg)
     fig_dir = exp_dir / "figures"
     fig_dir.mkdir(parents=True, exist_ok=True)
+    status_path = exp_dir / "run_status.json"
     print(f"[SETUP] Experiment dir: {exp_dir}")
     print(f"[SETUP] Directory exists: {exp_dir.exists()}")
     cfg.save(str(exp_dir / "config.json"))
     print(f"[SETUP] Saved config to {exp_dir / 'config.json'}")
 
+    completed_stages: List[str] = []
+    timing_breakdown: Dict[str, Any] = {}
+    figure_metadata: Dict[str, Any] = {}
+    stage_failures: Dict[str, Any] = {}
+
+    def mark_status(stage: str, *, state: str = "running", extra: Optional[Dict[str, Any]] = None) -> None:
+        if stage not in completed_stages and state in {
+            "completed",
+            "complete",
+            "complete_with_failures",
+        }:
+            completed_stages.append(stage)
+        _update_run_status(
+            status_path,
+            state=state,
+            stage=stage,
+            exp_dir=exp_dir,
+            completed_stages=completed_stages,
+            extra=extra,
+        )
+
+    def record_stage_failure(stage: str, exc: Exception, *, fatal: bool = False) -> None:
+        stage_failures[stage] = {
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "traceback": traceback.format_exc(),
+        }
+        _update_run_status(
+            status_path,
+            state="failed" if fatal else "running",
+            stage=stage,
+            exp_dir=exp_dir,
+            completed_stages=completed_stages,
+            error=stage_failures[stage],
+            extra={
+                "stage_failures": stage_failures,
+                "timing_breakdown": timing_breakdown,
+            },
+        )
+
+    mark_status(
+        "started",
+        extra={
+            "method": cfg.method,
+            "seed": int(cfg.random_seed),
+            "sim_seed": int(cfg.sim_seed),
+            "train_seed": int(cfg.train_seed),
+            "requested_budget_steps": cfg.requested_budget_steps,
+        },
+    )
+
     train_region_metadata: Dict[str, Any] | None = None
     test_region_metadata: Dict[str, Any] | None = None
+    train_dataset_artifact: Dict[str, Any] | None = None
+    test_dataset_artifact: Dict[str, Any] | None = None
     theta_test_phys = None
     x_test_phys = None
     x_test_norm = None
     x_test_state0 = None
 
     if cfg.run_simulated_test_eval or cfg.run_simulated_ppc:
-        (
-            theta_test_phys,
-            x_test_phys,
-            test_region_metadata,
-            x_test_state0,
-        ) = get_or_generate_test_dataset(
-            cfg, prior_phys, simulator, device
-        )
+        try:
+            t0 = time.time()
+            (
+                theta_test_phys,
+                x_test_phys,
+                test_region_metadata,
+                x_test_state0,
+                test_dataset_artifact,
+            ) = get_or_generate_test_dataset(
+                cfg, prior_phys, simulator, device
+            )
+            heldout_dataset_time_s = float(time.time() - t0)
+            timing_breakdown["heldout_dataset_prepare_time_s"] = heldout_dataset_time_s
+            if test_dataset_artifact and test_dataset_artifact.get("cache_hit"):
+                timing_breakdown["heldout_dataset_load_time_s"] = heldout_dataset_time_s
+            else:
+                timing_breakdown["heldout_dataset_generation_time_s"] = heldout_dataset_time_s
+            mark_status(
+                "heldout_dataset_ready",
+                state="completed",
+                extra={"heldout_dataset_artifact": test_dataset_artifact},
+            )
+        except Exception as e:
+            record_stage_failure("heldout_dataset", e, fatal=True)
+            raise
 
     # --- Get or generate training dataset (skip training data for FNPE) ---
     if cfg.method == "fnpe":
@@ -2394,11 +2925,33 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         if x_test_phys is not None:
             x_test_norm = normalizer_cpu.normalize_x(x_test_phys, cfg.obs_dim)
     else:
-        theta_train_phys, x_train_phys, train_region_metadata = get_or_generate_training_dataset(
-            cfg, prior_phys, simulator, device
-        )
+        try:
+            t0 = time.time()
+            (
+                theta_train_phys,
+                x_train_phys,
+                train_region_metadata,
+                train_dataset_artifact,
+            ) = get_or_generate_training_dataset(
+                cfg, prior_phys, simulator, device
+            )
+            training_dataset_time_s = float(time.time() - t0)
+            timing_breakdown["training_dataset_prepare_time_s"] = training_dataset_time_s
+            if train_dataset_artifact and train_dataset_artifact.get("cache_hit"):
+                timing_breakdown["training_dataset_load_time_s"] = training_dataset_time_s
+            else:
+                timing_breakdown["training_dataset_generation_time_s"] = training_dataset_time_s
+            mark_status(
+                "training_dataset_ready",
+                state="completed",
+                extra={"training_dataset_artifact": train_dataset_artifact},
+            )
+        except Exception as e:
+            record_stage_failure("training_dataset", e, fatal=True)
+            raise
 
         # --- Fit normalization ---
+        norm_t0 = time.time()
         normalizer_cpu = fit_normalizer(theta_train_phys, x_train_phys, cfg.obs_dim)
         norm_path = exp_dir / "stats_normalization.json"
         print(
@@ -2408,12 +2961,14 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         print(f"[NORM] Saved stats to {norm_path}")
 
         normalizer = normalizer_cpu.to(device)
+        timing_breakdown["normalization_fit_time_s"] = float(time.time() - norm_t0)
 
         # --- Normalize data ---
         theta_train = normalizer_cpu.normalize_theta(theta_train_phys)
         x_train = normalizer_cpu.normalize_x(x_train_phys, cfg.obs_dim)
         if x_test_phys is not None:
             x_test_norm = normalizer_cpu.normalize_x(x_test_phys, cfg.obs_dim)
+        mark_status("normalization_ready", state="completed")
 
     # --- Build normalized prior (skip for FNPE - uses its own task-based prior) ---
     bounds = cfg.param_bounds()
@@ -2504,7 +3059,6 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 "num_outer_epochs": cfg.fnpe_num_outer_epochs,
                 "num_inner_epochs": cfg.fnpe_num_inner_epochs,
                 "batch_size": cfg.fnpe_batch_size,
-                "validation_size": cfg.fnpe_validation_size,
                 "learning_rate": cfg.fnpe_learning_rate,
                 "clip_max_norm": cfg.fnpe_clip_max_norm,
                 "optimizer_name": cfg.fnpe_optimizer,
@@ -2546,121 +3100,158 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         if getattr(cfg, "fnpe_clip_samples", False):
             print("[FNPE] Diffusion sample clipping ENABLED", flush=True)
 
-    method = build_method(cfg.method, cfg, prior_norm, device, **method_kwargs)
-    method.build(input_dim=D_in, seq_len=T_event)
+    build_t0 = time.time()
+    try:
+        method = build_method(cfg.method, cfg, prior_norm, device, **method_kwargs)
+        method.build(input_dim=D_in, seq_len=T_event)
+        timing_breakdown["method_build_time_s"] = float(time.time() - build_t0)
+        mark_status("method_built", state="completed")
+    except Exception as e:
+        record_stage_failure("method_build", e, fatal=True)
+        raise
 
     # --- Train ---
     training_summary = {}
     if cfg.do_train:
         print(f"\n[TRAIN] Training {cfg.method.upper()}...", flush=True)
         setup_environment(cfg.train_seed)  # Use train seed
+        train_t0 = time.time()
+        try:
+            if cfg.method == "fnpe":
+                # FNPE generates its own data
+                training_summary = method.train(
+                    num_simulations=cfg.fnpe_num_simulations, T_obs=T_event
+                )
+                # After training, create normalizer from FNPE's task stats for unified interface
+                norm_stats = method.task.get_normalization_stats()
+                from utils.normalization import Normalizer
 
-        if cfg.method == "fnpe":
-            # FNPE generates its own data
-            training_summary = method.train(
-                num_simulations=cfg.fnpe_num_simulations, T_obs=T_event
-            )
-            # After training, create normalizer from FNPE's task stats for unified interface
-            norm_stats = method.task.get_normalization_stats()
-            from utils.normalization import Normalizer
-
-            obs_dim = cfg.obs_dim
-            skip_norm = getattr(cfg, "fnpe_skip_normalize", False)
-            if skip_norm or norm_stats.get("obs_mean") is None:
-                # Identity normalizer: mean=0, std=1 → no-op transform
-                print("[NORM] Using identity normalizer (normalization disabled)")
-                normalizer = Normalizer(
-                    obs_mean=torch.zeros(obs_dim, dtype=torch.float32),
-                    obs_std=torch.ones(obs_dim, dtype=torch.float32),
-                    ctrl_mean=torch.zeros(4, dtype=torch.float32),
-                    ctrl_std=torch.ones(4, dtype=torch.float32),
-                    theta_mean=torch.zeros(cfg.active_param_dim(), dtype=torch.float32),
-                    theta_std=torch.ones(cfg.active_param_dim(), dtype=torch.float32),
-                ).to(device)
+                obs_dim = cfg.obs_dim
+                skip_norm = getattr(cfg, "fnpe_skip_normalize", False)
+                if skip_norm or norm_stats.get("obs_mean") is None:
+                    # Identity normalizer: mean=0, std=1 → no-op transform
+                    print("[NORM] Using identity normalizer (normalization disabled)")
+                    normalizer = Normalizer(
+                        obs_mean=torch.zeros(obs_dim, dtype=torch.float32),
+                        obs_std=torch.ones(obs_dim, dtype=torch.float32),
+                        ctrl_mean=torch.zeros(4, dtype=torch.float32),
+                        ctrl_std=torch.ones(4, dtype=torch.float32),
+                        theta_mean=torch.zeros(cfg.active_param_dim(), dtype=torch.float32),
+                        theta_std=torch.ones(cfg.active_param_dim(), dtype=torch.float32),
+                    ).to(device)
+                else:
+                    ctrl_mean = norm_stats.get("ctrl_mean")
+                    ctrl_std = norm_stats.get("ctrl_std")
+                    if ctrl_mean is None or ctrl_std is None:
+                        ctrl_mean = np.zeros(4, dtype=np.float32)
+                        ctrl_std = np.ones(4, dtype=np.float32)
+                    normalizer = Normalizer(
+                        obs_mean=torch.tensor(
+                            np.array(norm_stats["obs_mean"]), dtype=torch.float32
+                        ),
+                        obs_std=torch.tensor(
+                            np.array(norm_stats["obs_std"]), dtype=torch.float32
+                        ),
+                        ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
+                        ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
+                        theta_mean=torch.tensor(
+                            np.array(norm_stats["theta_mean"]), dtype=torch.float32
+                        ),
+                        theta_std=torch.tensor(
+                            np.array(norm_stats["theta_std"]), dtype=torch.float32
+                        ),
+                    ).to(device)
+                # Save normalizer for consistency
+                save_normalizer(normalizer, exp_dir / "stats_normalization.json")
+                print(f"[NORM] Created normalizer from FNPE task stats")
+                if x_test_phys is not None:
+                    x_test_norm = normalizer.normalize_x(x_test_phys, cfg.obs_dim).cpu()
             else:
-                ctrl_mean = norm_stats.get("ctrl_mean")
-                ctrl_std = norm_stats.get("ctrl_std")
-                if ctrl_mean is None or ctrl_std is None:
-                    ctrl_mean = np.zeros(4, dtype=np.float32)
-                    ctrl_std = np.ones(4, dtype=np.float32)
-                normalizer = Normalizer(
-                    obs_mean=torch.tensor(
-                        np.array(norm_stats["obs_mean"]), dtype=torch.float32
-                    ),
-                    obs_std=torch.tensor(
-                        np.array(norm_stats["obs_std"]), dtype=torch.float32
-                    ),
-                    ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
-                    ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
-                    theta_mean=torch.tensor(
-                        np.array(norm_stats["theta_mean"]), dtype=torch.float32
-                    ),
-                    theta_std=torch.tensor(
-                        np.array(norm_stats["theta_std"]), dtype=torch.float32
-                    ),
-                ).to(device)
-            # Save normalizer for consistency
-            save_normalizer(normalizer, exp_dir / "stats_normalization.json")
-            print(f"[NORM] Created normalizer from FNPE task stats")
-            if x_test_phys is not None:
-                x_test_norm = normalizer.normalize_x(x_test_phys, cfg.obs_dim).cpu()
-        else:
-            training_summary = method.train(theta_train, x_train)
+                training_summary = method.train(theta_train, x_train)
 
-        # Save model
-        model_path = method.save(exp_dir)
-        print(f"[TRAIN] Saved model to {model_path}", flush=True)
+            # Save model
+            model_path = method.save(exp_dir)
+            print(f"[TRAIN] Saved model to {model_path}", flush=True)
+            timing_breakdown["model_training_time_s"] = float(time.time() - train_t0)
+            mark_status(
+                "trained",
+                state="completed",
+                extra={"model_path": str(model_path)},
+            )
+        except Exception as e:
+            record_stage_failure("training", e, fatal=True)
+            raise
 
     elif cfg.checkpoint:
         print(f"\n[LOAD] Loading checkpoint from {cfg.checkpoint}", flush=True)
-        method.load(checkpoint_dir or Path(cfg.checkpoint))
-        training_summary = getattr(method, "_training_summary", {}) or {}
-        # For FNPE checkpoint, also load/create normalizer
-        if cfg.method == "fnpe":
-            norm_path = checkpoint_dir / "stats_normalization.json"
-            if norm_path.exists():
-                normalizer = load_normalizer(norm_path).to(device)
-                print(f"[NORM] Loaded normalizer from {norm_path}")
-            else:
-                # Create from task stats
-                norm_stats = method.task.get_normalization_stats()
-                ctrl_mean = norm_stats.get("ctrl_mean")
-                ctrl_std = norm_stats.get("ctrl_std")
-                if ctrl_mean is None or ctrl_std is None:
-                    ctrl_mean = np.zeros(4, dtype=np.float32)
-                    ctrl_std = np.ones(4, dtype=np.float32)
-                normalizer = Normalizer(
-                    obs_mean=torch.tensor(
-                        np.array(norm_stats["obs_mean"]), dtype=torch.float32
-                    ),
-                    obs_std=torch.tensor(
-                        np.array(norm_stats["obs_std"]), dtype=torch.float32
-                    ),
-                    ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
-                    ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
-                    theta_mean=torch.tensor(
-                        np.array(norm_stats["theta_mean"]), dtype=torch.float32
-                    ),
-                    theta_std=torch.tensor(
-                        np.array(norm_stats["theta_std"]), dtype=torch.float32
-                    ),
-                ).to(device)
-                print(f"[NORM] Created normalizer from FNPE task stats")
-        if x_test_phys is not None and normalizer is not None:
-            x_test_norm = normalizer.normalize_x(x_test_phys, cfg.obs_dim).cpu()
+        load_t0 = time.time()
+        try:
+            method.load(checkpoint_dir or Path(cfg.checkpoint))
+            training_summary = getattr(method, "_training_summary", {}) or {}
+            # For FNPE checkpoint, also load/create normalizer
+            if cfg.method == "fnpe":
+                norm_path = checkpoint_dir / "stats_normalization.json"
+                if norm_path.exists():
+                    normalizer = load_normalizer(norm_path).to(device)
+                    print(f"[NORM] Loaded normalizer from {norm_path}")
+                else:
+                    # Create from task stats
+                    norm_stats = method.task.get_normalization_stats()
+                    ctrl_mean = norm_stats.get("ctrl_mean")
+                    ctrl_std = norm_stats.get("ctrl_std")
+                    if ctrl_mean is None or ctrl_std is None:
+                        ctrl_mean = np.zeros(4, dtype=np.float32)
+                        ctrl_std = np.ones(4, dtype=np.float32)
+                    normalizer = Normalizer(
+                        obs_mean=torch.tensor(
+                            np.array(norm_stats["obs_mean"]), dtype=torch.float32
+                        ),
+                        obs_std=torch.tensor(
+                            np.array(norm_stats["obs_std"]), dtype=torch.float32
+                        ),
+                        ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
+                        ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
+                        theta_mean=torch.tensor(
+                            np.array(norm_stats["theta_mean"]), dtype=torch.float32
+                        ),
+                        theta_std=torch.tensor(
+                            np.array(norm_stats["theta_std"]), dtype=torch.float32
+                        ),
+                    ).to(device)
+                    print(f"[NORM] Created normalizer from FNPE task stats")
+            if x_test_phys is not None and normalizer is not None:
+                x_test_norm = normalizer.normalize_x(x_test_phys, cfg.obs_dim).cpu()
+            timing_breakdown["checkpoint_load_time_s"] = float(time.time() - load_t0)
+            mark_status(
+                "trained",
+                state="completed",
+                extra={"loaded_from_checkpoint": True, "checkpoint": str(cfg.checkpoint)},
+            )
+        except Exception as e:
+            record_stage_failure("checkpoint_load", e, fatal=True)
+            raise
 
     # --- Build posterior ---
     # Methods that return samples in normalized theta-space need the
     # normalizer to build a consistent posterior interface.
-    if cfg.method in {"fnpe", "simformer"}:
-        posterior = method.build_posterior(normalizer=normalizer)
-    else:
-        posterior = method.build_posterior()
+    posterior_build_t0 = time.time()
+    try:
+        if cfg.method in {"fnpe", "simformer"}:
+            posterior = method.build_posterior(normalizer=normalizer)
+        else:
+            posterior = method.build_posterior()
 
-    # Save pickled posterior (skip for NPSE/FNPE - they have unpicklable JAX/torch lambdas)
-    if cfg.method == "npe":
-        with open(exp_dir / "posterior.pkl", "wb") as f:
-            pickle.dump(posterior, f)
+        # Save pickled posterior (skip for NPSE/FNPE - they have unpicklable JAX/torch lambdas)
+        if cfg.method == "npe":
+            with open(exp_dir / "posterior.pkl", "wb") as f:
+                pickle.dump(posterior, f)
+        timing_breakdown["posterior_build_time_s"] = float(
+            time.time() - posterior_build_t0
+        )
+        mark_status("posterior_ready", state="completed")
+    except Exception as e:
+        record_stage_failure("posterior_build", e, fatal=True)
+        raise
 
     # --- Training curve plot ---
     if training_summary and not cfg.no_plots:
@@ -2672,6 +3263,23 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         "method": cfg.method,
         "training_summary": training_summary,
         "budget_metadata": build_budget_metadata(cfg, training_summary),
+        "timing_breakdown": timing_breakdown,
+        "dataset_artifacts": {
+            "training": train_dataset_artifact,
+            "heldout_test": test_dataset_artifact,
+        },
+        "dataset_acceptance": {
+            "training": (
+                train_dataset_artifact.get("acceptance")
+                if isinstance(train_dataset_artifact, dict)
+                else None
+            ),
+            "heldout_test": (
+                test_dataset_artifact.get("acceptance")
+                if isinstance(test_dataset_artifact, dict)
+                else None
+            ),
+        },
     }
     if train_region_metadata is not None:
         metrics["train_region_metadata"] = train_region_metadata
@@ -2776,19 +3384,23 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         # Posterior plots
         if cfg.run_posterior_plots and shared_examples is not None:
             print("\n[DIAG] Generating posterior plots...")
-            run_parameter_posterior_plots(
-                cfg,
-                fig_dir,
-                prior_phys,
-                posterior,
-                simulator,
-                normalizer,
-                device,
-                num_examples=posterior_plot_examples,
-                num_posterior_samples=posterior_plot_samples,
-                method=method,  # Pass method for FNPE
-                examples=shared_examples[:posterior_plot_examples],
-            )
+            try:
+                figure_metadata["posterior_plots"] = run_parameter_posterior_plots(
+                    cfg,
+                    fig_dir,
+                    prior_phys,
+                    posterior,
+                    simulator,
+                    normalizer,
+                    device,
+                    num_examples=posterior_plot_examples,
+                    num_posterior_samples=posterior_plot_samples,
+                    method=method,  # Pass method for FNPE
+                    examples=shared_examples[:posterior_plot_examples],
+                )
+            except Exception as e:
+                print(f"[DIAG] Posterior plots failed: {e}")
+                record_stage_failure("posterior_plots", e)
         elif cfg.run_posterior_plots:
             print("[DIAG] Skipping posterior plots - no shared examples available")
 
@@ -2878,8 +3490,20 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 metrics["heldout_test_stats"] = heldout_stats
                 with (exp_dir / "heldout_test_stats.json").open("w") as f:
                     json.dump(heldout_stats, f, indent=2)
+                timing_breakdown["heldout_posterior_sampling_time_total_s"] = float(
+                    w2_post_results.get("sampling_time_total_s", 0.0)
+                )
+                timing_breakdown["heldout_posterior_sampling_time_mean_s"] = float(
+                    w2_post_results.get("sampling_time_mean_s", 0.0)
+                )
+                mark_status(
+                    "posterior_eval_complete",
+                    state="completed",
+                    extra={"heldout_posterior_cases": int(theta_eval_subset.shape[0])},
+                )
         except Exception as e:
             print(f"[DIAG] W2 posterior diagnostic failed: {e}")
+            record_stage_failure("heldout_posterior_eval", e)
 
         if cfg.run_simulated_ppc and shared_eval_x_phys is not None and shared_eval_x_phys.shape[0] > 0:
             print("\n[DIAG] Running held-out simulated PPC...")
@@ -2889,6 +3513,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                     fig_dir,
                     posterior,
                     shared_eval_x_phys,
+                    shared_eval_theta_phys,
                     x_test_state0,
                     normalizer,
                     device,
@@ -2898,16 +3523,37 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 )
                 if simulated_ppc:
                     metrics["heldout_test_ppc"] = simulated_ppc
+                    figure_metadata["heldout_simulated_ppc"] = simulated_ppc.get(
+                        "figure_metadata", []
+                    )
+                    timing_breakdown["heldout_ppc_time_total_s"] = float(
+                        simulated_ppc.get("aggregate", {}).get("ppc_time_total_s", 0.0)
+                    )
+                    timing_breakdown["heldout_ppc_time_mean_s"] = float(
+                        simulated_ppc.get("aggregate", {}).get("ppc_time_mean_s", 0.0)
+                    )
                     with (exp_dir / "heldout_test_ppc_metrics.json").open("w") as f:
                         json.dump(simulated_ppc, f, indent=2)
+                    mark_status(
+                        "ppc_complete",
+                        state="completed",
+                        extra={
+                            "heldout_ppc_examples": int(
+                                simulated_ppc.get("aggregate", {}).get(
+                                    "num_examples", 0
+                                )
+                            )
+                        },
+                    )
             except Exception as e:
                 print(f"[DIAG] Held-out simulated PPC failed: {e}")
+                record_stage_failure("heldout_simulated_ppc", e)
 
         # Pairplot visualization (markovsbi-style)
         if shared_examples is not None and pairplot_examples > 0:
             print("\n[DIAG] Running pairplot diagnostics...")
             try:
-                run_pairplot_diagnostic(
+                figure_metadata["pairplots"] = run_pairplot_diagnostic(
                     cfg,
                     fig_dir,
                     prior_phys,
@@ -2922,6 +3568,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 )
             except Exception as e:
                 print(f"[DIAG] Pairplot failed: {e}")
+                record_stage_failure("pairplots", e)
         elif pairplot_examples > 0:
             print("[DIAG] Skipping pairplot - no shared examples available")
 
@@ -2953,7 +3600,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         if cfg.method == "fnpe" and shared_examples is not None:
             print("\n[DIAG] Running diffusion trace diagnostics...")
             try:
-                run_diffusion_traces_diagnostic(
+                figure_metadata["diffusion_traces"] = run_diffusion_traces_diagnostic(
                     cfg,
                     fig_dir,
                     posterior,
@@ -2968,8 +3615,15 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 )
             except Exception as e:
                 print(f"[DIAG] Diffusion traces failed: {e}")
+                record_stage_failure("diffusion_traces", e)
         elif cfg.method == "fnpe":
             print("[DIAG] Skipping diffusion traces - no shared examples available")
+
+        mark_status(
+            "evaluation_complete",
+            state="completed",
+            extra={"stage_failures": stage_failures},
+        )
 
     # --- Real data eval (inline) ---
     # Simformer/comparison runs are simulation-only; skip real-data inference.
@@ -3005,6 +3659,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 metrics["multi_traj_ppc"] = multi_ppc_metrics.get("aggregate", {})
         except Exception as _e:
             print(f"[EVAL] Multi-trajectory PPC failed: {_e}")
+            record_stage_failure("multi_traj_ppc", _e)
         if real_metrics:
             metrics["real_metrics"] = real_metrics
     elif cfg.real_data_csv and cfg.do_eval and cfg.method == "simformer":
@@ -3014,10 +3669,46 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
 
     # --- Save config and metrics ---
     cfg.save(str(exp_dir / "config.json"))
+    metrics["timing_breakdown"] = timing_breakdown
+    metrics["dataset_artifacts"] = {
+        "training": train_dataset_artifact,
+        "heldout_test": test_dataset_artifact,
+    }
+    metrics["dataset_acceptance"] = {
+        "training": (
+            train_dataset_artifact.get("acceptance")
+            if isinstance(train_dataset_artifact, dict)
+            else None
+        ),
+        "heldout_test": (
+            test_dataset_artifact.get("acceptance")
+            if isinstance(test_dataset_artifact, dict)
+            else None
+        ),
+    }
+    metrics["figure_metadata"] = figure_metadata
+    metrics["stage_failures"] = stage_failures
+    metrics["run_status_summary"] = {
+        "completed_stages": completed_stages,
+        "final_state": "complete_with_failures" if stage_failures else "complete",
+    }
 
-    with (exp_dir / "metrics.json").open("w") as f:
+    metrics_path = exp_dir / "metrics.json"
+    with metrics_path.open("w") as f:
         json.dump(metrics, f, indent=2, default=tensor_to_python)
 
+    mark_status(
+        "complete",
+        state="complete_with_failures" if stage_failures else "complete",
+        extra={
+            "metrics_path": str(metrics_path),
+            "stage_failures": stage_failures,
+            "available_artifacts": sorted(path.name for path in exp_dir.iterdir()),
+        },
+    )
+
+    cfg.assert_budget_resolution_ready("run_experiment")
+    cfg.ensure_dataset_ids()
     print(f"\n{'='*60}")
     print(f"Experiment completed: {exp_dir}")
     print(f"{'='*60}\n")

@@ -5,6 +5,7 @@ Provides unified interfaces for different inference methods:
 - NPE: Neural Posterior Estimation (normalizing flows)
 - NPSE: Neural Posterior Score Estimation (diffusion/score-based)
 - FNPE: Flow-based NPE using MarkovSBI (JAX-based)
+- Simformer: score-transformer posterior estimator
 """
 
 from .base import BaseMethod, TrainedMethod

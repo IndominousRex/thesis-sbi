@@ -216,7 +216,6 @@ def parse_args():
         default=0.05,
         help="SDE T_min (default 0.05, was 0.01)",
     )
-    p.add_argument("--fnpe-steps-per-epoch", type=int, default=10000)
     p.add_argument("--fnpe-diffusion-steps", type=int, default=500)
     p.add_argument("--fnpe-score-fn", type=str, default="gauss_corrected")
     p.add_argument("--fnpe-proposal-type", type=str, default="pred")
@@ -250,7 +249,6 @@ def parse_args():
     p.add_argument("--lr", type=float, default=5e-4)
     p.add_argument("--batch-size", type=int, default=512)
     p.add_argument("--num-epochs", type=int, default=200)
-    p.add_argument("--stop-after-epochs", type=int, default=30)
 
     # --- Encoder ---
     p.add_argument("--encoder-type", type=str, default="bigru")
@@ -258,7 +256,6 @@ def parse_args():
 
     # --- Diagnostics ---
     p.add_argument("--no-sbc", action="store_true")
-    p.add_argument("--no-swd", action="store_true")
     p.add_argument("--no-one-step", action="store_true")
     p.add_argument("--no-plots", action="store_true")
 
@@ -333,9 +330,9 @@ def main():
     fixed_m = float(global_params.get("mass", 1720))
 
     # Parse active parameters
-    active_params = tuple(
-        p.strip().lower() for p in args.params.split(",") if p.strip()
-    )
+    active_params = tuple(p.strip().lower() for p in args.params.split(",") if p.strip())
+    if not active_params:
+        raise ValueError("At least one parameter must be provided in --params.")
 
     # ---------------------------------------------------------------
     # 4) Build config and run
@@ -380,14 +377,12 @@ def main():
         learning_rate=args.lr,
         training_batch_size=args.batch_size,
         num_epochs=args.num_epochs,
-        stop_after_epochs=args.stop_after_epochs,
         # FNPE
         fnpe_hidden_dim=args.fnpe_hidden_dim,
         fnpe_num_hidden=args.fnpe_num_hidden,
         fnpe_model_type=args.fnpe_model_type,
         fnpe_window_size=args.fnpe_window_size,
         fnpe_t_min=args.fnpe_t_min,
-        fnpe_steps_per_epoch=args.fnpe_steps_per_epoch,
         fnpe_num_diffusion_steps=args.fnpe_diffusion_steps,
         fnpe_score_fn_type=args.fnpe_score_fn,
         fnpe_proposal_type=args.fnpe_proposal_type,
@@ -400,7 +395,6 @@ def main():
         fnpe_gauss_precision_scale=args.fnpe_gauss_precision_scale,
         # Diagnostics
         run_sbc=not args.no_sbc,
-        run_swd=not args.no_swd,
         run_one_step_rmse=not args.no_one_step,
         no_plots=args.no_plots,
         # Real data

@@ -107,14 +107,67 @@ def _budget_to_label(budget: int | float) -> str:
 
 
 def _format_budget_axis(ax: Any) -> None:
-    tick_values = list(ax.get_xticks())
-    if not tick_values:
-        return
-    ax.set_xticklabels([_budget_to_label(v) for v in tick_values], rotation=0)
+    from matplotlib.ticker import FuncFormatter
+
+    ax.xaxis.set_major_formatter(
+        FuncFormatter(lambda x, pos: _budget_to_label(x) if x != 0 else "0")
+    )
 
 
 def _metric_direction(plot_spec: dict[str, Any]) -> str:
     return str(plot_spec.get("direction", "lower"))
+
+
+def _metric_target(plot_spec: dict[str, Any]) -> float:
+    reference_lines = plot_spec.get("reference_lines", [])
+    if reference_lines:
+        return float(reference_lines[0])
+    return float(plot_spec.get("target", 0.0))
+
+
+def _comparison_value(value: float, plot_spec: dict[str, Any]) -> float:
+    direction = _metric_direction(plot_spec)
+    value = float(value)
+    if direction == "lower":
+        return value
+    if direction == "higher":
+        return -value
+    if direction == "target":
+        return abs(value - _metric_target(plot_spec))
+    if direction == "signed":
+        return abs(value)
+    raise ValueError(f"Unsupported metric direction: {direction}")
+
+
+def _comparison_delta(method_value: float, baseline_value: float, plot_spec: dict[str, Any]) -> float:
+    direction = _metric_direction(plot_spec)
+    if direction in {"lower", "higher"}:
+        return float(method_value) - float(baseline_value)
+    return _comparison_value(method_value, plot_spec) - _comparison_value(
+        baseline_value, plot_spec
+    )
+
+
+def _comparison_delta_footer(plot_spec: dict[str, Any], baseline_method: str) -> str:
+    direction = _metric_direction(plot_spec)
+    baseline_label = baseline_method.upper()
+    metric_label = plot_spec["metric_label"]
+    if direction == "higher":
+        return (
+            f"Delta = method - {baseline_label}. Positive values are better for this higher-is-better metric."
+        )
+    if direction == "target":
+        target = _metric_target(plot_spec)
+        return (
+            f"Delta = |{metric_label} - {target:g}| difference vs {baseline_label}. "
+            "Negative values are better (closer to target)."
+        )
+    if direction == "signed":
+        return (
+            f"Delta = |{metric_label}| difference vs {baseline_label}. "
+            "Negative values are better (closer to zero)."
+        )
+    return f"Delta = method - {baseline_label}. Negative values are better for this lower-is-better metric."
 
 
 def _flatten_per_parameter_metrics(
@@ -313,6 +366,22 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "direction": "lower",
         },
         {
+            "metric_key": "coverage_50_abs_error",
+            "metric_label": "Coverage 50% Abs Error",
+            "slug": "coverage50_abs_error",
+            "figure_families": [],
+            "category": "calibration",
+            "direction": "lower",
+        },
+        {
+            "metric_key": "coverage_90_abs_error",
+            "metric_label": "Coverage 90% Abs Error",
+            "slug": "coverage90_abs_error",
+            "figure_families": [],
+            "category": "calibration",
+            "direction": "lower",
+        },
+        {
             "metric_key": "train_time_s",
             "metric_label": "Training Time (s)",
             "slug": "train_time",
@@ -404,6 +473,8 @@ def _build_plot_registry(rows: list[dict[str, Any]]) -> dict[str, list[dict[str,
                 "l2_error_mean",
                 "heldout_ppc_rmse_mean",
                 "coverage_curve_mae",
+                "coverage_50_abs_error",
+                "coverage_90_abs_error",
                 "train_time_s",
                 "sampling_time_mean_s",
             ]
@@ -415,6 +486,8 @@ def _build_plot_registry(rows: list[dict[str, Any]]) -> dict[str, list[dict[str,
                 "w2_mean",
                 "heldout_ppc_rmse_mean",
                 "coverage_curve_mae",
+                "coverage_50_abs_error",
+                "coverage_90_abs_error",
             ]
             if key in base_by_key
         ],
@@ -422,8 +495,11 @@ def _build_plot_registry(rows: list[dict[str, Any]]) -> dict[str, list[dict[str,
             base_by_key[key]
             for key in [
                 "w2_mean",
+                "l2_error_mean",
                 "heldout_ppc_rmse_mean",
                 "coverage_curve_mae",
+                "coverage_50_abs_error",
+                "coverage_90_abs_error",
                 "train_time_s",
                 "sampling_time_mean_s",
             ]
@@ -1007,7 +1083,11 @@ def _plot_metric_difference_vs_budget(
                     row_base = rows_by_method_seed_budget.get((baseline, seed, budget))
                     if row_method is None or row_base is None:
                         continue
-                    delta = float(row_method[metric_key]) - float(row_base[metric_key])
+                    delta = _comparison_delta(
+                        float(row_method[metric_key]),
+                        float(row_base[metric_key]),
+                        plot_spec,
+                    )
                     deltas_for_method.append((float(budget), delta, seed))
             if deltas_for_method:
                 method_delta_map[method] = deltas_for_method
@@ -1063,7 +1143,13 @@ def _plot_metric_difference_vs_budget(
         ax.axis("off")
 
     fig.suptitle(f"{metric_label} delta vs baseline across budgets | params={params}")
-    fig.text(0.5, 0.02, f"Delta = method - {baseline.upper()}. Negative values are better for lower-is-better metrics.", ha="center", fontsize=9)
+    fig.text(
+        0.5,
+        0.02,
+        _comparison_delta_footer(plot_spec, baseline),
+        ha="center",
+        fontsize=9,
+    )
     fig.tight_layout(rect=(0, 0.05, 1, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -1128,7 +1214,11 @@ def _plot_metric_difference_vs_tseg(
                     row_base = rows_by_method_seed_tseg.get((baseline, seed, tseg))
                     if row_method is None or row_base is None:
                         continue
-                    delta = float(row_method[metric_key]) - float(row_base[metric_key])
+                    delta = _comparison_delta(
+                        float(row_method[metric_key]),
+                        float(row_base[metric_key]),
+                        plot_spec,
+                    )
                     deltas_for_method.append((float(tseg), delta, seed))
             if deltas_for_method:
                 method_delta_map[method] = deltas_for_method
@@ -1182,7 +1272,13 @@ def _plot_metric_difference_vs_tseg(
         ax.axis("off")
 
     fig.suptitle(f"{metric_label} delta vs baseline across T_seg | params={params}")
-    fig.text(0.5, 0.02, f"Delta = method - {baseline.upper()}. Negative values are better for lower-is-better metrics.", ha="center", fontsize=9)
+    fig.text(
+        0.5,
+        0.02,
+        _comparison_delta_footer(plot_spec, baseline),
+        ha="center",
+        fontsize=9,
+    )
     fig.tight_layout(rect=(0, 0.05, 1, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
@@ -1231,8 +1327,6 @@ def _plot_metric_rank_heatmap(
     heat = np.full((len(methods), len(combos)), np.nan, dtype=np.float64)
     method_to_idx = {method: idx for idx, method in enumerate(methods)}
     combo_to_idx = {combo: idx for idx, combo in enumerate(combos)}
-    direction = _metric_direction(plot_spec)
-
     for combo in combos:
         combo_rows = [
             row
@@ -1243,11 +1337,14 @@ def _plot_metric_rank_heatmap(
             )
             == combo
         ]
-        values = np.asarray([float(row[metric_key]["mean"]) for row in combo_rows], dtype=np.float64)
-        if direction == "higher":
-            ranks = rankdata(-values, method="average")
-        else:
-            ranks = rankdata(values, method="average")
+        values = np.asarray(
+            [
+                _comparison_value(float(row[metric_key]["mean"]), plot_spec)
+                for row in combo_rows
+            ],
+            dtype=np.float64,
+        )
+        ranks = rankdata(values, method="average")
         for row, rank in zip(combo_rows, ranks):
             heat[method_to_idx[str(row["method"])], combo_to_idx[combo]] = float(rank)
 
@@ -1279,6 +1376,112 @@ def _plot_metric_rank_heatmap(
     return True
 
 
+def _build_rank_summaries(
+    aggregate_rows: list[dict[str, Any]],
+    plot_specs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    for params in sorted({row["params"] for row in aggregate_rows}):
+        for plot_spec in plot_specs:
+            metric_key = plot_spec["metric_key"]
+            param_rows = [
+                row
+                for row in aggregate_rows
+                if row["params"] == params
+                and isinstance(row.get(metric_key), dict)
+                and row[metric_key].get("mean") is not None
+            ]
+            if not param_rows:
+                continue
+
+            methods = sorted({str(row["method"]) for row in param_rows})
+            combos = sorted(
+                {
+                    (
+                        int(
+                            row.get(
+                                "requested_budget_steps",
+                                row.get("total_budget_steps", 0),
+                            )
+                            or 0
+                        ),
+                        int(row["T_seg"]),
+                    )
+                    for row in param_rows
+                }
+            )
+            if not methods or not combos:
+                continue
+
+            method_rank_values: dict[str, list[float]] = {method: [] for method in methods}
+            first_place_counts: dict[str, int] = {method: 0 for method in methods}
+            top2_counts: dict[str, int] = {method: 0 for method in methods}
+
+            for combo in combos:
+                combo_rows = [
+                    row
+                    for row in param_rows
+                    if (
+                        int(
+                            row.get(
+                                "requested_budget_steps",
+                                row.get("total_budget_steps", 0),
+                            )
+                            or 0
+                        ),
+                        int(row["T_seg"]),
+                    )
+                    == combo
+                ]
+                if not combo_rows:
+                    continue
+                scores = np.asarray(
+                    [
+                        _comparison_value(float(row[metric_key]["mean"]), plot_spec)
+                        for row in combo_rows
+                    ],
+                    dtype=np.float64,
+                )
+                ranks = rankdata(scores, method="average")
+                for row, rank in zip(combo_rows, ranks):
+                    method = str(row["method"])
+                    method_rank_values[method].append(float(rank))
+                    if np.isclose(rank, 1.0):
+                        first_place_counts[method] += 1
+                    if rank <= 2.0 + 1e-9:
+                        top2_counts[method] += 1
+
+            summaries.append(
+                {
+                    "params": params,
+                    "metric": metric_key,
+                    "metric_label": plot_spec["metric_label"],
+                    "direction": _metric_direction(plot_spec),
+                    "num_combos": len(combos),
+                    "combo_labels": [
+                        {
+                            "requested_budget_steps": int(budget),
+                            "T_seg": int(tseg),
+                        }
+                        for budget, tseg in combos
+                    ],
+                    "method_summaries": [
+                        {
+                            "method": method,
+                            "mean_rank": float(np.mean(method_rank_values[method]))
+                            if method_rank_values[method]
+                            else None,
+                            "first_place_finishes": int(first_place_counts[method]),
+                            "top2_finishes": int(top2_counts[method]),
+                            "num_ranked_combos": int(len(method_rank_values[method])),
+                        }
+                        for method in methods
+                    ],
+                }
+            )
+    return summaries
+
+
 def _collect_plot_gallery(
     completed_runs: list[dict[str, Any]],
     output_dir: Path,
@@ -1292,7 +1495,6 @@ def _collect_plot_gallery(
         return {
             "copied": [],
             "contact_sheets": [],
-            "aligned_sheets": [],
             "comparison_sheets_by_seed": [],
             "comparison_sheets_by_method": [],
         }
@@ -1307,7 +1509,6 @@ def _collect_plot_gallery(
     }
 
     copied: list[dict[str, Any]] = []
-    grouped_images: dict[tuple[str, str, str, int], list[dict[str, Any]]] = {}
 
     for record in completed_runs:
         cfg = record["cfg"]
@@ -1351,81 +1552,8 @@ def _collect_plot_gallery(
                     "example_key": example_key,
                 }
                 copied.append(entry)
-                grouped_images.setdefault(
-                    (plot_kind, params_slug, example_key, seed), []
-                ).append(entry)
 
     contact_sheets: list[str] = []
-    sheet_metadata: list[dict[str, Any]] = []
-    for (plot_kind, params_slug, example_key, seed), entries in grouped_images.items():
-        entries = sorted(entries, key=lambda item: (item["requested_budget_steps"], item["T_seg"], item["method"]))
-        methods = sorted({str(item["method"]) for item in entries})
-        combos = sorted(
-            {
-                (int(item["requested_budget_steps"]), int(item["T_seg"]))
-                for item in entries
-            }
-        )
-        if not methods or not combos:
-            continue
-
-        entry_lookup = {
-            (str(item["method"]), int(item["requested_budget_steps"]), int(item["T_seg"])): item
-            for item in entries
-        }
-        nrows = len(methods)
-        ncols = len(combos)
-        fig, axes = plt.subplots(
-            nrows,
-            ncols,
-            figsize=(3.6 * ncols, 3.2 * nrows),
-            squeeze=False,
-        )
-        for row_idx, method in enumerate(methods):
-            for col_idx, (budget, tseg) in enumerate(combos):
-                ax = axes[row_idx][col_idx]
-                entry = entry_lookup.get((method, budget, tseg))
-                if entry is None:
-                    ax.axis("off")
-                    ax.text(0.5, 0.5, "No plot", ha="center", va="center", fontsize=9, color="0.4")
-                else:
-                    image = plt.imread(entry["copied_to"])
-                    ax.imshow(image)
-                    ax.axis("off")
-                if row_idx == 0:
-                    ax.set_title(f"b={budget:.0e}\nT={tseg}", fontsize=9)
-                if col_idx == 0:
-                    ax.set_ylabel(method.upper(), fontsize=10)
-        fig.suptitle(
-            f"{plot_kind.upper()} aligned collection | params={params_slug} | {example_key} | seed={seed}",
-            fontsize=12,
-        )
-        fig.tight_layout(rect=(0, 0, 1, 0.96))
-        sheet_path = (
-            output_dir
-            / f"{plot_kind}_{params_slug}_{example_key}_seed{seed}_aligned_sheet.png"
-        )
-        fig.savefig(sheet_path, dpi=150, bbox_inches="tight")
-        plt.close(fig)
-        contact_sheets.append(str(sheet_path))
-        sheet_metadata.append(
-            {
-                "plot_kind": plot_kind,
-                "params_slug": params_slug,
-                "example_key": example_key,
-                "seed": seed,
-                "sheet_path": str(sheet_path),
-                "methods": methods,
-                "columns": [
-                    {
-                        "requested_budget_steps": int(budget),
-                        "T_seg": int(tseg),
-                    }
-                    for budget, tseg in combos
-                ],
-            }
-        )
-
     comparison_sheets_by_seed: list[dict[str, Any]] = []
     group_by_budget_tseg: dict[tuple[str, str, str, int, int], list[dict[str, Any]]] = {}
     for entry in copied:
@@ -1561,7 +1689,6 @@ def _collect_plot_gallery(
     return {
         "copied": copied,
         "contact_sheets": contact_sheets,
-        "aligned_sheets": sheet_metadata,
         "comparison_sheets_by_seed": comparison_sheets_by_seed,
         "comparison_sheets_by_method": comparison_sheets_by_method,
     }
@@ -1646,6 +1773,16 @@ def _build_raw_rows(completed_runs: list[dict[str, Any]]) -> list[dict[str, Any]
             "coverage_90": heldout.get("coverage_90"),
             "coverage_50": heldout.get("coverage_50"),
             "coverage_curve_mae": heldout.get("coverage_curve_mae"),
+            "coverage_50_abs_error": (
+                abs(float(heldout.get("coverage_50")) - 0.5)
+                if heldout.get("coverage_50") is not None
+                else None
+            ),
+            "coverage_90_abs_error": (
+                abs(float(heldout.get("coverage_90")) - 0.9)
+                if heldout.get("coverage_90") is not None
+                else None
+            ),
             "heldout_ppc_rmse_mean": heldout_ppc.get("rmse_mean"),
             "heldout_ppc_w2_mean": heldout_ppc.get("w2_mean"),
             "train_time_s": training.get("train_time_s"),
@@ -1717,10 +1854,30 @@ def _build_aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     pairwise_tests: list[dict[str, Any]] = []
-    metric_directions = {
-        "w2_mean": "lower",
-        "heldout_ppc_rmse_mean": "lower",
+    pairwise_plot_specs = {
+        spec["metric_key"]: spec
+        for spec in [
+            *_base_plot_specs(),
+            {
+                "metric_key": "coverage_50_abs_error",
+                "metric_label": "Coverage 50% Abs Error",
+                "direction": "lower",
+            },
+            {
+                "metric_key": "coverage_90_abs_error",
+                "metric_label": "Coverage 90% Abs Error",
+                "direction": "lower",
+            },
+        ]
     }
+    pairwise_metrics = [
+        "w2_mean",
+        "l2_error_mean",
+        "heldout_ppc_rmse_mean",
+        "coverage_curve_mae",
+        "coverage_50_abs_error",
+        "coverage_90_abs_error",
+    ]
     group_keys = sorted(
         {
             (
@@ -1747,39 +1904,56 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             rows_a = {row["seed"]: row for row in candidate_rows if row["method"] == method_a}
             rows_b = {row["seed"]: row for row in candidate_rows if row["method"] == method_b}
             shared_seeds = sorted(set(rows_a) & set(rows_b))
-            for metric_key in ["w2_mean", "heldout_ppc_rmse_mean"]:
-                x = [
-                    rows_a[s][metric_key]
-                    for s in shared_seeds
-                    if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None
-                ]
-                y = [
-                    rows_b[s][metric_key]
-                    for s in shared_seeds
-                    if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None
-                ]
+            for metric_key in pairwise_metrics:
+                plot_spec = pairwise_plot_specs[metric_key]
                 shared_metric_seeds = [
                     s
                     for s in shared_seeds
                     if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None
                 ]
-                deltas = [float(a - b) for a, b in zip(x, y)]
-                direction = metric_directions.get(metric_key, "lower")
-                if direction == "lower":
-                    wins_method_a = int(sum(a < b for a, b in zip(x, y)))
-                    wins_method_b = int(sum(a > b for a, b in zip(x, y)))
-                elif direction == "higher":
-                    wins_method_a = int(sum(a > b for a, b in zip(x, y)))
-                    wins_method_b = int(sum(a < b for a, b in zip(x, y)))
-                else:
-                    wins_method_a = int(sum(a < b for a, b in zip(x, y)))
-                    wins_method_b = int(sum(a > b for a, b in zip(x, y)))
-                ties = int(len(deltas) - wins_method_a - wins_method_b)
+                x = [float(rows_a[s][metric_key]) for s in shared_metric_seeds]
+                y = [float(rows_b[s][metric_key]) for s in shared_metric_seeds]
+                comparison_x = [_comparison_value(value, plot_spec) for value in x]
+                comparison_y = [_comparison_value(value, plot_spec) for value in y]
+                deltas = [
+                    _comparison_delta(a_val, b_val, plot_spec)
+                    for a_val, b_val in zip(x, y)
+                ]
+                wins_method_a = int(
+                    sum(
+                        comparison_a < comparison_b and not np.isclose(comparison_a, comparison_b)
+                        for comparison_a, comparison_b in zip(comparison_x, comparison_y)
+                    )
+                )
+                wins_method_b = int(
+                    sum(
+                        comparison_a > comparison_b and not np.isclose(comparison_a, comparison_b)
+                        for comparison_a, comparison_b in zip(comparison_x, comparison_y)
+                    )
+                )
+                ties = int(
+                    sum(
+                        np.isclose(comparison_a, comparison_b)
+                        for comparison_a, comparison_b in zip(comparison_x, comparison_y)
+                    )
+                )
                 pvalue = None
                 stat = None
-                if len(x) >= 2 and len(y) >= 2:
+                if (
+                    len(x) >= 2
+                    and len(y) >= 2
+                    and not all(
+                        np.isclose(comparison_a, comparison_b)
+                        for comparison_a, comparison_b in zip(comparison_x, comparison_y)
+                    )
+                ):
                     try:
-                        result = wilcoxon(x, y, zero_method="wilcox", alternative="two-sided")
+                        result = wilcoxon(
+                            comparison_x,
+                            comparison_y,
+                            zero_method="wilcox",
+                            alternative="two-sided",
+                        )
                         pvalue = float(result.pvalue)
                         stat = float(result.statistic)
                     except ValueError:
@@ -1794,7 +1968,10 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         "method_a": method_a,
                         "method_b": method_b,
                         "num_shared_seeds": len(shared_metric_seeds),
-                        "delta_definition": "method_a_minus_method_b",
+                        "metric_direction": _metric_direction(plot_spec),
+                        "delta_definition": _comparison_delta_footer(
+                            plot_spec, method_b
+                        ),
                         "delta_mean": float(np.mean(deltas)) if deltas else None,
                         "delta_median": float(np.median(deltas)) if deltas else None,
                         "wins_method_a": wins_method_a,
@@ -1805,16 +1982,25 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                                 "seed": int(seed),
                                 "method_a_value": float(a_val),
                                 "method_b_value": float(b_val),
-                                "delta": float(a_val - b_val),
+                                "method_a_comparison_value": float(comparison_a),
+                                "method_b_comparison_value": float(comparison_b),
+                                "delta": float(delta),
                             }
-                            for seed, a_val, b_val in zip(shared_metric_seeds, x, y)
+                            for seed, a_val, b_val, comparison_a, comparison_b, delta in zip(
+                                shared_metric_seeds,
+                                x,
+                                y,
+                                comparison_x,
+                                comparison_y,
+                                deltas,
+                            )
                         ],
                         "statistic": stat,
                         "pvalue": pvalue,
                     }
                 )
 
-    for metric_key in {"w2_mean", "heldout_ppc_rmse_mean"}:
+    for metric_key in set(pairwise_metrics):
         for params, requested_budget_steps, tseg in group_keys:
             subset = [
                 pair
@@ -1886,23 +2072,14 @@ def main() -> None:
 
     rows = _build_raw_rows(completed_runs)
     aggregate_rows = _build_aggregate_rows(rows)
+    plot_registry = _build_plot_registry(rows)
     pairwise_tests = _build_pairwise_tests(rows)
-
-    output = {
-        "exp_prefix": args.exp_prefix,
-        "num_runs": len(rows),
-        "aggregate_rows": aggregate_rows,
-        "pairwise_tests": pairwise_tests,
-        "raw_rows": rows,
-        "notes": [
-            "Pairwise Wilcoxon tests are descriptive only. With very small shared seed counts they should not be interpreted as strong inferential evidence."
-        ],
-    }
+    rank_summaries = _build_rank_summaries(aggregate_rows, plot_registry["heatmap"])
+    notes = [
+        "Pairwise Wilcoxon tests are descriptive only. With very small shared seed counts they should not be interpreted as strong inferential evidence."
+    ]
 
     _write_csv(output_csv, aggregate_rows)
-
-    plot_registry = _build_plot_registry(rows)
-    output["plot_registry"] = plot_registry
 
     generated_plots: list[str] = []
     for params in sorted({row["params"] for row in rows}):
@@ -1960,20 +2137,62 @@ def main() -> None:
                 aggregate_rows, params, plot_spec, heatmap_path
             ):
                 generated_plots.append(str(heatmap_path))
-    output["generated_plots"] = generated_plots
 
     plot_collection_dir = output_json.parent / f"{args.exp_prefix}_plot_collection"
     plot_collection = _collect_plot_gallery(completed_runs, plot_collection_dir)
-    output["plot_collection"] = {
+    plot_collection_payload = {
         "root": str(plot_collection_dir),
         **plot_collection,
     }
 
     output_json.parent.mkdir(parents=True, exist_ok=True)
-    with output_json.open("w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2)
+    metrics_json = output_json.parent / f"{output_json.stem}_metrics.json"
+    pairwise_json = output_json.parent / f"{output_json.stem}_pairwise.json"
+    plot_manifest_json = output_json.parent / f"{output_json.stem}_plot_manifest.json"
+
+    metrics_payload = {
+        "exp_prefix": args.exp_prefix,
+        "num_runs": len(rows),
+        "raw_rows": rows,
+        "aggregate_rows": aggregate_rows,
+        "rank_summaries": rank_summaries,
+    }
+    pairwise_payload = {
+        "exp_prefix": args.exp_prefix,
+        "notes": notes,
+        "pairwise_tests": pairwise_tests,
+    }
+    plot_manifest_payload = {
+        "exp_prefix": args.exp_prefix,
+        "plot_registry": plot_registry,
+        "generated_plots": generated_plots,
+        "plot_collection": plot_collection_payload,
+    }
+    index_payload = {
+        "exp_prefix": args.exp_prefix,
+        "num_runs": len(rows),
+        "notes": notes,
+        "files": {
+            "metrics": str(metrics_json),
+            "pairwise": str(pairwise_json),
+            "plot_manifest": str(plot_manifest_json),
+            "csv": str(output_csv),
+        },
+    }
+
+    for path, payload in [
+        (metrics_json, metrics_payload),
+        (pairwise_json, pairwise_payload),
+        (plot_manifest_json, plot_manifest_payload),
+        (output_json, index_payload),
+    ]:
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
 
     print(f"Wrote {output_json}")
+    print(f"Wrote {metrics_json}")
+    print(f"Wrote {pairwise_json}")
+    print(f"Wrote {plot_manifest_json}")
     print(f"Wrote {output_csv}")
     print(f"Deduplicated completed runs: {len(completed_runs)}")
     for plot_path in generated_plots:

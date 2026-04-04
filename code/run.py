@@ -1,15 +1,5 @@
 #!/usr/bin/env python
-"""
-Unified entry point for SBI experiments.
-
-Supports all methods (NPE, NPSE, FNPE) with identical data generation,
-normalization, and evaluation for fair comparisons.
-
-Usage:
-    python run.py --method npe --exp-name baseline --num-sim 2000
-    python run.py --method npse --exp-name baseline --sde-type ve
-    python run.py --method fnpe --exp-name baseline --fnpe-model-type gru
-"""
+"""Unified entry point for SBI experiments."""
 
 import argparse
 from configs.config import ExperimentConfig, PARAMETER_ORDER
@@ -22,7 +12,7 @@ def active_param_type(value: str):
     parts = [p.strip().lower() for p in value.split(",") if p.strip()]
 
     if not parts:
-        return PARAMETER_ORDER
+        raise argparse.ArgumentTypeError("At least one parameter must be provided.")
 
     cleaned = []
     for p in parts:
@@ -48,7 +38,7 @@ def parse_args():
     core.add_argument(
         "--method",
         type=str,
-        choices=["npe", "npse", "fnpe"],
+        choices=["npe", "npse", "fnpe", "simformer"],
         default="npe",
         help="Inference method to use",
     )
@@ -203,13 +193,7 @@ def parse_args():
     training = p.add_argument_group("Training settings")
     training.add_argument("--lr", type=float, default=5e-4)
     training.add_argument("--batch-size", type=int, default=512)
-    training.add_argument(
-        "--stop-after-epochs",
-        type=int,
-        default=30,
-        help="Patience for early stopping (default 30 for noisy val loss)",
-    )
-    training.add_argument("--num-epochs", type=int, default=200)
+    training.add_argument("--num-epochs", type=int, default=300)
 
     # ==========================================================================
     # NPE-specific
@@ -248,7 +232,6 @@ def parse_args():
         default=2,
         help="Markov window size (keep small, e.g. 2-10)",
     )
-    fnpe.add_argument("--fnpe-steps-per-epoch", type=int, default=10000)
     fnpe.add_argument(
         "--fnpe-t-min", type=float, default=0.05, help="SDE T_min (default 0.05)"
     )
@@ -297,13 +280,7 @@ def parse_args():
     # ==========================================================================
     diag = p.add_argument_group("Diagnostics")
     diag.add_argument("--num-sbc-samples", type=int, default=200)
-    diag.add_argument("--num-lc2st-samples", type=int, default=None)
     diag.add_argument("--no-sbc", action="store_true")
-    diag.add_argument(
-        "--no-swd",
-        action="store_true",
-        help="Deprecated (kept for compatibility). Prior-vs-DAP SWD is disabled.",
-    )
     diag.add_argument("--no-one-step", action="store_true")
     diag.add_argument("--no-plots", action="store_true")
 
@@ -392,7 +369,6 @@ def main():
         # Training
         learning_rate=args.lr,
         training_batch_size=args.batch_size,
-        stop_after_epochs=args.stop_after_epochs,
         num_epochs=args.num_epochs,
         # NPE
         maf_hidden_features=args.maf_hidden,
@@ -405,7 +381,6 @@ def main():
         fnpe_model_type=args.fnpe_model_type,
         fnpe_window_size=args.fnpe_window_size,
         fnpe_t_min=args.fnpe_t_min,
-        fnpe_steps_per_epoch=args.fnpe_steps_per_epoch,
         fnpe_num_diffusion_steps=args.fnpe_diffusion_steps,
         fnpe_score_fn_type=args.fnpe_score_fn,
         fnpe_proposal_type=args.fnpe_proposal_type,  # "pred" (correct), "naive", "trajectory" (old)
@@ -415,9 +390,7 @@ def main():
         fnpe_num_simulations=args.fnpe_num_sim,  # FNPE simulation budget
         # Diagnostics
         num_sbc_samples=args.num_sbc_samples,
-        num_lc2st_samples=args.num_lc2st_samples,
         run_sbc=not args.no_sbc,
-        run_swd=False,
         run_one_step_rmse=not args.no_one_step,
         no_plots=args.no_plots,
         # Real data
