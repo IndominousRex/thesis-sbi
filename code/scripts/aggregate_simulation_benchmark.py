@@ -324,6 +324,14 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "direction": "lower",
         },
         {
+            "metric_key": "swd_posterior_vs_true",
+            "metric_label": "Sliced Wasserstein Distance",
+            "slug": "swd",
+            "figure_families": ["budget"],
+            "category": "posterior_quality",
+            "direction": "lower",
+        },
+        {
             "metric_key": "heldout_ppc_rmse_mean",
             "metric_label": "Held-out PPC RMSE",
             "slug": "ppc_rmse",
@@ -335,6 +343,14 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "metric_key": "heldout_ppc_w2_mean",
             "metric_label": "Held-out PPC W2",
             "slug": "ppc_w2",
+            "figure_families": ["budget"],
+            "category": "predictive_quality",
+            "direction": "lower",
+        },
+        {
+            "metric_key": "one_step_rmse",
+            "metric_label": "One-Step RMSE",
+            "slug": "one_step_rmse",
             "figure_families": ["budget"],
             "category": "predictive_quality",
             "direction": "lower",
@@ -382,6 +398,15 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "direction": "lower",
         },
         {
+            "metric_key": "c2st_mean",
+            "metric_label": "C2ST Mean",
+            "slug": "c2st",
+            "figure_families": ["budget"],
+            "category": "calibration",
+            "reference_lines": [0.5],
+            "direction": "target",
+        },
+        {
             "metric_key": "train_time_s",
             "metric_label": "Training Time (s)",
             "slug": "train_time",
@@ -399,6 +424,22 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "direction": "lower",
             "log_y": True,
         },
+        {
+            "metric_key": "real_ppc_rmse_mean",
+            "metric_label": "Real-Data PPC RMSE",
+            "slug": "real_ppc_rmse",
+            "figure_families": ["budget"],
+            "category": "predictive_quality",
+            "direction": "lower",
+        },
+        {
+            "metric_key": "real_ppc_w2_mean",
+            "metric_label": "Real-Data PPC W2",
+            "slug": "real_ppc_w2",
+            "figure_families": ["budget"],
+            "category": "predictive_quality",
+            "direction": "lower",
+        },
     ]
 
 
@@ -412,6 +453,10 @@ def _per_parameter_plot_specs(rows: list[dict[str, Any]]) -> list[dict[str, Any]
         ("bias_mean_norm", "Bias Mean (normalized)", [0.0]),
         ("w1_mean_phys", "W1 Mean (physical units)", None),
         ("w1_mean_norm", "W1 Mean (normalized)", None),
+        ("coverage_50_phys", "Coverage 50% (physical)", [0.5]),
+        ("coverage_50_norm", "Coverage 50% (normalized)", [0.5]),
+        ("coverage_90_phys", "Coverage 90% (physical)", [0.9]),
+        ("coverage_90_norm", "Coverage 90% (normalized)", [0.9]),
     ]
     available_keys = {key for row in rows for key in row.keys()}
     plot_specs: list[dict[str, Any]] = []
@@ -421,13 +466,21 @@ def _per_parameter_plot_specs(rows: list[dict[str, Any]]) -> list[dict[str, Any]
         )
         for key in matching_keys:
             param_name = key[: -(len(suffix) + 1)]
+            if "coverage_50" in suffix:
+                direction = "target"
+            elif "coverage_90" in suffix:
+                direction = "target"
+            elif "bias_mean" in suffix:
+                direction = "signed"
+            else:
+                direction = "lower"
             spec = {
                 "metric_key": key,
                 "metric_label": f"{param_name} {suffix_label}",
                 "slug": key,
                 "figure_families": ["budget"],
                 "category": "per_parameter",
-                "direction": "lower" if "bias_mean" not in suffix else "signed",
+                "direction": direction,
             }
             if reference_lines is not None:
                 spec["reference_lines"] = reference_lines
@@ -471,10 +524,13 @@ def _build_plot_registry(rows: list[dict[str, Any]]) -> dict[str, list[dict[str,
             for key in [
                 "w2_mean",
                 "l2_error_mean",
+                "swd_posterior_vs_true",
                 "heldout_ppc_rmse_mean",
+                "one_step_rmse",
                 "coverage_curve_mae",
                 "coverage_50_abs_error",
                 "coverage_90_abs_error",
+                "c2st_mean",
                 "train_time_s",
                 "sampling_time_mean_s",
             ]
@@ -485,6 +541,7 @@ def _build_plot_registry(rows: list[dict[str, Any]]) -> dict[str, list[dict[str,
             for key in [
                 "w2_mean",
                 "heldout_ppc_rmse_mean",
+                "one_step_rmse",
                 "coverage_curve_mae",
                 "coverage_50_abs_error",
                 "coverage_90_abs_error",
@@ -496,10 +553,13 @@ def _build_plot_registry(rows: list[dict[str, Any]]) -> dict[str, list[dict[str,
             for key in [
                 "w2_mean",
                 "l2_error_mean",
+                "swd_posterior_vs_true",
                 "heldout_ppc_rmse_mean",
+                "one_step_rmse",
                 "coverage_curve_mae",
                 "coverage_50_abs_error",
                 "coverage_90_abs_error",
+                "c2st_mean",
                 "train_time_s",
                 "sampling_time_mean_s",
             ]
@@ -1747,12 +1807,31 @@ def _build_raw_rows(completed_runs: list[dict[str, Any]]) -> list[dict[str, Any]
         heldout_ppc = metrics.get("heldout_test_ppc", {}).get("aggregate", {})
         budget = metrics.get("budget_metadata", {})
         training = metrics.get("training_summary", {})
+        timing = metrics.get("timing_breakdown", {})
+        one_step = metrics.get("one_step_rmse", {})
+        multi_ppc = metrics.get("multi_traj_ppc", {})
+        run_status = metrics.get("run_status_summary", {})
         requested_budget_steps = budget.get("requested_budget_steps")
         effective_budget_steps = budget.get("effective_budget_steps")
         if requested_budget_steps is None:
             requested_budget_steps = budget.get("total_simulation_budget_steps")
         if effective_budget_steps is None:
             effective_budget_steps = budget.get("total_simulation_budget_steps")
+
+        # C2ST mean across examples
+        c2st_raw = metrics.get("c2st", {})
+        c2st_vals = [float(v) for v in c2st_raw.values() if isinstance(v, (int, float))]
+        c2st_mean = float(sum(c2st_vals) / len(c2st_vals)) if c2st_vals else None
+
+        # Prefer direct coverage abs errors from w2 results, fall back to manual
+        cov50 = heldout.get("coverage_50")
+        cov90 = heldout.get("coverage_90")
+        coverage_50_abs_error = heldout.get("coverage_50_abs_error")
+        if coverage_50_abs_error is None and cov50 is not None:
+            coverage_50_abs_error = abs(float(cov50) - 0.5)
+        coverage_90_abs_error = heldout.get("coverage_90_abs_error")
+        if coverage_90_abs_error is None and cov90 is not None:
+            coverage_90_abs_error = abs(float(cov90) - 0.9)
 
         row = {
             "exp_dir": str(config_path.parent),
@@ -1768,23 +1847,27 @@ def _build_raw_rows(completed_runs: list[dict[str, Any]]) -> list[dict[str, Any]
             "requested_budget_steps": requested_budget_steps,
             "effective_budget_steps": effective_budget_steps,
             "total_budget_steps": effective_budget_steps,
+            # Posterior quality
             "w2_mean": heldout.get("w2_mean"),
             "l2_error_mean": heldout.get("l2_error_mean"),
-            "coverage_90": heldout.get("coverage_90"),
-            "coverage_50": heldout.get("coverage_50"),
+            "swd_posterior_vs_true": heldout.get("swd_posterior_vs_true"),
+            # Calibration
+            "coverage_90": cov90,
+            "coverage_50": cov50,
             "coverage_curve_mae": heldout.get("coverage_curve_mae"),
-            "coverage_50_abs_error": (
-                abs(float(heldout.get("coverage_50")) - 0.5)
-                if heldout.get("coverage_50") is not None
-                else None
-            ),
-            "coverage_90_abs_error": (
-                abs(float(heldout.get("coverage_90")) - 0.9)
-                if heldout.get("coverage_90") is not None
-                else None
-            ),
+            "coverage_50_abs_error": coverage_50_abs_error,
+            "coverage_90_abs_error": coverage_90_abs_error,
+            "c2st_mean": c2st_mean,
+            # Predictive quality
             "heldout_ppc_rmse_mean": heldout_ppc.get("rmse_mean"),
             "heldout_ppc_w2_mean": heldout_ppc.get("w2_mean"),
+            "heldout_ppc_rmse_std": heldout_ppc.get("rmse_std"),
+            "heldout_ppc_w2_std": heldout_ppc.get("w2_std"),
+            "one_step_rmse": one_step.get("rmse_overall"),
+            # Real-data PPC
+            "real_ppc_rmse_mean": multi_ppc.get("rmse_mean"),
+            "real_ppc_w2_mean": multi_ppc.get("w2_mean"),
+            # Training
             "train_time_s": training.get("train_time_s"),
             "epochs_trained": training.get("epochs_trained"),
             "num_train_steps": training.get("num_train_steps"),
@@ -1792,7 +1875,11 @@ def _build_raw_rows(completed_runs: list[dict[str, Any]]) -> list[dict[str, Any]
             "training_batch_size": training.get("training_batch_size"),
             "num_outer_epochs": training.get("num_outer_epochs"),
             "num_inner_epochs": training.get("num_inner_epochs"),
+            # Runtime
             "sampling_time_mean_s": heldout.get("sampling_time_mean_s"),
+            "dataset_generation_time_s": timing.get("dataset_generation_time_s"),
+            # Status
+            "run_status": run_status.get("final_state"),
         }
         row.update(
             _flatten_per_parameter_metrics(
@@ -1828,6 +1915,7 @@ def _build_aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "requested_budget_steps",
         "effective_budget_steps",
         "total_budget_steps",
+        "run_status",
     }
     for (method, params, requested_budget_steps, tseg), group_rows in sorted(grouped.items()):
         record: dict[str, Any] = {
@@ -1873,10 +1961,13 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     pairwise_metrics = [
         "w2_mean",
         "l2_error_mean",
+        "swd_posterior_vs_true",
         "heldout_ppc_rmse_mean",
+        "one_step_rmse",
         "coverage_curve_mae",
         "coverage_50_abs_error",
         "coverage_90_abs_error",
+        "c2st_mean",
     ]
     group_keys = sorted(
         {
