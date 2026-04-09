@@ -21,7 +21,9 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Aggregate simulation benchmark results.")
     p.add_argument("--experiments-root", default="experiments")
     p.add_argument(
-        "--exp-prefix", required=True, help="Prefix shared by benchmark exp_name values."
+        "--exp-prefix",
+        required=True,
+        help="Prefix shared by benchmark exp_name values.",
     )
     p.add_argument("--output-json", default=None)
     p.add_argument("--output-csv", default=None)
@@ -139,7 +141,9 @@ def _comparison_value(value: float, plot_spec: dict[str, Any]) -> float:
     raise ValueError(f"Unsupported metric direction: {direction}")
 
 
-def _comparison_delta(method_value: float, baseline_value: float, plot_spec: dict[str, Any]) -> float:
+def _comparison_delta(
+    method_value: float, baseline_value: float, plot_spec: dict[str, Any]
+) -> float:
     direction = _metric_direction(plot_spec)
     if direction in {"lower", "higher"}:
         return float(method_value) - float(baseline_value)
@@ -153,9 +157,7 @@ def _comparison_delta_footer(plot_spec: dict[str, Any], baseline_method: str) ->
     baseline_label = baseline_method.upper()
     metric_label = plot_spec["metric_label"]
     if direction == "higher":
-        return (
-            f"Delta = method - {baseline_label}. Positive values are better for this higher-is-better metric."
-        )
+        return f"Delta = method - {baseline_label}. Positive values are better for this higher-is-better metric."
     if direction == "target":
         target = _metric_target(plot_spec)
         return (
@@ -229,11 +231,25 @@ def _compute_seed_offsets(
     return {seed: float(offset) for seed, offset in zip(seeds, offsets)}
 
 
+# Colorblind-friendly, visually distinct palette for thesis plots.
+# Prioritizes discriminability in print and on screen.
+_THESIS_PALETTE = [
+    "#0077BB",  # strong blue  (NPE)
+    "#EE7733",  # orange       (NPSE)
+    "#009988",  # teal         (FNPE)
+    "#CC3311",  # red          (Simformer)
+    "#AA3377",  # magenta
+    "#33BBEE",  # cyan
+    "#BBBBBB",  # grey
+    "#EE3377",  # pink
+]
+
+
 def _method_color_map(methods: list[str], plt: Any) -> dict[str, str]:
-    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
-    if not color_cycle:
-        color_cycle = ["C0", "C1", "C2", "C3", "C4", "C5"]
-    return {method: color_cycle[idx % len(color_cycle)] for idx, method in enumerate(methods)}
+    return {
+        method: _THESIS_PALETTE[idx % len(_THESIS_PALETTE)]
+        for idx, method in enumerate(methods)
+    }
 
 
 def _apply_reference_lines(ax: Any, plot_spec: dict[str, Any]) -> None:
@@ -271,7 +287,11 @@ def _plot_seed_traces(
     sort_key: Any,
 ) -> None:
     for method in methods:
-        method_rows = [row for row in rows if row["method"] == method and row.get(metric_key) is not None]
+        method_rows = [
+            row
+            for row in rows
+            if row["method"] == method and row.get(metric_key) is not None
+        ]
         if not method_rows:
             continue
 
@@ -306,20 +326,22 @@ def _plot_seed_traces(
 
 
 def _base_plot_specs() -> list[dict[str, Any]]:
+    # Primary metrics get individual budget plots; secondary metrics appear
+    # only in dashboards, heatmaps, and multi-metric summary figures.
     return [
         {
             "metric_key": "w2_mean",
-            "metric_label": "Held-out W2",
+            "metric_label": "Wasserstein-2 Distance",
             "slug": "w2",
-            "figure_families": ["budget", "tseg"],
+            "figure_families": ["budget"],
             "category": "posterior_quality",
             "direction": "lower",
         },
         {
             "metric_key": "l2_error_mean",
-            "metric_label": "Held-out Posterior Mean L2",
+            "metric_label": "Posterior Mean L2 Error",
             "slug": "l2",
-            "figure_families": ["budget"],
+            "figure_families": [],
             "category": "posterior_quality",
             "direction": "lower",
         },
@@ -327,31 +349,31 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "metric_key": "swd_posterior_vs_true",
             "metric_label": "Sliced Wasserstein Distance",
             "slug": "swd",
-            "figure_families": ["budget"],
+            "figure_families": [],
             "category": "posterior_quality",
             "direction": "lower",
         },
         {
             "metric_key": "heldout_ppc_rmse_mean",
-            "metric_label": "Held-out PPC RMSE",
+            "metric_label": "PPC RMSE (held-out)",
             "slug": "ppc_rmse",
-            "figure_families": ["budget", "tseg"],
+            "figure_families": ["budget"],
             "category": "predictive_quality",
             "direction": "lower",
         },
         {
             "metric_key": "heldout_ppc_w2_mean",
-            "metric_label": "Held-out PPC W2",
+            "metric_label": "PPC W2 (held-out)",
             "slug": "ppc_w2",
-            "figure_families": ["budget"],
+            "figure_families": [],
             "category": "predictive_quality",
             "direction": "lower",
         },
         {
             "metric_key": "one_step_rmse",
-            "metric_label": "One-Step RMSE",
+            "metric_label": "One-Step Prediction RMSE",
             "slug": "one_step_rmse",
-            "figure_families": ["budget"],
+            "figure_families": [],
             "category": "predictive_quality",
             "direction": "lower",
         },
@@ -359,7 +381,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "metric_key": "coverage_50",
             "metric_label": "Coverage 50%",
             "slug": "coverage50",
-            "figure_families": ["budget"],
+            "figure_families": [],
             "category": "calibration",
             "reference_lines": [0.5],
             "direction": "target",
@@ -368,16 +390,16 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "metric_key": "coverage_90",
             "metric_label": "Coverage 90%",
             "slug": "coverage90",
-            "figure_families": ["budget"],
+            "figure_families": [],
             "category": "calibration",
             "reference_lines": [0.9],
             "direction": "target",
         },
         {
             "metric_key": "coverage_curve_mae",
-            "metric_label": "Coverage Curve MAE (lower is better)",
+            "metric_label": "Coverage Curve MAE",
             "slug": "coverage_curve_mae",
-            "figure_families": ["budget", "tseg"],
+            "figure_families": ["budget"],
             "category": "calibration",
             "direction": "lower",
         },
@@ -399,7 +421,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
         },
         {
             "metric_key": "c2st_mean",
-            "metric_label": "C2ST Mean",
+            "metric_label": "C2ST",
             "slug": "c2st",
             "figure_families": ["budget"],
             "category": "calibration",
@@ -419,7 +441,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "metric_key": "sampling_time_mean_s",
             "metric_label": "Sampling Time / Case (s)",
             "slug": "sampling_time",
-            "figure_families": ["budget"],
+            "figure_families": [],
             "category": "runtime",
             "direction": "lower",
             "log_y": True,
@@ -436,7 +458,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "metric_key": "real_ppc_w2_mean",
             "metric_label": "Real-Data PPC W2",
             "slug": "real_ppc_w2",
-            "figure_families": ["budget"],
+            "figure_families": [],
             "category": "predictive_quality",
             "direction": "lower",
         },
@@ -516,52 +538,19 @@ def _build_plot_registry(rows: list[dict[str, Any]]) -> dict[str, list[dict[str,
     base_by_key = {spec["metric_key"]: spec for spec in base_specs}
     return {
         "all": all_specs,
+        # Primary metrics: individual budget plots
         "budget": [spec for spec in all_specs if "budget" in spec["figure_families"]],
-        "tseg": [spec for spec in all_specs if "tseg" in spec["figure_families"]],
+        # Pareto efficiency plots
         "pareto": _pareto_plot_specs(),
-        "difference_budget": [
-            base_by_key[key]
-            for key in [
-                "w2_mean",
-                "l2_error_mean",
-                "swd_posterior_vs_true",
-                "heldout_ppc_rmse_mean",
-                "one_step_rmse",
-                "coverage_curve_mae",
-                "coverage_50_abs_error",
-                "coverage_90_abs_error",
-                "c2st_mean",
-                "train_time_s",
-                "sampling_time_mean_s",
-            ]
-            if key in base_by_key
-        ],
-        "difference_tseg": [
-            base_by_key[key]
-            for key in [
-                "w2_mean",
-                "heldout_ppc_rmse_mean",
-                "one_step_rmse",
-                "coverage_curve_mae",
-                "coverage_50_abs_error",
-                "coverage_90_abs_error",
-            ]
-            if key in base_by_key
-        ],
+        # Curated rank heatmaps (key metrics only)
         "heatmap": [
             base_by_key[key]
             for key in [
                 "w2_mean",
-                "l2_error_mean",
-                "swd_posterior_vs_true",
                 "heldout_ppc_rmse_mean",
-                "one_step_rmse",
                 "coverage_curve_mae",
-                "coverage_50_abs_error",
-                "coverage_90_abs_error",
                 "c2st_mean",
                 "train_time_s",
-                "sampling_time_mean_s",
             ]
             if key in base_by_key
         ],
@@ -605,7 +594,8 @@ def _plot_metric_vs_budget(
     budget_values = [
         float(row["requested_budget_steps"])
         for row in param_rows
-        if row.get(metric_key) is not None and row.get("requested_budget_steps") is not None
+        if row.get(metric_key) is not None
+        and row.get("requested_budget_steps") is not None
     ]
     seed_offsets = _compute_seed_offsets(seeds, budget_values)
     all_xs: list[float] = []
@@ -613,7 +603,10 @@ def _plot_metric_vs_budget(
     for row in param_rows:
         if row.get(metric_key) is None or row.get("requested_budget_steps") is None:
             continue
-        all_xs.append(float(row["requested_budget_steps"]) + seed_offsets.get(int(row["seed"]), 0.0))
+        all_xs.append(
+            float(row["requested_budget_steps"])
+            + seed_offsets.get(int(row["seed"]), 0.0)
+        )
         all_ys.append(float(row[metric_key]))
     if not all_ys:
         plt.close(fig)
@@ -642,7 +635,12 @@ def _plot_metric_vs_budget(
         ax.set_xticks(
             sorted(
                 {
-                    int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
+                    int(
+                        row.get(
+                            "requested_budget_steps", row.get("total_budget_steps", 0)
+                        )
+                        or 0
+                    )
                     for row in tseg_rows
                 }
             )
@@ -680,110 +678,6 @@ def _plot_metric_vs_budget(
     return True
 
 
-def _plot_metric_vs_tseg(
-    raw_rows: list[dict[str, Any]],
-    params: str,
-    plot_spec: dict[str, Any],
-    output_path: Path,
-) -> bool:
-    try:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception:
-        return False
-
-    param_rows = [row for row in raw_rows if row["params"] == params]
-    if not param_rows:
-        return False
-
-    metric_key = plot_spec["metric_key"]
-    metric_label = plot_spec["metric_label"]
-    budgets = sorted(
-        {
-            int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
-            for row in param_rows
-        }
-    )
-    if not budgets:
-        return False
-
-    ncols = min(3, len(budgets))
-    nrows = int(np.ceil(len(budgets) / ncols))
-    fig, axes = plt.subplots(
-        nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False
-    )
-    axes_flat = axes.flatten()
-
-    methods = sorted({row["method"] for row in param_rows})
-    method_colors = _method_color_map(methods, plt)
-    seeds = sorted({int(row["seed"]) for row in param_rows})
-    tseg_values = [float(row["T_seg"]) for row in param_rows if row.get(metric_key) is not None]
-    seed_offsets = _compute_seed_offsets(seeds, tseg_values)
-    all_xs: list[float] = []
-    all_ys: list[float] = []
-    for row in param_rows:
-        if row.get(metric_key) is None:
-            continue
-        all_xs.append(float(row["T_seg"]) + seed_offsets.get(int(row["seed"]), 0.0))
-        all_ys.append(float(row[metric_key]))
-    if not all_ys:
-        plt.close(fig)
-        return False
-    x_limits, y_limits = _compute_axis_limits(all_xs, all_ys)
-
-    for ax_idx, budget in enumerate(budgets):
-        ax = axes_flat[ax_idx]
-        budget_rows = [
-            row
-            for row in param_rows
-            if int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
-            == budget
-        ]
-        _plot_seed_traces(
-            ax,
-            budget_rows,
-            methods,
-            method_colors,
-            metric_key,
-            x_key="T_seg",
-            x_offsets=seed_offsets,
-            sort_key=lambda r: int(r["T_seg"]),
-        )
-        ax.set_title(f"Budget={budget:.0e}")
-        ax.set_xlabel("T_seg")
-        ax.set_ylabel(metric_label)
-        _apply_reference_lines(ax, plot_spec)
-        ax.set_xticks(sorted({int(row['T_seg']) for row in budget_rows}))
-        if x_limits is not None:
-            ax.set_xlim(*x_limits)
-        if y_limits is not None:
-            ax.set_ylim(*y_limits)
-        if plot_spec.get("log_y") and all_ys and min(all_ys) > 0:
-            ax.set_yscale("log")
-        ax.grid(True, alpha=0.3)
-        if ax.get_legend_handles_labels()[0]:
-            ax.legend()
-
-    for ax in axes_flat[len(budgets) :]:
-        ax.axis("off")
-
-    fig.suptitle(f"{metric_label} vs T_seg | params={params}")
-    fig.text(
-        0.5,
-        0.02,
-        "\n".join(_plot_footer_lines(metric_key)),
-        ha="center",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return True
-
-
 def _pareto_front_mask(points: list[tuple[float, float]]) -> list[bool]:
     mask = [True] * len(points)
     for idx, (x_i, y_i) in enumerate(points):
@@ -795,125 +689,6 @@ def _pareto_front_mask(points: list[tuple[float, float]]) -> list[bool]:
                 mask[idx] = False
                 break
     return mask
-
-
-def _plot_pareto_scatter(
-    raw_rows: list[dict[str, Any]],
-    params: str,
-    plot_spec: dict[str, Any],
-    output_path: Path,
-) -> bool:
-    try:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from matplotlib.lines import Line2D
-    except Exception:
-        return False
-
-    x_metric_key = plot_spec["x_metric_key"]
-    y_metric_key = plot_spec["y_metric_key"]
-    param_rows = [
-        row
-        for row in raw_rows
-        if row["params"] == params
-        and row.get(x_metric_key) is not None
-        and row.get(y_metric_key) is not None
-    ]
-    if not param_rows:
-        return False
-
-    fig, ax = plt.subplots(figsize=(8.5, 6.5))
-    methods = sorted({row["method"] for row in param_rows})
-    method_colors = _method_color_map(methods, plt)
-    tsegs = sorted({int(row["T_seg"]) for row in param_rows})
-    marker_cycle = ["o", "s", "^", "D", "P", "X", "v", "<", ">"]
-    tseg_markers = {
-        tseg: marker_cycle[idx % len(marker_cycle)] for idx, tseg in enumerate(tsegs)
-    }
-
-    points = [
-        (float(row[x_metric_key]), float(row[y_metric_key])) for row in param_rows
-    ]
-    pareto_mask = _pareto_front_mask(points)
-
-    for row, is_front in zip(param_rows, pareto_mask):
-        x_val = float(row[x_metric_key])
-        y_val = float(row[y_metric_key])
-        ax.scatter(
-            x_val,
-            y_val,
-            color=method_colors[row["method"]],
-            marker=tseg_markers[int(row["T_seg"])],
-            s=85 if is_front else 60,
-            alpha=0.95 if is_front else 0.65,
-            edgecolors="black" if is_front else "none",
-            linewidths=0.5 if is_front else 0.0,
-            zorder=3 if is_front else 2,
-        )
-        if is_front:
-            label = (
-                f"{row['method'].upper()} "
-                f"b={int(row['requested_budget_steps']):.0e} "
-                f"T={int(row['T_seg'])} s={int(row['seed'])}"
-            )
-            ax.annotate(
-                label,
-                (x_val, y_val),
-                xytext=(5, 4),
-                textcoords="offset points",
-                fontsize=8,
-            )
-
-    if plot_spec.get("log_x"):
-        ax.set_xscale("log")
-    ax.set_xlabel(plot_spec["x_label"])
-    ax.set_ylabel(plot_spec["y_label"])
-    ax.set_title(f"{plot_spec['y_label']} vs {plot_spec['x_label']} | params={params}")
-    ax.grid(True, alpha=0.3)
-
-    method_handles = [
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="none",
-            markerfacecolor=method_colors[method],
-            markeredgecolor="none",
-            markersize=8,
-            label=method.upper(),
-        )
-        for method in methods
-    ]
-    tseg_handles = [
-        Line2D(
-            [0],
-            [0],
-            marker=tseg_markers[tseg],
-            color="black",
-            linestyle="None",
-            markersize=8,
-            label=f"T_seg={tseg}",
-        )
-        for tseg in tsegs
-    ]
-    first_legend = ax.legend(handles=method_handles, title="Method", loc="upper right")
-    ax.add_artist(first_legend)
-    ax.legend(handles=tseg_handles, title="T_seg", loc="lower left")
-
-    fig.text(
-        0.5,
-        0.02,
-        "Each point is one seed-run. Labels are shown only for non-dominated Pareto-front points.",
-        ha="center",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=(0, 0.05, 1, 0.98))
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return True
 
 
 def _plot_pareto_aggregate_scatter(
@@ -1014,7 +789,9 @@ def _plot_pareto_aggregate_scatter(
         ax.set_xscale("log")
     ax.set_xlabel(f"{plot_spec['x_label']} (aggregate mean)")
     ax.set_ylabel(f"{plot_spec['y_label']} (aggregate mean)")
-    ax.set_title(f"Aggregate Pareto | {plot_spec['y_label']} vs {plot_spec['x_label']} | params={params}")
+    ax.set_title(
+        f"Aggregate Pareto | {plot_spec['y_label']} vs {plot_spec['x_label']} | params={params}"
+    )
     ax.grid(True, alpha=0.3)
 
     method_handles = [
@@ -1060,292 +837,6 @@ def _plot_pareto_aggregate_scatter(
     return True
 
 
-def _choose_baseline_method(rows: list[dict[str, Any]]) -> str | None:
-    methods = sorted({str(row["method"]) for row in rows})
-    if not methods:
-        return None
-    if "npe" in methods:
-        return "npe"
-    return methods[0]
-
-
-def _difference_axis_limits(
-    delta_groups: list[list[tuple[float, float]]],
-    *,
-    x_pad_frac: float = 0.03,
-    y_pad_frac: float = 0.08,
-) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
-    xs = [x for group in delta_groups for x, _ in group]
-    ys = [y for group in delta_groups for _, y in group]
-    if not xs or not ys:
-        return None, None
-    return _compute_axis_limits(xs, ys, x_pad_frac=x_pad_frac, y_pad_frac=y_pad_frac)
-
-
-def _plot_metric_difference_vs_budget(
-    raw_rows: list[dict[str, Any]],
-    params: str,
-    plot_spec: dict[str, Any],
-    output_path: Path,
-) -> bool:
-    try:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception:
-        return False
-
-    metric_key = plot_spec["metric_key"]
-    metric_label = plot_spec["metric_label"]
-    param_rows = [row for row in raw_rows if row["params"] == params and row.get(metric_key) is not None]
-    if not param_rows:
-        return False
-
-    baseline = _choose_baseline_method(param_rows)
-    methods = [method for method in sorted({row["method"] for row in param_rows}) if method != baseline]
-    if not baseline or not methods:
-        return False
-
-    tsegs = sorted({int(row["T_seg"]) for row in param_rows})
-    ncols = min(3, len(tsegs))
-    nrows = int(np.ceil(len(tsegs) / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
-    axes_flat = axes.flatten()
-    method_colors = _method_color_map([baseline] + methods, plt)
-
-    grouped_deltas: dict[int, dict[str, list[tuple[float, float, int]]]] = {}
-    all_delta_points: list[list[tuple[float, float]]] = []
-    for tseg in tsegs:
-        tseg_rows = [row for row in param_rows if int(row["T_seg"]) == tseg]
-        rows_by_method_seed_budget = {
-            (
-                str(row["method"]),
-                int(row["seed"]),
-                int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0),
-            ): row
-            for row in tseg_rows
-        }
-        method_delta_map: dict[str, list[tuple[float, float, int]]] = {}
-        for method in methods:
-            deltas_for_method: list[tuple[float, float, int]] = []
-            candidate_seeds = sorted({int(row["seed"]) for row in tseg_rows if row["method"] == method})
-            budgets = sorted(
-                {
-                    int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0)
-                    for row in tseg_rows
-                    if row["method"] == method
-                }
-            )
-            for seed in candidate_seeds:
-                for budget in budgets:
-                    row_method = rows_by_method_seed_budget.get((method, seed, budget))
-                    row_base = rows_by_method_seed_budget.get((baseline, seed, budget))
-                    if row_method is None or row_base is None:
-                        continue
-                    delta = _comparison_delta(
-                        float(row_method[metric_key]),
-                        float(row_base[metric_key]),
-                        plot_spec,
-                    )
-                    deltas_for_method.append((float(budget), delta, seed))
-            if deltas_for_method:
-                method_delta_map[method] = deltas_for_method
-                all_delta_points.append([(x, y) for x, y, _ in deltas_for_method])
-        grouped_deltas[tseg] = method_delta_map
-
-    x_limits, y_limits = _difference_axis_limits(all_delta_points)
-    if y_limits is None:
-        plt.close(fig)
-        return False
-
-    for ax_idx, tseg in enumerate(tsegs):
-        ax = axes_flat[ax_idx]
-        seed_offsets = _compute_seed_offsets(
-            sorted({seed for deltas in grouped_deltas[tseg].values() for _, _, seed in deltas}),
-            [x for deltas in grouped_deltas[tseg].values() for x, _, _ in deltas],
-        )
-        for method in methods:
-            deltas = grouped_deltas[tseg].get(method, [])
-            if not deltas:
-                continue
-            for seed in sorted({seed for _, _, seed in deltas}):
-                seed_points = sorted((x, y) for x, y, s in deltas if s == seed)
-                xs = [x + seed_offsets.get(seed, 0.0) for x, _ in seed_points]
-                ys = [y for _, y in seed_points]
-                if len(xs) >= 2:
-                    ax.plot(xs, ys, color=method_colors[method], alpha=0.22, linewidth=1.0, zorder=1)
-                ax.scatter(xs, ys, color=method_colors[method], alpha=0.45, s=28, zorder=2)
-
-            mean_by_budget: dict[float, list[float]] = {}
-            for x_val, y_val, _ in deltas:
-                mean_by_budget.setdefault(x_val, []).append(y_val)
-            xs_mean = sorted(mean_by_budget)
-            ys_mean = [float(np.mean(mean_by_budget[x])) for x in xs_mean]
-            ax.plot(xs_mean, ys_mean, color=method_colors[method], marker="o", linewidth=2.0, label=method.upper(), zorder=3)
-
-        ax.axhline(0.0, color="0.35", linestyle="--", linewidth=1.0, zorder=0)
-        ax.set_title(f"T_seg={tseg} | baseline={baseline.upper()}")
-        ax.set_xlabel("Requested Budget Steps")
-        ax.set_ylabel(f"{metric_label} delta vs {baseline.upper()}")
-        budget_ticks = sorted({int(x) for deltas in grouped_deltas[tseg].values() for x, _, _ in deltas})
-        ax.set_xticks(budget_ticks)
-        _format_budget_axis(ax)
-        if x_limits is not None:
-            ax.set_xlim(*x_limits)
-        if y_limits is not None:
-            ax.set_ylim(*y_limits)
-        ax.grid(True, alpha=0.3)
-        if ax.get_legend_handles_labels()[0]:
-            ax.legend()
-
-    for ax in axes_flat[len(tsegs):]:
-        ax.axis("off")
-
-    fig.suptitle(f"{metric_label} delta vs baseline across budgets | params={params}")
-    fig.text(
-        0.5,
-        0.02,
-        _comparison_delta_footer(plot_spec, baseline),
-        ha="center",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return True
-
-
-def _plot_metric_difference_vs_tseg(
-    raw_rows: list[dict[str, Any]],
-    params: str,
-    plot_spec: dict[str, Any],
-    output_path: Path,
-) -> bool:
-    try:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception:
-        return False
-
-    metric_key = plot_spec["metric_key"]
-    metric_label = plot_spec["metric_label"]
-    param_rows = [row for row in raw_rows if row["params"] == params and row.get(metric_key) is not None]
-    if not param_rows:
-        return False
-
-    baseline = _choose_baseline_method(param_rows)
-    methods = [method for method in sorted({row["method"] for row in param_rows}) if method != baseline]
-    if not baseline or not methods:
-        return False
-
-    budgets = sorted(
-        {int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0) for row in param_rows}
-    )
-    ncols = min(3, len(budgets))
-    nrows = int(np.ceil(len(budgets) / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False)
-    axes_flat = axes.flatten()
-    method_colors = _method_color_map([baseline] + methods, plt)
-
-    grouped_deltas: dict[int, dict[str, list[tuple[float, float, int]]]] = {}
-    all_delta_points: list[list[tuple[float, float]]] = []
-    for budget in budgets:
-        budget_rows = [
-            row
-            for row in param_rows
-            if int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0) == budget
-        ]
-        rows_by_method_seed_tseg = {
-            (str(row["method"]), int(row["seed"]), int(row["T_seg"])): row
-            for row in budget_rows
-        }
-        method_delta_map: dict[str, list[tuple[float, float, int]]] = {}
-        for method in methods:
-            deltas_for_method: list[tuple[float, float, int]] = []
-            candidate_seeds = sorted({int(row["seed"]) for row in budget_rows if row["method"] == method})
-            tsegs = sorted({int(row["T_seg"]) for row in budget_rows if row["method"] == method})
-            for seed in candidate_seeds:
-                for tseg in tsegs:
-                    row_method = rows_by_method_seed_tseg.get((method, seed, tseg))
-                    row_base = rows_by_method_seed_tseg.get((baseline, seed, tseg))
-                    if row_method is None or row_base is None:
-                        continue
-                    delta = _comparison_delta(
-                        float(row_method[metric_key]),
-                        float(row_base[metric_key]),
-                        plot_spec,
-                    )
-                    deltas_for_method.append((float(tseg), delta, seed))
-            if deltas_for_method:
-                method_delta_map[method] = deltas_for_method
-                all_delta_points.append([(x, y) for x, y, _ in deltas_for_method])
-        grouped_deltas[budget] = method_delta_map
-
-    x_limits, y_limits = _difference_axis_limits(all_delta_points)
-    if y_limits is None:
-        plt.close(fig)
-        return False
-
-    for ax_idx, budget in enumerate(budgets):
-        ax = axes_flat[ax_idx]
-        seed_offsets = _compute_seed_offsets(
-            sorted({seed for deltas in grouped_deltas[budget].values() for _, _, seed in deltas}),
-            [x for deltas in grouped_deltas[budget].values() for x, _, _ in deltas],
-        )
-        for method in methods:
-            deltas = grouped_deltas[budget].get(method, [])
-            if not deltas:
-                continue
-            for seed in sorted({seed for _, _, seed in deltas}):
-                seed_points = sorted((x, y) for x, y, s in deltas if s == seed)
-                xs = [x + seed_offsets.get(seed, 0.0) for x, _ in seed_points]
-                ys = [y for _, y in seed_points]
-                if len(xs) >= 2:
-                    ax.plot(xs, ys, color=method_colors[method], alpha=0.22, linewidth=1.0, zorder=1)
-                ax.scatter(xs, ys, color=method_colors[method], alpha=0.45, s=28, zorder=2)
-
-            mean_by_tseg: dict[float, list[float]] = {}
-            for x_val, y_val, _ in deltas:
-                mean_by_tseg.setdefault(x_val, []).append(y_val)
-            xs_mean = sorted(mean_by_tseg)
-            ys_mean = [float(np.mean(mean_by_tseg[x])) for x in xs_mean]
-            ax.plot(xs_mean, ys_mean, color=method_colors[method], marker="o", linewidth=2.0, label=method.upper(), zorder=3)
-
-        ax.axhline(0.0, color="0.35", linestyle="--", linewidth=1.0, zorder=0)
-        ax.set_title(f"Budget={_budget_to_label(budget)} | baseline={baseline.upper()}")
-        ax.set_xlabel("T_seg")
-        ax.set_ylabel(f"{metric_label} delta vs {baseline.upper()}")
-        ax.set_xticks(sorted({int(x) for deltas in grouped_deltas[budget].values() for x, _, _ in deltas}))
-        if x_limits is not None:
-            ax.set_xlim(*x_limits)
-        if y_limits is not None:
-            ax.set_ylim(*y_limits)
-        ax.grid(True, alpha=0.3)
-        if ax.get_legend_handles_labels()[0]:
-            ax.legend()
-
-    for ax in axes_flat[len(budgets):]:
-        ax.axis("off")
-
-    fig.suptitle(f"{metric_label} delta vs baseline across T_seg | params={params}")
-    fig.text(
-        0.5,
-        0.02,
-        _comparison_delta_footer(plot_spec, baseline),
-        ha="center",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return True
-
-
 def _plot_metric_rank_heatmap(
     aggregate_rows: list[dict[str, Any]],
     params: str,
@@ -1375,7 +866,10 @@ def _plot_metric_rank_heatmap(
     combos = sorted(
         {
             (
-                int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0),
+                int(
+                    row.get("requested_budget_steps", row.get("total_budget_steps", 0))
+                    or 0
+                ),
                 int(row["T_seg"]),
             )
             for row in param_rows
@@ -1392,7 +886,10 @@ def _plot_metric_rank_heatmap(
             row
             for row in param_rows
             if (
-                int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0),
+                int(
+                    row.get("requested_budget_steps", row.get("total_budget_steps", 0))
+                    or 0
+                ),
                 int(row["T_seg"]),
             )
             == combo
@@ -1410,7 +907,9 @@ def _plot_metric_rank_heatmap(
 
     fig_width = max(8.0, 1.2 * len(combos))
     fig, ax = plt.subplots(figsize=(fig_width, 3.8 + 0.45 * len(methods)))
-    im = ax.imshow(heat, aspect="auto", cmap="viridis_r", vmin=1, vmax=max(len(methods), 1))
+    im = ax.imshow(
+        heat, aspect="auto", cmap="viridis_r", vmin=1, vmax=max(len(methods), 1)
+    )
     ax.set_yticks(range(len(methods)))
     ax.set_yticklabels([method.upper() for method in methods])
     ax.set_xticks(range(len(combos)))
@@ -1427,11 +926,1217 @@ def _plot_metric_rank_heatmap(
         for col_idx in range(len(combos)):
             val = heat[row_idx, col_idx]
             if not np.isnan(val):
-                ax.text(col_idx, row_idx, f"{val:.1f}", ha="center", va="center", fontsize=8, color="white")
+                ax.text(
+                    col_idx,
+                    row_idx,
+                    f"{val:.1f}",
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color="white",
+                )
 
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+# =====================================================================
+# NEW ANALYTICAL PLOT FUNCTIONS
+# =====================================================================
+
+
+def _plot_method_overview_dashboard(
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    output_path: Path,
+) -> bool:
+    """Multi-panel dashboard: 6 key metrics vs simulation budget in one thesis figure."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    # Key metrics for the overview — covers posterior quality, predictive
+    # quality, calibration, and computational cost.
+    dashboard_metrics = [
+        ("w2_mean", "Wasserstein-2 Distance", False, None),
+        ("heldout_ppc_rmse_mean", "PPC RMSE (held-out)", False, None),
+        ("coverage_curve_mae", "Coverage Curve MAE", False, None),
+        ("c2st_mean", "C2ST", False, [0.5]),
+        ("train_time_s", "Training Time (s)", True, None),
+        ("one_step_rmse", "One-Step Prediction RMSE", False, None),
+    ]
+
+    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if not param_rows:
+        return False
+
+    methods = sorted({row["method"] for row in param_rows})
+    method_colors = _method_color_map(methods, plt)
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 9))
+    axes_flat = axes.flatten()
+    plotted_any = False
+
+    for idx, (metric_key, label, log_y, ref_lines) in enumerate(dashboard_metrics):
+        ax = axes_flat[idx]
+        has_data = False
+        for method in methods:
+            method_rows = sorted(
+                [
+                    r
+                    for r in param_rows
+                    if r["method"] == method
+                    and isinstance(r.get(metric_key), dict)
+                    and r[metric_key].get("mean") is not None
+                ],
+                key=lambda r: int(r.get("requested_budget_steps") or 0),
+            )
+            if not method_rows:
+                continue
+            has_data = True
+            budgets = [int(r["requested_budget_steps"]) for r in method_rows]
+            means = [float(r[metric_key]["mean"]) for r in method_rows]
+            stds = [float(r[metric_key]["std"]) for r in method_rows]
+            ax.plot(
+                budgets,
+                means,
+                marker="o",
+                label=method.upper(),
+                color=method_colors[method],
+                linewidth=1.8,
+                markersize=5,
+                zorder=3,
+            )
+            ax.fill_between(
+                budgets,
+                [m - s for m, s in zip(means, stds)],
+                [m + s for m, s in zip(means, stds)],
+                color=method_colors[method],
+                alpha=0.12,
+                zorder=1,
+            )
+        if ref_lines:
+            for val in ref_lines:
+                ax.axhline(val, color="0.45", linestyle="--", linewidth=1.0, alpha=0.7)
+        if log_y and has_data:
+            ax.set_yscale("log")
+        ax.set_xlabel("Simulation Budget", fontsize=9)
+        ax.set_ylabel(label, fontsize=9)
+        ax.set_title(label, fontsize=10, fontweight="semibold")
+        ax.grid(True, alpha=0.2, linewidth=0.5)
+        _format_budget_axis(ax)
+        ax.tick_params(labelsize=8)
+        if has_data:
+            plotted_any = True
+        if idx == 0 and has_data:
+            ax.legend(fontsize=8, framealpha=0.7)
+
+    if not plotted_any:
+        plt.close(fig)
+        return False
+
+    fig.suptitle(
+        f"Method Comparison Overview | params={params}",
+        fontsize=13,
+        fontweight="bold",
+        y=1.01,
+    )
+    fig.text(
+        0.5,
+        0.01,
+        "Solid lines: aggregate mean across seeds. Shaded bands: \u00b11 std.",
+        ha="center",
+        fontsize=8,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.03, 1, 0.98))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_radar_chart(
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    output_path: Path,
+) -> bool:
+    """Radar / spider chart comparing methods across normalized metrics at each budget."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    radar_metrics = [
+        ("w2_mean", "W2", "lower"),
+        ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
+        ("coverage_curve_mae", "Cov. MAE", "lower"),
+        ("c2st_mean", "C2ST", "target_0.5"),
+        ("train_time_s", "Train Time", "lower"),
+        ("one_step_rmse", "1-Step RMSE", "lower"),
+    ]
+
+    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if not param_rows:
+        return False
+    methods = sorted({row["method"] for row in param_rows})
+    budgets = sorted({int(row["requested_budget_steps"]) for row in param_rows})
+    method_colors = _method_color_map(methods, plt)
+
+    if not budgets:
+        return False
+
+    ncols = min(3, len(budgets))
+    nrows = int(np.ceil(len(budgets) / ncols))
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(5.5 * ncols, 5.0 * nrows),
+        subplot_kw={"projection": "polar"},
+    )
+    if isinstance(axes, np.ndarray):
+        axes = axes.reshape(nrows, ncols) if axes.ndim != 2 else axes
+    else:
+        axes = np.array([[axes]])
+    axes_flat = axes.flatten()
+
+    num_metrics = len(radar_metrics)
+    angles = np.linspace(0, 2 * np.pi, num_metrics, endpoint=False).tolist()
+    angles += angles[:1]
+    plotted_any = False
+
+    for bidx, budget in enumerate(budgets):
+        ax = axes_flat[bidx]
+        budget_rows = [
+            r for r in param_rows if int(r["requested_budget_steps"]) == budget
+        ]
+
+        raw_values: dict[str, list[float | None]] = {}
+        for method in methods:
+            vals: list[float | None] = []
+            method_row = next((r for r in budget_rows if r["method"] == method), None)
+            for metric_key, _, direction in radar_metrics:
+                if method_row is None or not isinstance(
+                    method_row.get(metric_key), dict
+                ):
+                    vals.append(None)
+                    continue
+                v = method_row[metric_key].get("mean")
+                if v is None:
+                    vals.append(None)
+                    continue
+                if direction == "target_0.5":
+                    v = abs(float(v) - 0.5)
+                vals.append(float(v))
+            raw_values[method] = vals
+
+        all_vals_per_metric: list[list[float]] = []
+        for midx in range(num_metrics):
+            metric_vals = [
+                raw_values[m][midx] for m in methods if raw_values[m][midx] is not None
+            ]
+            all_vals_per_metric.append(metric_vals)
+
+        if all(len(v) == 0 for v in all_vals_per_metric):
+            ax.set_visible(False)
+            continue
+
+        normalized: dict[str, list[float]] = {}
+        for method in methods:
+            norm_vals: list[float] = []
+            for midx in range(num_metrics):
+                v = raw_values[method][midx]
+                metric_vals = all_vals_per_metric[midx]
+                if v is None or len(metric_vals) < 2:
+                    norm_vals.append(0.5)
+                    continue
+                vmin, vmax = min(metric_vals), max(metric_vals)
+                span = vmax - vmin
+                if span < 1e-12:
+                    norm_vals.append(0.5)
+                else:
+                    norm_vals.append(1.0 - (float(v) - vmin) / span)
+            normalized[method] = norm_vals
+
+        for method in methods:
+            values = normalized[method] + normalized[method][:1]
+            ax.fill(angles, values, alpha=0.1, color=method_colors[method])
+            ax.plot(
+                angles,
+                values,
+                linewidth=1.6,
+                label=method.upper(),
+                color=method_colors[method],
+            )
+            plotted_any = True
+
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels([label for _, label, _ in radar_metrics], fontsize=8)
+        ax.set_ylim(0, 1.05)
+        ax.set_yticks([0.25, 0.5, 0.75, 1.0])
+        ax.set_yticklabels(["", "", "", "Best"], fontsize=7, color="0.5")
+        ax.set_title(
+            f"Budget = {_budget_to_label(budget)}",
+            fontsize=10,
+            fontweight="semibold",
+            pad=15,
+        )
+        if bidx == 0:
+            ax.legend(
+                loc="upper right",
+                bbox_to_anchor=(1.3, 1.15),
+                fontsize=8,
+                framealpha=0.7,
+            )
+
+    for ax in axes_flat[len(budgets) :]:
+        ax.set_visible(False)
+
+    if not plotted_any:
+        plt.close(fig)
+        return False
+
+    fig.suptitle(
+        f"Method Profile Comparison | params={params}",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
+    fig.text(
+        0.5,
+        0.01,
+        "All metrics normalized: 1 = best (outermost), 0 = worst (center). Lower-is-better metrics are inverted.",
+        ha="center",
+        fontsize=8,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.03, 1, 0.97))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_calibration_panel(
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    output_path: Path,
+) -> bool:
+    """Combined calibration diagnostic: coverage 50/90 bars, coverage MAE, C2ST."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if not param_rows:
+        return False
+
+    methods = sorted({row["method"] for row in param_rows})
+    budgets = sorted({int(row["requested_budget_steps"]) for row in param_rows})
+    method_colors = _method_color_map(methods, plt)
+
+    fig, axes = plt.subplots(1, 4, figsize=(18, 5))
+
+    # Panels 1 & 2: coverage 50% and 90% as grouped bars per budget
+    for panel_idx, (metric_key, target, title) in enumerate(
+        [("coverage_50", 0.5, "Coverage 50%"), ("coverage_90", 0.9, "Coverage 90%")]
+    ):
+        ax = axes[panel_idx]
+        n_methods = len(methods)
+        bar_width = 0.8 / max(n_methods, 1)
+        has_data = False
+        for midx, method in enumerate(methods):
+            method_rows = sorted(
+                [
+                    r
+                    for r in param_rows
+                    if r["method"] == method
+                    and isinstance(r.get(metric_key), dict)
+                    and r[metric_key].get("mean") is not None
+                ],
+                key=lambda r: int(r.get("requested_budget_steps") or 0),
+            )
+            if not method_rows:
+                continue
+            has_data = True
+            x_pos = np.arange(len(method_rows))
+            means = [float(r[metric_key]["mean"]) for r in method_rows]
+            stds = [float(r[metric_key]["std"]) for r in method_rows]
+            ax.bar(
+                x_pos + midx * bar_width,
+                means,
+                bar_width,
+                yerr=stds,
+                label=method.upper() if panel_idx == 0 else None,
+                color=method_colors[method],
+                alpha=0.85,
+                capsize=2,
+                error_kw={"linewidth": 0.8},
+            )
+        ax.axhline(
+            target,
+            color="red",
+            linestyle="--",
+            linewidth=1.0,
+            alpha=0.7,
+            label=f"Ideal = {target}" if panel_idx == 0 else None,
+        )
+        if has_data:
+            ax.set_xticks(np.arange(len(budgets)) + bar_width * (n_methods - 1) / 2)
+            ax.set_xticklabels(
+                [_budget_to_label(b) for b in budgets], fontsize=8, rotation=30
+            )
+        ax.set_ylabel(title, fontsize=9)
+        ax.set_title(title, fontsize=10, fontweight="semibold")
+        ax.grid(True, axis="y", alpha=0.2, linewidth=0.5)
+        ax.tick_params(labelsize=8)
+
+    # Panel 3: coverage curve MAE
+    ax = axes[2]
+    for method in methods:
+        method_rows = sorted(
+            [
+                r
+                for r in param_rows
+                if r["method"] == method
+                and isinstance(r.get("coverage_curve_mae"), dict)
+                and r["coverage_curve_mae"].get("mean") is not None
+            ],
+            key=lambda r: int(r.get("requested_budget_steps") or 0),
+        )
+        if not method_rows:
+            continue
+        budgets_m = [int(r["requested_budget_steps"]) for r in method_rows]
+        means = [float(r["coverage_curve_mae"]["mean"]) for r in method_rows]
+        stds = [float(r["coverage_curve_mae"]["std"]) for r in method_rows]
+        ax.plot(
+            budgets_m,
+            means,
+            marker="o",
+            color=method_colors[method],
+            linewidth=1.6,
+            markersize=5,
+            label=method.upper(),
+        )
+        ax.fill_between(
+            budgets_m,
+            [m - s for m, s in zip(means, stds)],
+            [m + s for m, s in zip(means, stds)],
+            color=method_colors[method],
+            alpha=0.12,
+        )
+    ax.set_xlabel("Simulation Budget", fontsize=9)
+    ax.set_ylabel("Coverage Curve MAE", fontsize=9)
+    ax.set_title("Coverage Curve MAE", fontsize=10, fontweight="semibold")
+    ax.grid(True, alpha=0.2, linewidth=0.5)
+    _format_budget_axis(ax)
+    ax.tick_params(labelsize=8)
+
+    # Panel 4: C2ST
+    ax = axes[3]
+    for method in methods:
+        method_rows = sorted(
+            [
+                r
+                for r in param_rows
+                if r["method"] == method
+                and isinstance(r.get("c2st_mean"), dict)
+                and r["c2st_mean"].get("mean") is not None
+            ],
+            key=lambda r: int(r.get("requested_budget_steps") or 0),
+        )
+        if not method_rows:
+            continue
+        budgets_m = [int(r["requested_budget_steps"]) for r in method_rows]
+        means = [float(r["c2st_mean"]["mean"]) for r in method_rows]
+        stds = [float(r["c2st_mean"]["std"]) for r in method_rows]
+        ax.plot(
+            budgets_m,
+            means,
+            marker="o",
+            color=method_colors[method],
+            linewidth=1.6,
+            markersize=5,
+            label=method.upper(),
+        )
+        ax.fill_between(
+            budgets_m,
+            [m - s for m, s in zip(means, stds)],
+            [m + s for m, s in zip(means, stds)],
+            color=method_colors[method],
+            alpha=0.12,
+        )
+    ax.axhline(0.5, color="red", linestyle="--", linewidth=1.0, alpha=0.7)
+    ax.set_xlabel("Simulation Budget", fontsize=9)
+    ax.set_ylabel("C2ST Mean", fontsize=9)
+    ax.set_title("C2ST (0.5 = indistinguishable)", fontsize=10, fontweight="semibold")
+    ax.grid(True, alpha=0.2, linewidth=0.5)
+    _format_budget_axis(ax)
+    ax.tick_params(labelsize=8)
+
+    axes[0].legend(fontsize=7, framealpha=0.7, ncol=2)
+    fig.suptitle(
+        f"Calibration & Posterior Quality Diagnostics | params={params}",
+        fontsize=13,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.01,
+        "Coverage bars show mean \u00b11 std across seeds. Dashed lines indicate ideal targets.",
+        ha="center",
+        fontsize=8,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 0.95))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_per_parameter_bars(
+    aggregate_rows: list[dict[str, Any]],
+    raw_rows: list[dict[str, Any]],
+    params: str,
+    output_path: Path,
+) -> bool:
+    """Grouped bar chart: per-parameter RMSE, bias, and coverage across methods."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if not param_rows:
+        return False
+
+    methods = sorted({row["method"] for row in param_rows})
+    method_colors = _method_color_map(methods, plt)
+
+    # Discover parameter names from raw rows
+    raw_param_rows = [row for row in raw_rows if row["params"] == params]
+    param_names = sorted(
+        {
+            key.rsplit("_rmse_phys", 1)[0]
+            for row in raw_param_rows
+            for key in row.keys()
+            if key.endswith("_rmse_phys") and row[key] is not None
+        }
+    )
+    if not param_names:
+        return False
+
+    # Use the largest budget for the bar comparison
+    budgets = sorted({int(r["requested_budget_steps"]) for r in param_rows})
+    if not budgets:
+        return False
+    max_budget = budgets[-1]
+    best_rows = [
+        r for r in param_rows if int(r["requested_budget_steps"]) == max_budget
+    ]
+
+    metrics_to_plot = [
+        ("rmse_phys", "RMSE (physical units)", []),
+        ("bias_mean_phys", "Bias (physical units)", [0.0]),
+        ("coverage_90_phys", "Coverage 90%", [0.9]),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.5))
+    n_params = len(param_names)
+    n_methods = len(methods)
+    bar_width = 0.75 / max(n_methods, 1)
+    plotted_any = False
+
+    for panel_idx, (suffix, panel_label, ref_vals) in enumerate(metrics_to_plot):
+        ax = axes[panel_idx]
+        for midx, method in enumerate(methods):
+            method_row = next((r for r in best_rows if r["method"] == method), None)
+            if method_row is None:
+                continue
+            vals: list[float] = []
+            errs: list[float] = []
+            for pname in param_names:
+                key = f"{pname}_{suffix}"
+                entry = method_row.get(key)
+                if isinstance(entry, dict) and entry.get("mean") is not None:
+                    vals.append(float(entry["mean"]))
+                    errs.append(float(entry.get("std", 0.0)))
+                else:
+                    vals.append(0.0)
+                    errs.append(0.0)
+            x_pos = np.arange(n_params)
+            ax.bar(
+                x_pos + midx * bar_width,
+                vals,
+                bar_width,
+                yerr=errs,
+                label=method.upper() if panel_idx == 0 else None,
+                color=method_colors[method],
+                alpha=0.85,
+                capsize=2,
+                error_kw={"linewidth": 0.8},
+            )
+            plotted_any = True
+
+        for val in ref_vals:
+            ax.axhline(val, color="red", linestyle="--", linewidth=1.0, alpha=0.7)
+        ax.set_xticks(np.arange(n_params) + bar_width * (n_methods - 1) / 2)
+        ax.set_xticklabels(param_names, fontsize=9, fontweight="semibold")
+        ax.set_ylabel(panel_label, fontsize=9)
+        ax.set_title(panel_label, fontsize=10, fontweight="semibold")
+        ax.grid(True, axis="y", alpha=0.2, linewidth=0.5)
+        ax.tick_params(labelsize=8)
+
+    if not plotted_any:
+        plt.close(fig)
+        return False
+
+    axes[0].legend(fontsize=8, framealpha=0.7)
+    fig.suptitle(
+        f"Per-Parameter Comparison at Budget={_budget_to_label(max_budget)} | params={params}",
+        fontsize=13,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.01,
+        f"Evaluated at largest budget ({_budget_to_label(max_budget)}). Error bars: \u00b11 std across seeds.",
+        ha="center",
+        fontsize=8,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 0.95))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_pairwise_win_matrix(
+    pairwise_tests: list[dict[str, Any]],
+    params: str,
+    output_path: Path,
+) -> bool:
+    """Win/loss matrix heatmap aggregated across all metrics and budget combinations."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    relevant_tests = [t for t in pairwise_tests if t["params"] == params]
+    if not relevant_tests:
+        return False
+
+    methods = sorted(
+        {t["method_a"] for t in relevant_tests}
+        | {t["method_b"] for t in relevant_tests}
+    )
+    if len(methods) < 2:
+        return False
+
+    n = len(methods)
+    method_to_idx = {m: i for i, m in enumerate(methods)}
+    win_matrix = np.zeros((n, n), dtype=float)
+
+    for test in relevant_tests:
+        ia = method_to_idx[test["method_a"]]
+        ib = method_to_idx[test["method_b"]]
+        win_matrix[ia, ib] += test.get("wins_method_a", 0)
+        win_matrix[ib, ia] += test.get("wins_method_b", 0)
+
+    # Compute fractions
+    frac_matrix = np.full((n, n), np.nan, dtype=float)
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            total = win_matrix[i, j] + win_matrix[j, i]
+            frac_matrix[i, j] = win_matrix[i, j] / total if total > 0 else 0.5
+
+    fig, ax = plt.subplots(figsize=(6 + 0.8 * n, 5 + 0.6 * n))
+    display = np.where(np.eye(n, dtype=bool), np.nan, frac_matrix)
+    im = ax.imshow(display, cmap="RdYlGn", vmin=0, vmax=1, aspect="equal")
+    ax.set_xticks(range(n))
+    ax.set_xticklabels([m.upper() for m in methods], fontsize=10)
+    ax.set_yticks(range(n))
+    ax.set_yticklabels([m.upper() for m in methods], fontsize=10)
+    ax.set_xlabel("Opponent", fontsize=10)
+    ax.set_ylabel("Method", fontsize=10)
+
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                ax.text(
+                    j, i, "\u2014", ha="center", va="center", fontsize=10, color="0.5"
+                )
+            else:
+                val = frac_matrix[i, j]
+                total = int(win_matrix[i, j] + win_matrix[j, i])
+                text = f"{val:.0%}\n({int(win_matrix[i, j])}/{total})"
+                color = "white" if val > 0.7 or val < 0.3 else "black"
+                ax.text(j, i, text, ha="center", va="center", fontsize=8, color=color)
+
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8)
+    cbar.set_label("Win Rate (row vs column)", fontsize=9)
+    ax.set_title(
+        f"Pairwise Win Rate Matrix | params={params}",
+        fontsize=12,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.01,
+        "Win rates aggregated across all metrics and budget/T_seg combinations. Read rows: how often row-method beats column-method.",
+        ha="center",
+        fontsize=8,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 0.97))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_convergence_profile(
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    output_path: Path,
+) -> bool:
+    """Normalized convergence curves showing sample efficiency per method."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    convergence_metrics = [
+        ("w2_mean", "Wasserstein-2", "lower"),
+        ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
+        ("coverage_curve_mae", "Coverage MAE", "lower"),
+    ]
+
+    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if not param_rows:
+        return False
+    methods = sorted({row["method"] for row in param_rows})
+    method_colors = _method_color_map(methods, plt)
+
+    fig, axes = plt.subplots(
+        1, len(convergence_metrics), figsize=(6 * len(convergence_metrics), 5)
+    )
+    if len(convergence_metrics) == 1:
+        axes = [axes]
+    plotted_any = False
+
+    for midx, (metric_key, label, _direction) in enumerate(convergence_metrics):
+        ax = axes[midx]
+        for method in methods:
+            method_rows = sorted(
+                [
+                    r
+                    for r in param_rows
+                    if r["method"] == method
+                    and isinstance(r.get(metric_key), dict)
+                    and r[metric_key].get("mean") is not None
+                ],
+                key=lambda r: int(r.get("requested_budget_steps") or 0),
+            )
+            if len(method_rows) < 2:
+                continue
+            budgets = [int(r["requested_budget_steps"]) for r in method_rows]
+            means = [float(r[metric_key]["mean"]) for r in method_rows]
+            baseline_val = means[0]
+            if abs(baseline_val) < 1e-12:
+                continue
+            normalized = [v / baseline_val for v in means]
+            ax.plot(
+                budgets,
+                normalized,
+                marker="o",
+                color=method_colors[method],
+                linewidth=1.8,
+                markersize=5,
+                label=method.upper(),
+            )
+            plotted_any = True
+
+        ax.axhline(1.0, color="0.5", linestyle=":", linewidth=0.8, alpha=0.6)
+        ax.set_xlabel("Simulation Budget", fontsize=9)
+        ax.set_ylabel(f"Relative {label} (1.0 = first budget)", fontsize=9)
+        ax.set_title(f"{label} Convergence", fontsize=10, fontweight="semibold")
+        ax.grid(True, alpha=0.2, linewidth=0.5)
+        _format_budget_axis(ax)
+        ax.tick_params(labelsize=8)
+        if midx == 0:
+            ax.legend(fontsize=8, framealpha=0.7)
+
+    if not plotted_any:
+        plt.close(fig)
+        return False
+
+    fig.suptitle(
+        f"Sample Efficiency / Convergence Profile | params={params}",
+        fontsize=13,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.01,
+        "Values normalized to smallest budget (= 1.0). Lower means more improvement. Shows sample efficiency per method.",
+        ha="center",
+        fontsize=8,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 0.96))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_training_time_scaling(
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    output_path: Path,
+) -> bool:
+    """Training time vs budget with O(N) and O(log N) reference curves."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if not param_rows:
+        return False
+    methods = sorted({row["method"] for row in param_rows})
+    method_colors = _method_color_map(methods, plt)
+
+    fig, ax = plt.subplots(figsize=(9, 6))
+    all_budgets: list[float] = []
+    all_times: list[float] = []
+    plotted_any = False
+
+    for method in methods:
+        method_rows = sorted(
+            [
+                r
+                for r in param_rows
+                if r["method"] == method
+                and isinstance(r.get("train_time_s"), dict)
+                and r["train_time_s"].get("mean") is not None
+            ],
+            key=lambda r: int(r.get("requested_budget_steps") or 0),
+        )
+        if not method_rows:
+            continue
+        budgets = [int(r["requested_budget_steps"]) for r in method_rows]
+        means = [float(r["train_time_s"]["mean"]) for r in method_rows]
+        stds = [float(r["train_time_s"]["std"]) for r in method_rows]
+        ax.plot(
+            budgets,
+            means,
+            marker="o",
+            color=method_colors[method],
+            linewidth=2.0,
+            markersize=6,
+            label=method.upper(),
+            zorder=3,
+        )
+        ax.fill_between(
+            budgets,
+            [m - s for m, s in zip(means, stds)],
+            [m + s for m, s in zip(means, stds)],
+            color=method_colors[method],
+            alpha=0.1,
+            zorder=1,
+        )
+        all_budgets.extend(budgets)
+        all_times.extend(means)
+        plotted_any = True
+
+    if not plotted_any:
+        plt.close(fig)
+        return False
+
+    # Reference scaling curves
+    budget_range = np.linspace(min(all_budgets), max(all_budgets), 100)
+    med_time = float(np.median(all_times))
+    med_budget = float(np.median(all_budgets))
+    if med_budget > 0:
+        on_ref = med_time * (budget_range / med_budget)
+        ax.plot(
+            budget_range,
+            on_ref,
+            "--",
+            color="0.55",
+            linewidth=1.2,
+            alpha=0.6,
+            label="$\\mathcal{O}(N)$ ref.",
+            zorder=0,
+        )
+    if med_budget > 1:
+        olog_ref = med_time * np.log(budget_range) / np.log(med_budget)
+        ax.plot(
+            budget_range,
+            olog_ref,
+            ":",
+            color="0.55",
+            linewidth=1.2,
+            alpha=0.6,
+            label="$\\mathcal{O}(\\log N)$ ref.",
+            zorder=0,
+        )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Simulation Budget $N$", fontsize=11)
+    ax.set_ylabel("Training Time (s)", fontsize=11)
+    ax.set_title(
+        f"Training Time Scaling | params={params}",
+        fontsize=13,
+        fontweight="bold",
+    )
+    ax.grid(True, alpha=0.2, linewidth=0.5)
+    ax.legend(fontsize=9, framealpha=0.7)
+    ax.tick_params(labelsize=9)
+    fig.text(
+        0.5,
+        0.01,
+        "Dashed & dotted lines show $\\mathcal{O}(N)$ and $\\mathcal{O}(\\log N)$ reference scaling from median values.",
+        ha="center",
+        fontsize=8,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 0.98))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_metric_value_heatmap(
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    output_path: Path,
+) -> bool:
+    """Summary heatmap: actual metric values color-coded by column-normalized performance."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    summary_metrics = [
+        ("w2_mean", "W2", "lower"),
+        ("l2_error_mean", "L2", "lower"),
+        ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
+        ("coverage_curve_mae", "Cov. MAE", "lower"),
+        ("c2st_mean", "C2ST", "target_0.5"),
+        ("one_step_rmse", "1-Step", "lower"),
+        ("train_time_s", "Train (s)", "lower"),
+    ]
+
+    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if not param_rows:
+        return False
+
+    methods = sorted({row["method"] for row in param_rows})
+    budgets = sorted({int(row["requested_budget_steps"]) for row in param_rows})
+    n_methods = len(methods)
+    n_metrics = len(summary_metrics)
+
+    if not budgets or n_methods == 0:
+        return False
+
+    # Use the largest budget for the summary
+    max_budget = budgets[-1]
+    best_rows = [
+        r for r in param_rows if int(r["requested_budget_steps"]) == max_budget
+    ]
+
+    heat = np.full((n_methods, n_metrics), np.nan, dtype=np.float64)
+    raw_values = np.full((n_methods, n_metrics), np.nan, dtype=np.float64)
+
+    for midx, method in enumerate(methods):
+        method_row = next((r for r in best_rows if r["method"] == method), None)
+        if method_row is None:
+            continue
+        for cidx, (metric_key, _, direction) in enumerate(summary_metrics):
+            entry = method_row.get(metric_key)
+            if isinstance(entry, dict) and entry.get("mean") is not None:
+                v = float(entry["mean"])
+                raw_values[midx, cidx] = v
+                if direction == "target_0.5":
+                    heat[midx, cidx] = abs(v - 0.5)
+                else:
+                    heat[midx, cidx] = v
+
+    # Column-normalize: 0 = best, 1 = worst
+    norm_heat = np.full_like(heat, np.nan)
+    for cidx in range(n_metrics):
+        col = heat[:, cidx]
+        valid = ~np.isnan(col)
+        if valid.sum() < 2:
+            norm_heat[valid, cidx] = 0.5
+            continue
+        vmin, vmax = np.nanmin(col), np.nanmax(col)
+        span = vmax - vmin
+        if span < 1e-12:
+            norm_heat[valid, cidx] = 0.5
+        else:
+            norm_heat[:, cidx] = (col - vmin) / span
+
+    fig, ax = plt.subplots(figsize=(10, 3 + 0.6 * n_methods))
+    im = ax.imshow(norm_heat, cmap="RdYlGn_r", vmin=0, vmax=1, aspect="auto")
+    ax.set_xticks(range(n_metrics))
+    ax.set_xticklabels(
+        [label for _, label, _ in summary_metrics],
+        fontsize=10,
+        fontweight="semibold",
+    )
+    ax.set_yticks(range(n_methods))
+    ax.set_yticklabels([m.upper() for m in methods], fontsize=10, fontweight="semibold")
+
+    for midx in range(n_methods):
+        for cidx in range(n_metrics):
+            raw = raw_values[midx, cidx]
+            if np.isnan(raw):
+                ax.text(
+                    cidx,
+                    midx,
+                    "\u2014",
+                    ha="center",
+                    va="center",
+                    fontsize=9,
+                    color="0.5",
+                )
+            else:
+                nv = norm_heat[midx, cidx]
+                color = "white" if (nv > 0.7 or nv < 0.2) else "black"
+                if abs(raw) >= 100:
+                    text = f"{raw:.0f}"
+                elif abs(raw) >= 1:
+                    text = f"{raw:.2f}"
+                else:
+                    text = f"{raw:.4f}"
+                ax.text(
+                    cidx, midx, text, ha="center", va="center", fontsize=9, color=color
+                )
+
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8)
+    cbar.set_label("Normalized (0 = best, 1 = worst)", fontsize=9)
+    ax.set_title(
+        f"Metric Summary at Budget={_budget_to_label(max_budget)} | params={params}",
+        fontsize=12,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.01,
+        "Cell values are raw metric means. Color shows column-normalized performance (green = best).",
+        ha="center",
+        fontsize=8,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 0.97))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_metric_vs_tseg(
+    aggregate_rows: list[dict[str, Any]],
+    raw_rows: list[dict[str, Any]],
+    params: str,
+    metric_key: str,
+    metric_label: str,
+    output_path: Path,
+    *,
+    log_y: bool = False,
+    reference_lines: list[float] | None = None,
+) -> bool:
+    """Aggregate metric vs T_seg, one subplot per budget, with mean±std bands.
+
+    Individual seed values are shown as faint scatter underneath.
+    All subplots share y-axis limits for direct visual comparison.
+    """
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    param_agg = [row for row in aggregate_rows if row["params"] == params]
+    if not param_agg:
+        return False
+
+    budgets = sorted({int(r["requested_budget_steps"]) for r in param_agg})
+    if not budgets:
+        return False
+
+    methods = sorted({r["method"] for r in param_agg})
+    method_colors = _method_color_map(methods, plt)
+
+    ncols = min(3, len(budgets))
+    nrows = int(np.ceil(len(budgets) / ncols))
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(5.5 * ncols, 4.5 * nrows), squeeze=False
+    )
+    axes_flat = axes.flatten()
+
+    # Compute global y-limits across all panels for shared axes
+    global_ys: list[float] = []
+    for r in param_agg:
+        entry = r.get(metric_key)
+        if isinstance(entry, dict) and entry.get("mean") is not None:
+            m, s = float(entry["mean"]), float(entry.get("std", 0.0))
+            global_ys.extend([m - s, m + s])
+    # Also include raw seed points
+    raw_param = [
+        row
+        for row in raw_rows
+        if row["params"] == params and row.get(metric_key) is not None
+    ]
+    global_ys.extend(float(r[metric_key]) for r in raw_param)
+
+    plotted_any = False
+    for bidx, budget in enumerate(budgets):
+        ax = axes_flat[bidx]
+        budget_agg = sorted(
+            [
+                r
+                for r in param_agg
+                if int(r["requested_budget_steps"]) == budget
+                and isinstance(r.get(metric_key), dict)
+                and r[metric_key].get("mean") is not None
+            ],
+            key=lambda r: int(r["T_seg"]),
+        )
+        # Raw seed scatter
+        budget_raw = [
+            r for r in raw_param if int(r.get("requested_budget_steps") or 0) == budget
+        ]
+
+        for method in methods:
+            # Aggregate line with band
+            m_rows = [r for r in budget_agg if r["method"] == method]
+            if m_rows:
+                tsegs = [int(r["T_seg"]) for r in m_rows]
+                means = [float(r[metric_key]["mean"]) for r in m_rows]
+                stds = [float(r[metric_key]["std"]) for r in m_rows]
+                ax.plot(
+                    tsegs,
+                    means,
+                    marker="o",
+                    color=method_colors[method],
+                    linewidth=1.8,
+                    markersize=5,
+                    label=method.upper(),
+                    zorder=3,
+                )
+                ax.fill_between(
+                    tsegs,
+                    [m - s for m, s in zip(means, stds)],
+                    [m + s for m, s in zip(means, stds)],
+                    color=method_colors[method],
+                    alpha=0.12,
+                    zorder=1,
+                )
+                plotted_any = True
+
+            # Faint individual seed points
+            seed_rows = [r for r in budget_raw if r["method"] == method]
+            if seed_rows:
+                ax.scatter(
+                    [int(r["T_seg"]) for r in seed_rows],
+                    [float(r[metric_key]) for r in seed_rows],
+                    color=method_colors[method],
+                    alpha=0.25,
+                    s=18,
+                    zorder=2,
+                    edgecolors="none",
+                )
+
+        if reference_lines:
+            for val in reference_lines:
+                ax.axhline(val, color="0.45", linestyle="--", linewidth=1.0, alpha=0.7)
+        ax.set_title(
+            f"Budget = {_budget_to_label(budget)}",
+            fontsize=10,
+            fontweight="semibold",
+        )
+        ax.set_xlabel("Trajectory Segment Length ($T_{seg}$)", fontsize=9)
+        ax.set_ylabel(metric_label, fontsize=9)
+        ax.grid(True, alpha=0.2, linewidth=0.5)
+        ax.tick_params(labelsize=8)
+        if bidx == 0:
+            ax.legend(fontsize=8, framealpha=0.7)
+
+    # Shared y-limits
+    if global_ys:
+        y_lo, y_hi = min(global_ys), max(global_ys)
+        y_pad = (y_hi - y_lo) * 0.08 if y_hi > y_lo else 0.1
+        for ax in axes_flat[: len(budgets)]:
+            if log_y and y_lo > 0:
+                ax.set_yscale("log")
+            else:
+                ax.set_ylim(y_lo - y_pad, y_hi + y_pad)
+
+    for ax in axes_flat[len(budgets) :]:
+        ax.set_visible(False)
+
+    if not plotted_any:
+        plt.close(fig)
+        return False
+
+    fig.suptitle(
+        f"{metric_label} vs $T_{{seg}}$ | params={params}",
+        fontsize=13,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.01,
+        "Solid lines: aggregate mean across seeds. Shaded bands: \u00b11 std. Faint points: individual seeds.",
+        ha="center",
+        fontsize=8,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.03, 1, 0.96))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     return True
 
@@ -1473,7 +2178,9 @@ def _build_rank_summaries(
             if not methods or not combos:
                 continue
 
-            method_rank_values: dict[str, list[float]] = {method: [] for method in methods}
+            method_rank_values: dict[str, list[float]] = {
+                method: [] for method in methods
+            }
             first_place_counts: dict[str, int] = {method: 0 for method in methods}
             top2_counts: dict[str, int] = {method: 0 for method in methods}
 
@@ -1528,9 +2235,11 @@ def _build_rank_summaries(
                     "method_summaries": [
                         {
                             "method": method,
-                            "mean_rank": float(np.mean(method_rank_values[method]))
-                            if method_rank_values[method]
-                            else None,
+                            "mean_rank": (
+                                float(np.mean(method_rank_values[method]))
+                                if method_rank_values[method]
+                                else None
+                            ),
                             "first_place_finishes": int(first_place_counts[method]),
                             "top2_finishes": int(top2_counts[method]),
                             "num_ranked_combos": int(len(method_rank_values[method])),
@@ -1594,9 +2303,7 @@ def _collect_plot_gallery(
                 example_key = src.stem
                 dst_dir = output_dir / plot_kind / params_slug
                 dst_dir.mkdir(parents=True, exist_ok=True)
-                dst_name = (
-                    f"{method}_b{int(budget)}_t{tseg}_s{seed}_{src.name}"
-                )
+                dst_name = f"{method}_b{int(budget)}_t{tseg}_s{seed}_{src.name}"
                 dst = dst_dir / dst_name
                 shutil.copy2(src, dst)
                 entry = {
@@ -1615,7 +2322,9 @@ def _collect_plot_gallery(
 
     contact_sheets: list[str] = []
     comparison_sheets_by_seed: list[dict[str, Any]] = []
-    group_by_budget_tseg: dict[tuple[str, str, str, int, int], list[dict[str, Any]]] = {}
+    group_by_budget_tseg: dict[tuple[str, str, str, int, int], list[dict[str, Any]]] = (
+        {}
+    )
     for entry in copied:
         group_by_budget_tseg.setdefault(
             (
@@ -1628,14 +2337,19 @@ def _collect_plot_gallery(
             [],
         ).append(entry)
 
-    for (plot_kind, params_slug, example_key, budget, tseg), entries in group_by_budget_tseg.items():
+    for (
+        plot_kind,
+        params_slug,
+        example_key,
+        budget,
+        tseg,
+    ), entries in group_by_budget_tseg.items():
         methods = sorted({str(entry["method"]) for entry in entries})
         seeds = sorted({int(entry["seed"]) for entry in entries})
         if not methods or not seeds:
             continue
         entry_lookup = {
-            (str(entry["method"]), int(entry["seed"])): entry
-            for entry in entries
+            (str(entry["method"]), int(entry["seed"])): entry for entry in entries
         }
         fig, axes = plt.subplots(
             len(methods),
@@ -1649,7 +2363,15 @@ def _collect_plot_gallery(
                 entry = entry_lookup.get((method, seed))
                 if entry is None:
                     ax.axis("off")
-                    ax.text(0.5, 0.5, "No plot", ha="center", va="center", fontsize=9, color="0.4")
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No plot",
+                        ha="center",
+                        va="center",
+                        fontsize=9,
+                        color="0.4",
+                    )
                 else:
                     image = plt.imread(entry["copied_to"])
                     ax.imshow(image)
@@ -1663,7 +2385,10 @@ def _collect_plot_gallery(
             fontsize=12,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.96))
-        sheet_path = output_dir / f"{plot_kind}_{params_slug}_{example_key}_b{budget}_t{tseg}_methods_by_seed.png"
+        sheet_path = (
+            output_dir
+            / f"{plot_kind}_{params_slug}_{example_key}_b{budget}_t{tseg}_methods_by_seed.png"
+        )
         fig.savefig(sheet_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
         contact_sheets.append(str(sheet_path))
@@ -1681,7 +2406,9 @@ def _collect_plot_gallery(
         )
 
     comparison_sheets_by_method: list[dict[str, Any]] = []
-    group_by_method_seed: dict[tuple[str, str, str, str, int], list[dict[str, Any]]] = {}
+    group_by_method_seed: dict[tuple[str, str, str, str, int], list[dict[str, Any]]] = (
+        {}
+    )
     for entry in copied:
         group_by_method_seed.setdefault(
             (
@@ -1694,7 +2421,13 @@ def _collect_plot_gallery(
             [],
         ).append(entry)
 
-    for (plot_kind, params_slug, example_key, method, seed), entries in group_by_method_seed.items():
+    for (
+        plot_kind,
+        params_slug,
+        example_key,
+        method,
+        seed,
+    ), entries in group_by_method_seed.items():
         budgets = sorted({int(entry["requested_budget_steps"]) for entry in entries})
         tsegs = sorted({int(entry["T_seg"]) for entry in entries})
         if not budgets or not tsegs:
@@ -1715,7 +2448,15 @@ def _collect_plot_gallery(
                 entry = entry_lookup.get((budget, tseg_col))
                 if entry is None:
                     ax.axis("off")
-                    ax.text(0.5, 0.5, "No plot", ha="center", va="center", fontsize=9, color="0.4")
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No plot",
+                        ha="center",
+                        va="center",
+                        fontsize=9,
+                        color="0.4",
+                    )
                 else:
                     image = plt.imread(entry["copied_to"])
                     ax.imshow(image)
@@ -1729,7 +2470,10 @@ def _collect_plot_gallery(
             fontsize=12,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.96))
-        sheet_path = output_dir / f"{plot_kind}_{params_slug}_{example_key}_{method}_seed{seed}_budget_by_tseg.png"
+        sheet_path = (
+            output_dir
+            / f"{plot_kind}_{params_slug}_{example_key}_{method}_seed{seed}_budget_by_tseg.png"
+        )
         fig.savefig(sheet_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
         contact_sheets.append(str(sheet_path))
@@ -1754,7 +2498,9 @@ def _collect_plot_gallery(
     }
 
 
-def _load_completed_runs(experiments_root: Path, exp_prefix: str) -> list[dict[str, Any]]:
+def _load_completed_runs(
+    experiments_root: Path, exp_prefix: str
+) -> list[dict[str, Any]]:
     deduped_runs: dict[tuple[Any, ...], dict[str, Any]] = {}
 
     for config_path in experiments_root.glob("*/config.json"):
@@ -1917,7 +2663,9 @@ def _build_aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "total_budget_steps",
         "run_status",
     }
-    for (method, params, requested_budget_steps, tseg), group_rows in sorted(grouped.items()):
+    for (method, params, requested_budget_steps, tseg), group_rows in sorted(
+        grouped.items()
+    ):
         record: dict[str, Any] = {
             "method": method,
             "params": params,
@@ -1927,10 +2675,17 @@ def _build_aggregate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "effective_budget_steps": _require_consistent_value(
                 group_rows, "effective_budget_steps"
             ),
-            "total_budget_steps": _require_consistent_value(group_rows, "total_budget_steps"),
+            "total_budget_steps": _require_consistent_value(
+                group_rows, "total_budget_steps"
+            ),
         }
         candidate_fields = sorted(
-            {field for row in group_rows for field in row.keys() if field not in ignore_fields}
+            {
+                field
+                for row in group_rows
+                for field in row.keys()
+                if field not in ignore_fields
+            }
         )
         for field in candidate_fields:
             values = [float(r[field]) for r in group_rows if r.get(field) is not None]
@@ -1973,7 +2728,10 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         {
             (
                 row["params"],
-                int(row.get("requested_budget_steps", row.get("total_budget_steps", 0)) or 0),
+                int(
+                    row.get("requested_budget_steps", row.get("total_budget_steps", 0))
+                    or 0
+                ),
                 row["T_seg"],
             )
             for row in rows
@@ -1992,15 +2750,20 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ]
         methods = sorted({row["method"] for row in candidate_rows})
         for method_a, method_b in combinations(methods, 2):
-            rows_a = {row["seed"]: row for row in candidate_rows if row["method"] == method_a}
-            rows_b = {row["seed"]: row for row in candidate_rows if row["method"] == method_b}
+            rows_a = {
+                row["seed"]: row for row in candidate_rows if row["method"] == method_a
+            }
+            rows_b = {
+                row["seed"]: row for row in candidate_rows if row["method"] == method_b
+            }
             shared_seeds = sorted(set(rows_a) & set(rows_b))
             for metric_key in pairwise_metrics:
                 plot_spec = pairwise_plot_specs[metric_key]
                 shared_metric_seeds = [
                     s
                     for s in shared_seeds
-                    if rows_a[s].get(metric_key) is not None and rows_b[s].get(metric_key) is not None
+                    if rows_a[s].get(metric_key) is not None
+                    and rows_b[s].get(metric_key) is not None
                 ]
                 x = [float(rows_a[s][metric_key]) for s in shared_metric_seeds]
                 y = [float(rows_b[s][metric_key]) for s in shared_metric_seeds]
@@ -2012,20 +2775,28 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 ]
                 wins_method_a = int(
                     sum(
-                        comparison_a < comparison_b and not np.isclose(comparison_a, comparison_b)
-                        for comparison_a, comparison_b in zip(comparison_x, comparison_y)
+                        comparison_a < comparison_b
+                        and not np.isclose(comparison_a, comparison_b)
+                        for comparison_a, comparison_b in zip(
+                            comparison_x, comparison_y
+                        )
                     )
                 )
                 wins_method_b = int(
                     sum(
-                        comparison_a > comparison_b and not np.isclose(comparison_a, comparison_b)
-                        for comparison_a, comparison_b in zip(comparison_x, comparison_y)
+                        comparison_a > comparison_b
+                        and not np.isclose(comparison_a, comparison_b)
+                        for comparison_a, comparison_b in zip(
+                            comparison_x, comparison_y
+                        )
                     )
                 )
                 ties = int(
                     sum(
                         np.isclose(comparison_a, comparison_b)
-                        for comparison_a, comparison_b in zip(comparison_x, comparison_y)
+                        for comparison_a, comparison_b in zip(
+                            comparison_x, comparison_y
+                        )
                     )
                 )
                 pvalue = None
@@ -2035,7 +2806,9 @@ def _build_pairwise_tests(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     and len(y) >= 2
                     and not all(
                         np.isclose(comparison_a, comparison_b)
-                        for comparison_a, comparison_b in zip(comparison_x, comparison_y)
+                        for comparison_a, comparison_b in zip(
+                            comparison_x, comparison_y
+                        )
                     )
                 ):
                     try:
@@ -2175,24 +2948,49 @@ def main() -> None:
     generated_plots: list[str] = []
     for params in sorted({row["params"] for row in rows}):
         params_slug = _slugify(params)
+
+        # --- 1. Method overview dashboard (single multi-panel figure) ---
+        dashboard_path = (
+            output_json.parent
+            / f"{output_json.stem}_overview_dashboard_{params_slug}.png"
+        )
+        if _plot_method_overview_dashboard(aggregate_rows, params, dashboard_path):
+            generated_plots.append(str(dashboard_path))
+
+        # --- 2. Individual budget plots (primary metrics only) ---
         for plot_spec in plot_registry["budget"]:
-            output_path = output_json.parent / f"{output_json.stem}_{plot_spec['slug']}_{params_slug}.png"
-            if _plot_metric_vs_budget(rows, params, plot_spec, output_path):
-                generated_plots.append(str(output_path))
-        for plot_spec in plot_registry["tseg"]:
-            tseg_path = (
-                output_json.parent
-                / f"{output_json.stem}_{plot_spec['slug']}_vs_tseg_{params_slug}.png"
-            )
-            if _plot_metric_vs_tseg(rows, params, plot_spec, tseg_path):
-                generated_plots.append(str(tseg_path))
-        for plot_spec in plot_registry["pareto"]:
-            pareto_path = (
+            output_path = (
                 output_json.parent
                 / f"{output_json.stem}_{plot_spec['slug']}_{params_slug}.png"
             )
-            if _plot_pareto_scatter(rows, params, plot_spec, pareto_path):
-                generated_plots.append(str(pareto_path))
+            if _plot_metric_vs_budget(rows, params, plot_spec, output_path):
+                generated_plots.append(str(output_path))
+
+        # --- 3. Calibration diagnostic panel ---
+        calibration_path = (
+            output_json.parent
+            / f"{output_json.stem}_calibration_panel_{params_slug}.png"
+        )
+        if _plot_calibration_panel(aggregate_rows, params, calibration_path):
+            generated_plots.append(str(calibration_path))
+
+        # --- 4. Per-parameter comparison bars ---
+        per_param_path = (
+            output_json.parent
+            / f"{output_json.stem}_per_parameter_bars_{params_slug}.png"
+        )
+        if _plot_per_parameter_bars(aggregate_rows, rows, params, per_param_path):
+            generated_plots.append(str(per_param_path))
+
+        # --- 5. Radar / spider chart ---
+        radar_path = (
+            output_json.parent / f"{output_json.stem}_radar_chart_{params_slug}.png"
+        )
+        if _plot_radar_chart(aggregate_rows, params, radar_path):
+            generated_plots.append(str(radar_path))
+
+        # --- 6. Pareto efficiency frontier (aggregate only) ---
+        for plot_spec in plot_registry["pareto"]:
             pareto_aggregate_path = (
                 output_json.parent
                 / f"{output_json.stem}_{plot_spec['slug']}_aggregate_{params_slug}.png"
@@ -2201,24 +2999,85 @@ def main() -> None:
                 rows, aggregate_rows, params, plot_spec, pareto_aggregate_path
             ):
                 generated_plots.append(str(pareto_aggregate_path))
-        for plot_spec in plot_registry["difference_budget"]:
-            delta_budget_path = (
-                output_json.parent
-                / f"{output_json.stem}_{plot_spec['slug']}_delta_vs_baseline_{params_slug}.png"
-            )
-            if _plot_metric_difference_vs_budget(
-                rows, params, plot_spec, delta_budget_path
-            ):
-                generated_plots.append(str(delta_budget_path))
-        for plot_spec in plot_registry["difference_tseg"]:
-            delta_tseg_path = (
-                output_json.parent
-                / f"{output_json.stem}_{plot_spec['slug']}_delta_vs_baseline_tseg_{params_slug}.png"
-            )
-            if _plot_metric_difference_vs_tseg(
-                rows, params, plot_spec, delta_tseg_path
-            ):
-                generated_plots.append(str(delta_tseg_path))
+
+        # --- 7. Convergence / sample efficiency profile ---
+        convergence_path = (
+            output_json.parent
+            / f"{output_json.stem}_convergence_profile_{params_slug}.png"
+        )
+        if _plot_convergence_profile(aggregate_rows, params, convergence_path):
+            generated_plots.append(str(convergence_path))
+
+        # --- 8. Training time scaling (with O(N) references) ---
+        scaling_path = (
+            output_json.parent
+            / f"{output_json.stem}_training_time_scaling_{params_slug}.png"
+        )
+        if _plot_training_time_scaling(aggregate_rows, params, scaling_path):
+            generated_plots.append(str(scaling_path))
+
+        # --- 9. Pairwise win/loss matrix ---
+        win_matrix_path = (
+            output_json.parent
+            / f"{output_json.stem}_pairwise_win_matrix_{params_slug}.png"
+        )
+        if _plot_pairwise_win_matrix(pairwise_tests, params, win_matrix_path):
+            generated_plots.append(str(win_matrix_path))
+
+        # --- 10. Metric value heatmap (summary at best budget) ---
+        value_heatmap_path = (
+            output_json.parent
+            / f"{output_json.stem}_metric_value_heatmap_{params_slug}.png"
+        )
+        if _plot_metric_value_heatmap(aggregate_rows, params, value_heatmap_path):
+            generated_plots.append(str(value_heatmap_path))
+
+        # --- 11. W2 vs T_seg ---
+        w2_tseg_path = (
+            output_json.parent / f"{output_json.stem}_w2_vs_tseg_{params_slug}.png"
+        )
+        if _plot_metric_vs_tseg(
+            aggregate_rows,
+            rows,
+            params,
+            "w2_mean",
+            "Wasserstein-2 Distance",
+            w2_tseg_path,
+        ):
+            generated_plots.append(str(w2_tseg_path))
+
+        # --- 12. Sampling time vs T_seg ---
+        sampling_tseg_path = (
+            output_json.parent
+            / f"{output_json.stem}_sampling_time_vs_tseg_{params_slug}.png"
+        )
+        if _plot_metric_vs_tseg(
+            aggregate_rows,
+            rows,
+            params,
+            "sampling_time_mean_s",
+            "Sampling Time / Case (s)",
+            sampling_tseg_path,
+            log_y=True,
+        ):
+            generated_plots.append(str(sampling_tseg_path))
+
+        # --- 13. PPC RMSE vs T_seg ---
+        ppc_tseg_path = (
+            output_json.parent
+            / f"{output_json.stem}_ppc_rmse_vs_tseg_{params_slug}.png"
+        )
+        if _plot_metric_vs_tseg(
+            aggregate_rows,
+            rows,
+            params,
+            "heldout_ppc_rmse_mean",
+            "PPC RMSE (held-out)",
+            ppc_tseg_path,
+        ):
+            generated_plots.append(str(ppc_tseg_path))
+
+        # --- 14. Rank heatmaps (curated key metrics) ---
         for plot_spec in plot_registry["heatmap"]:
             heatmap_path = (
                 output_json.parent
