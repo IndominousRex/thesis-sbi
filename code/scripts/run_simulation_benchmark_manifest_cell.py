@@ -13,7 +13,9 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run one benchmark manifest cell.")
     p.add_argument("--manifest", required=True, help="Path to JSONL manifest.")
-    p.add_argument("--index", type=int, required=True, help="0-based manifest row index.")
+    p.add_argument(
+        "--index", type=int, required=True, help="0-based manifest row index."
+    )
     p.add_argument(
         "--dry-run",
         action="store_true",
@@ -60,6 +62,7 @@ def main() -> None:
         "--params",
         str(entry["params"]),
         "--no-summary",
+        "--independent-datasets",  # Disable caching to save cluster disk space
     ]
     requested_budget_steps = entry.get("requested_budget_steps")
     if requested_budget_steps is not None:
