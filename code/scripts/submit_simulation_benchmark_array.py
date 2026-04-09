@@ -15,7 +15,9 @@ DEFAULT_PARAMS_GRID = ["mu", "mu,cd", "mu,m", "mu,cd,m"]
 DEFAULT_TSEG_GRID = [1000, 2000, 3000]
 DEFAULT_SEEDS = [42, 43, 44, 45, 46]
 DEFAULT_BUDGET_GRID = [20_000_000, 40_000_000, 60_000_000]
-H200_METHODS = {"npe", "npse"}
+# NPE/NPSE/Simformer process the full trajectory in memory → need H200.
+# FNPE factorises over short windows → any GPU is fine.
+H200_METHODS = {"npe", "npse", "simformer"}
 GPU_PROFILE_GRES = {
     "h200": "gpu:h200:1",
     "generic": "gpu:1",
