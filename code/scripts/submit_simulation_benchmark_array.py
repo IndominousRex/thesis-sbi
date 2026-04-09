@@ -187,17 +187,23 @@ def _gpu_profile_for_method(method: str) -> str:
 
 
 def _manifest_path_for_profile(manifest_base: Path, profile: str) -> Path:
-    return manifest_base.with_name(f"{manifest_base.stem}_{profile}{manifest_base.suffix}")
+    return manifest_base.with_name(
+        f"{manifest_base.stem}_{profile}{manifest_base.suffix}"
+    )
 
 
 def _split_entries_by_gpu_profile(entries: list[dict]) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = {}
     for entry in entries:
-        grouped.setdefault(_gpu_profile_for_method(str(entry["method"])), []).append(entry)
+        grouped.setdefault(_gpu_profile_for_method(str(entry["method"])), []).append(
+            entry
+        )
     return grouped
 
 
-def _allocate_concurrency(task_counts: dict[str, int], total_max: int) -> dict[str, int]:
+def _allocate_concurrency(
+    task_counts: dict[str, int], total_max: int
+) -> dict[str, int]:
     profiles = [profile for profile, count in task_counts.items() if count > 0]
     if not profiles:
         return {}
@@ -210,12 +216,18 @@ def _allocate_concurrency(task_counts: dict[str, int], total_max: int) -> dict[s
     base_alloc: dict[str, int] = {}
     total_tasks = sum(task_counts[profile] for profile in profiles)
     for profile in profiles:
-        raw_share = (task_counts[profile] / total_tasks) * total_max if total_tasks else 0
+        raw_share = (
+            (task_counts[profile] / total_tasks) * total_max if total_tasks else 0
+        )
         base_alloc[profile] = max(1, int(raw_share))
 
     current_total = sum(base_alloc.values())
     if current_total > total_max:
-        for profile in sorted(profiles, key=lambda item: (base_alloc[item], task_counts[item]), reverse=True):
+        for profile in sorted(
+            profiles,
+            key=lambda item: (base_alloc[item], task_counts[item]),
+            reverse=True,
+        ):
             while current_total > total_max and base_alloc[profile] > 1:
                 base_alloc[profile] -= 1
                 current_total -= 1
@@ -223,7 +235,8 @@ def _allocate_concurrency(task_counts: dict[str, int], total_max: int) -> dict[s
         remainders = sorted(
             profiles,
             key=lambda item: (
-                ((task_counts[item] / total_tasks) * total_max if total_tasks else 0) - base_alloc[item],
+                ((task_counts[item] / total_tasks) * total_max if total_tasks else 0)
+                - base_alloc[item],
                 task_counts[item],
             ),
             reverse=True,
@@ -259,7 +272,10 @@ def main() -> None:
         raise SystemExit("No runnable benchmark tasks were generated.")
 
     entries_by_profile = _split_entries_by_gpu_profile(entries)
-    task_counts = {profile: len(profile_entries) for profile, profile_entries in entries_by_profile.items()}
+    task_counts = {
+        profile: len(profile_entries)
+        for profile, profile_entries in entries_by_profile.items()
+    }
     concurrency_by_profile = _allocate_concurrency(task_counts, args.max_concurrent)
 
     manifest_specs: list[dict] = []
