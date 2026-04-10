@@ -270,12 +270,7 @@ def _apply_reference_lines(ax: Any, plot_spec: dict[str, Any]) -> None:
 
 
 def _plot_footer_lines(metric_key: str) -> list[str]:
-    lines = ["Solid lines: mean across seeds. Shaded bands: min\u2013max range."]
-    if metric_key == "train_time_s":
-        lines.append(
-            "Training time reflects the configured training schedule for each run; older experiments may include best-validation stopping."
-        )
-    return lines
+    return ["Solid lines: mean across seeds. Shaded bands: min\u2013max range."]
 
 
 def _plot_seed_traces(
@@ -435,7 +430,7 @@ def _base_plot_specs() -> list[dict[str, Any]]:
             "metric_key": "train_time_s",
             "metric_label": "Training Time (s)",
             "slug": "train_time",
-            "figure_families": ["budget"],
+            "figure_families": [],
             "category": "runtime",
             "direction": "lower",
             "log_y": True,
@@ -472,14 +467,8 @@ def _per_parameter_plot_specs(rows: list[dict[str, Any]]) -> list[dict[str, Any]
     suffix_specs = [
         ("rmse_phys", "RMSE (physical units)", None),
         ("rmse_norm", "RMSE (normalized)", None),
-        ("mae_mean_phys", "MAE (physical units)", None),
-        ("mae_mean_norm", "MAE (normalized)", None),
         ("bias_mean_phys", "Bias Mean (physical units)", [0.0]),
         ("bias_mean_norm", "Bias Mean (normalized)", [0.0]),
-        ("w1_mean_phys", "W1 Mean (physical units)", None),
-        ("w1_mean_norm", "W1 Mean (normalized)", None),
-        ("coverage_50_phys", "Coverage 50% (physical)", [0.5]),
-        ("coverage_50_norm", "Coverage 50% (normalized)", [0.5]),
         ("coverage_90_phys", "Coverage 90% (physical)", [0.9]),
         ("coverage_90_norm", "Coverage 90% (normalized)", [0.9]),
     ]
@@ -491,9 +480,7 @@ def _per_parameter_plot_specs(rows: list[dict[str, Any]]) -> list[dict[str, Any]
         )
         for key in matching_keys:
             param_name = key[: -(len(suffix) + 1)]
-            if "coverage_50" in suffix:
-                direction = "target"
-            elif "coverage_90" in suffix:
+            if "coverage_90" in suffix:
                 direction = "target"
             elif "bias_mean" in suffix:
                 direction = "signed"
@@ -1284,64 +1271,63 @@ def _plot_calibration_panel(
     budgets = sorted({int(row["requested_budget_steps"]) for row in param_rows})
     method_colors = _method_color_map(methods, plt)
 
-    fig, axes = plt.subplots(2, 2, figsize=(_THESIS_TEXTWIDTH_IN, 6.5))
+    fig, axes = plt.subplots(1, 3, figsize=(_THESIS_TEXTWIDTH_IN, 3.5))
 
-    # Panels 1 & 2: coverage 50% and 90% as grouped bars per budget
-    for panel_idx, (metric_key, target, title) in enumerate(
-        [("coverage_50", 0.5, "Coverage 50%"), ("coverage_90", 0.9, "Coverage 90%")]
-    ):
-        ax = axes.flat[panel_idx]
-        n_methods = len(methods)
-        bar_width = 0.8 / max(n_methods, 1)
-        has_data = False
-        for midx, method in enumerate(methods):
-            method_rows = sorted(
-                [
-                    r
-                    for r in param_rows
-                    if r["method"] == method
-                    and isinstance(r.get(metric_key), dict)
-                    and r[metric_key].get("mean") is not None
-                ],
-                key=lambda r: int(r.get("requested_budget_steps") or 0),
-            )
-            if not method_rows:
-                continue
-            has_data = True
-            x_pos = np.arange(len(method_rows))
-            means = [float(r[metric_key]["mean"]) for r in method_rows]
-            stds = [float(r[metric_key]["std"]) for r in method_rows]
-            ax.bar(
-                x_pos + midx * bar_width,
-                means,
-                bar_width,
-                yerr=stds,
-                label=method.upper() if panel_idx == 0 else None,
-                color=method_colors[method],
-                alpha=0.85,
-                capsize=2,
-                error_kw={"linewidth": 0.8},
-            )
-        ax.axhline(
-            target,
-            color="red",
-            linestyle="--",
-            linewidth=1.0,
-            alpha=0.7,
-            label=f"Ideal = {target}" if panel_idx == 0 else None,
+    # Panel 1: coverage 90% as grouped bars per budget
+    ax = axes.flat[0]
+    _cov90_metric = "coverage_90"
+    _cov90_target = 0.9
+    n_methods = len(methods)
+    bar_width = 0.8 / max(n_methods, 1)
+    has_data = False
+    for midx, method in enumerate(methods):
+        method_rows = sorted(
+            [
+                r
+                for r in param_rows
+                if r["method"] == method
+                and isinstance(r.get(_cov90_metric), dict)
+                and r[_cov90_metric].get("mean") is not None
+            ],
+            key=lambda r: int(r.get("requested_budget_steps") or 0),
         )
-        if has_data:
-            ax.set_xticks(np.arange(len(budgets)) + bar_width * (n_methods - 1) / 2)
-            ax.set_xticklabels(
-                [_budget_to_label(b) for b in budgets], fontsize=8, rotation=30
-            )
-        ax.set_ylabel(title, fontsize=9)
-        ax.set_title(title, fontsize=10, fontweight="semibold")
-        ax.grid(True, axis="y", alpha=0.2, linewidth=0.5)
-        ax.tick_params(labelsize=8)
+        if not method_rows:
+            continue
+        has_data = True
+        x_pos = np.arange(len(method_rows))
+        means = [float(r[_cov90_metric]["mean"]) for r in method_rows]
+        stds = [float(r[_cov90_metric]["std"]) for r in method_rows]
+        ax.bar(
+            x_pos + midx * bar_width,
+            means,
+            bar_width,
+            yerr=stds,
+            label=method.upper(),
+            color=method_colors[method],
+            alpha=0.85,
+            capsize=2,
+            error_kw={"linewidth": 0.8},
+        )
+    ax.axhline(
+        _cov90_target,
+        color="red",
+        linestyle="--",
+        linewidth=1.0,
+        alpha=0.7,
+        label=f"Ideal = {_cov90_target}",
+    )
+    if has_data:
+        ax.set_xticks(np.arange(len(budgets)) + bar_width * (n_methods - 1) / 2)
+        ax.set_xticklabels(
+            [_budget_to_label(b) for b in budgets], fontsize=8, rotation=30
+        )
+    ax.set_ylabel("Coverage 90%", fontsize=9)
+    ax.set_title("Coverage 90%", fontsize=10, fontweight="semibold")
+    ax.grid(True, axis="y", alpha=0.2, linewidth=0.5)
+    ax.tick_params(labelsize=8)
 
-    # Panel 3: coverage curve MAE
-    ax = axes.flat[2]
+    # Panel 2: coverage curve MAE
+    ax = axes.flat[1]
     for method in methods:
         method_rows = sorted(
             [
@@ -1381,8 +1367,8 @@ def _plot_calibration_panel(
     _format_budget_axis(ax)
     ax.tick_params(labelsize=8)
 
-    # Panel 4: C2ST
-    ax = axes.flat[3]
+    # Panel 3: C2ST
+    ax = axes.flat[2]
     for method in methods:
         method_rows = sorted(
             [
@@ -1437,7 +1423,7 @@ def _plot_calibration_panel(
         fontsize=7,
         color="0.4",
     )
-    fig.tight_layout(rect=(0, 0.04, 1, 0.95))
+    fig.tight_layout(rect=(0, 0.04, 1, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
@@ -1466,14 +1452,14 @@ def _plot_per_parameter_bars(
     methods = sorted({row["method"] for row in param_rows})
     method_colors = _method_color_map(methods, plt)
 
-    # Discover parameter names from raw rows
+    # Discover parameter names from raw rows (using normalized RMSE as the discovery key)
     raw_param_rows = [row for row in raw_rows if row["params"] == params]
     param_names = sorted(
         {
-            key.rsplit("_rmse_phys", 1)[0]
+            key.rsplit("_rmse_norm", 1)[0]
             for row in raw_param_rows
             for key in row.keys()
-            if key.endswith("_rmse_phys") and row[key] is not None
+            if key.endswith("_rmse_norm") and row[key] is not None
         }
     )
     if not param_names:
@@ -1489,8 +1475,8 @@ def _plot_per_parameter_bars(
     ]
 
     metrics_to_plot = [
-        ("rmse_phys", "RMSE (physical units)", []),
-        ("bias_mean_phys", "Bias (physical units)", [0.0]),
+        ("rmse_norm", "RMSE (normalized)", []),
+        ("bias_mean_norm", "Bias (normalized)", [0.0]),
         ("coverage_90_phys", "Coverage 90%", [0.9]),
     ]
 
@@ -1892,9 +1878,7 @@ def _plot_metric_value_heatmap(
 
     summary_metrics = [
         ("w2_mean", "W2", "lower"),
-        ("l2_error_mean", "L2", "lower"),
         ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
-        ("coverage_curve_mae", "Cov. MAE", "lower"),
         ("c2st_mean", "C2ST", "target_0.5"),
         ("one_step_rmse", "1-Step", "lower"),
         ("train_time_s", "Train (s)", "lower"),
@@ -1955,8 +1939,10 @@ def _plot_metric_value_heatmap(
     ax.set_xticks(range(n_metrics))
     ax.set_xticklabels(
         [label for _, label, _ in summary_metrics],
-        fontsize=10,
+        fontsize=9,
         fontweight="semibold",
+        rotation=15,
+        ha="right",
     )
     ax.set_yticks(range(n_methods))
     ax.set_yticklabels([m.upper() for m in methods], fontsize=10, fontweight="semibold")
@@ -1994,15 +1980,23 @@ def _plot_metric_value_heatmap(
         fontsize=12,
         fontweight="bold",
     )
+    n_param_fields = len(params.split(","))
+    joint_note = (
+        " Metrics reflect the joint posterior over all parameters simultaneously."
+        if n_param_fields > 1
+        else ""
+    )
     fig.text(
         0.5,
         0.01,
-        "Cell values are raw metric means. Color shows column-normalized performance (green = best).",
+        "Cell values are raw metric means. Color shows column-normalized performance (green = best)."
+        + joint_note,
         ha="center",
         fontsize=8,
         color="0.4",
+        wrap=True,
     )
-    fig.tight_layout(rect=(0, 0.04, 1, 0.97))
+    fig.tight_layout(rect=(0, 0.06, 1, 0.97))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
