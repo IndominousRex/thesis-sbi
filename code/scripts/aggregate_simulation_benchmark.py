@@ -244,6 +244,11 @@ _THESIS_PALETTE = [
     "#EE3377",  # pink
 ]
 
+# Thesis layout constants (KOMA-Script scrbook, A4, DIV=13, BCOR=5mm, 12pt)
+# Text width ≈ 150 mm ≈ 5.91 in.  All plots should fit within this width.
+_THESIS_TEXTWIDTH_IN = 5.91
+_THESIS_DPI = 300
+
 
 def _method_color_map(methods: list[str], plt: Any) -> dict[str, str]:
     return {
@@ -265,9 +270,7 @@ def _apply_reference_lines(ax: Any, plot_spec: dict[str, Any]) -> None:
 
 
 def _plot_footer_lines(metric_key: str) -> list[str]:
-    lines = [
-        "Each point is one seed; faint same-color lines connect the same seed. Small horizontal offsets separate seeds at shared x-values."
-    ]
+    lines = ["Solid lines: mean across seeds. Shaded bands: min\u2013max range."]
     if metric_key == "train_time_s":
         lines.append(
             "Training time reflects the configured training schedule for each run; older experiments may include best-validation stopping."
@@ -584,53 +587,74 @@ def _plot_metric_vs_budget(
     ncols = min(3, len(tsegs))
     nrows = int(np.ceil(len(tsegs) / ncols))
     fig, axes = plt.subplots(
-        nrows, ncols, figsize=(5 * ncols, 4 * nrows), squeeze=False
+        nrows,
+        ncols,
+        figsize=(_THESIS_TEXTWIDTH_IN, 3.2 * nrows),
+        squeeze=False,
     )
     axes_flat = axes.flatten()
 
     methods = sorted({row["method"] for row in param_rows})
     method_colors = _method_color_map(methods, plt)
-    seeds = sorted({int(row["seed"]) for row in param_rows})
-    budget_values = [
-        float(row["requested_budget_steps"])
-        for row in param_rows
-        if row.get(metric_key) is not None
-        and row.get("requested_budget_steps") is not None
-    ]
-    seed_offsets = _compute_seed_offsets(seeds, budget_values)
-    all_xs: list[float] = []
-    all_ys: list[float] = []
+
+    # Collect global y-range for shared axes
+    global_ys: list[float] = []
     for row in param_rows:
-        if row.get(metric_key) is None or row.get("requested_budget_steps") is None:
-            continue
-        all_xs.append(
-            float(row["requested_budget_steps"])
-            + seed_offsets.get(int(row["seed"]), 0.0)
-        )
-        all_ys.append(float(row[metric_key]))
-    if not all_ys:
+        val = row.get(metric_key)
+        if val is not None:
+            global_ys.append(float(val))
+
+    if not global_ys:
         plt.close(fig)
         return False
-    x_limits, y_limits = _compute_axis_limits(all_xs, all_ys)
 
+    plotted_any = False
     for ax_idx, tseg in enumerate(tsegs):
         ax = axes_flat[ax_idx]
-        tseg_rows = [row for row in param_rows if int(row["T_seg"]) == tseg]
-        _plot_seed_traces(
-            ax,
-            tseg_rows,
-            methods,
-            method_colors,
-            metric_key,
-            x_key="requested_budget_steps",
-            x_offsets=seed_offsets,
-            sort_key=lambda r: float(
-                r.get("requested_budget_steps", r.get("total_budget_steps", 0)) or 0
-            ),
-        )
-        ax.set_title(f"T_seg={tseg}")
-        ax.set_xlabel("Requested Budget Steps")
-        ax.set_ylabel(metric_label)
+        tseg_rows = [
+            row
+            for row in param_rows
+            if int(row["T_seg"]) == tseg and row.get(metric_key) is not None
+        ]
+
+        for method in methods:
+            m_rows = [r for r in tseg_rows if r["method"] == method]
+            if not m_rows:
+                continue
+            # Group by budget
+            by_budget: dict[int, list[float]] = {}
+            for r in m_rows:
+                b = int(
+                    r.get("requested_budget_steps", r.get("total_budget_steps", 0)) or 0
+                )
+                by_budget.setdefault(b, []).append(float(r[metric_key]))
+            budgets_sorted = sorted(by_budget.keys())
+            means = [float(np.mean(by_budget[b])) for b in budgets_sorted]
+            lo = [float(np.min(by_budget[b])) for b in budgets_sorted]
+            hi = [float(np.max(by_budget[b])) for b in budgets_sorted]
+            ax.plot(
+                budgets_sorted,
+                means,
+                marker="o",
+                color=method_colors[method],
+                linewidth=1.6,
+                markersize=4,
+                label=method.upper(),
+                zorder=3,
+            )
+            ax.fill_between(
+                budgets_sorted,
+                lo,
+                hi,
+                color=method_colors[method],
+                alpha=0.15,
+                zorder=1,
+            )
+            plotted_any = True
+
+        ax.set_title(f"$T_{{seg}}={tseg}$", fontsize=9, fontweight="semibold")
+        ax.set_xlabel("Simulation Budget", fontsize=8)
+        ax.set_ylabel(metric_label, fontsize=8)
         _apply_reference_lines(ax, plot_spec)
         ax.set_xticks(
             sorted(
@@ -646,34 +670,45 @@ def _plot_metric_vs_budget(
             )
         )
         _format_budget_axis(ax)
-        if x_limits is not None:
-            ax.set_xlim(*x_limits)
-        if y_limits is not None:
-            ax.set_ylim(*y_limits)
-        if plot_spec.get("log_y") and all_ys and min(all_ys) > 0:
+        if plot_spec.get("log_y") and global_ys and min(global_ys) > 0:
             ax.set_yscale("log")
-        ax.grid(True, alpha=0.3)
-        if ax.get_legend_handles_labels()[0]:
-            ax.legend()
+        ax.grid(True, alpha=0.2, linewidth=0.5)
+        ax.tick_params(labelsize=7)
+        if ax_idx == 0 and ax.get_legend_handles_labels()[0]:
+            ax.legend(fontsize=7, framealpha=0.7)
+
+    # Shared y-limits
+    if global_ys:
+        y_lo, y_hi = min(global_ys), max(global_ys)
+        y_pad = (y_hi - y_lo) * 0.08 if y_hi > y_lo else 0.1
+        for ax in axes_flat[: len(tsegs)]:
+            if not (plot_spec.get("log_y") and y_lo > 0):
+                ax.set_ylim(y_lo - y_pad, y_hi + y_pad)
 
     for ax in axes_flat[len(tsegs) :]:
-        ax.axis("off")
+        ax.set_visible(False)
 
-    fig.suptitle(f"{metric_label} vs Budget | params={params}")
+    if not plotted_any:
+        plt.close(fig)
+        return False
+
+    fig.suptitle(
+        f"{metric_label} vs Budget | params={params}",
+        fontsize=10,
+        fontweight="bold",
+    )
     footer_lines = _plot_footer_lines(metric_key)
     fig.text(
         0.5,
-        0.02,
+        0.01,
         "\n".join(footer_lines),
         ha="center",
-        fontsize=9,
+        fontsize=7,
+        color="0.4",
     )
-    if len(footer_lines) > 1:
-        fig.tight_layout(rect=(0, 0.08, 1, 0.96))
-    else:
-        fig.tight_layout(rect=(0, 0.05, 1, 0.96))
+    fig.tight_layout(rect=(0, 0.04, 1, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
     return True
 
@@ -1249,13 +1284,13 @@ def _plot_calibration_panel(
     budgets = sorted({int(row["requested_budget_steps"]) for row in param_rows})
     method_colors = _method_color_map(methods, plt)
 
-    fig, axes = plt.subplots(1, 4, figsize=(18, 5))
+    fig, axes = plt.subplots(2, 2, figsize=(_THESIS_TEXTWIDTH_IN, 6.5))
 
     # Panels 1 & 2: coverage 50% and 90% as grouped bars per budget
     for panel_idx, (metric_key, target, title) in enumerate(
         [("coverage_50", 0.5, "Coverage 50%"), ("coverage_90", 0.9, "Coverage 90%")]
     ):
-        ax = axes[panel_idx]
+        ax = axes.flat[panel_idx]
         n_methods = len(methods)
         bar_width = 0.8 / max(n_methods, 1)
         has_data = False
@@ -1306,7 +1341,7 @@ def _plot_calibration_panel(
         ax.tick_params(labelsize=8)
 
     # Panel 3: coverage curve MAE
-    ax = axes[2]
+    ax = axes.flat[2]
     for method in methods:
         method_rows = sorted(
             [
@@ -1347,7 +1382,7 @@ def _plot_calibration_panel(
     ax.tick_params(labelsize=8)
 
     # Panel 4: C2ST
-    ax = axes[3]
+    ax = axes.flat[3]
     for method in methods:
         method_rows = sorted(
             [
@@ -1388,10 +1423,10 @@ def _plot_calibration_panel(
     _format_budget_axis(ax)
     ax.tick_params(labelsize=8)
 
-    axes[0].legend(fontsize=7, framealpha=0.7, ncol=2)
+    axes.flat[0].legend(fontsize=6, framealpha=0.7, ncol=2)
     fig.suptitle(
         f"Calibration & Posterior Quality Diagnostics | params={params}",
-        fontsize=13,
+        fontsize=10,
         fontweight="bold",
     )
     fig.text(
@@ -1399,12 +1434,12 @@ def _plot_calibration_panel(
         0.01,
         "Coverage bars show mean \u00b11 std across seeds. Dashed lines indicate ideal targets.",
         ha="center",
-        fontsize=8,
+        fontsize=7,
         color="0.4",
     )
     fig.tight_layout(rect=(0, 0.04, 1, 0.95))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
     return True
 
@@ -1459,7 +1494,7 @@ def _plot_per_parameter_bars(
         ("coverage_90_phys", "Coverage 90%", [0.9]),
     ]
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5.5))
+    fig, axes = plt.subplots(1, 3, figsize=(_THESIS_TEXTWIDTH_IN, 3.5))
     n_params = len(param_names)
     n_methods = len(methods)
     bar_width = 0.75 / max(n_methods, 1)
@@ -1509,10 +1544,10 @@ def _plot_per_parameter_bars(
         plt.close(fig)
         return False
 
-    axes[0].legend(fontsize=8, framealpha=0.7)
+    axes[0].legend(fontsize=6, framealpha=0.7)
     fig.suptitle(
         f"Per-Parameter Comparison at Budget={_budget_to_label(max_budget)} | params={params}",
-        fontsize=13,
+        fontsize=10,
         fontweight="bold",
     )
     fig.text(
@@ -1520,12 +1555,12 @@ def _plot_per_parameter_bars(
         0.01,
         f"Evaluated at largest budget ({_budget_to_label(max_budget)}). Error bars: \u00b11 std across seeds.",
         ha="center",
-        fontsize=8,
+        fontsize=7,
         color="0.4",
     )
     fig.tight_layout(rect=(0, 0.04, 1, 0.95))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
     return True
 
@@ -1738,7 +1773,7 @@ def _plot_training_time_scaling(
     methods = sorted({row["method"] for row in param_rows})
     method_colors = _method_color_map(methods, plt)
 
-    fig, ax = plt.subplots(figsize=(9, 6))
+    fig, ax = plt.subplots(figsize=(_THESIS_TEXTWIDTH_IN, 4.0))
     all_budgets: list[float] = []
     all_times: list[float] = []
     plotted_any = False
@@ -1816,27 +1851,27 @@ def _plot_training_time_scaling(
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel("Simulation Budget $N$", fontsize=11)
-    ax.set_ylabel("Training Time (s)", fontsize=11)
+    ax.set_xlabel("Simulation Budget $N$", fontsize=9)
+    ax.set_ylabel("Training Time (s)", fontsize=9)
     ax.set_title(
         f"Training Time Scaling | params={params}",
-        fontsize=13,
+        fontsize=10,
         fontweight="bold",
     )
     ax.grid(True, alpha=0.2, linewidth=0.5)
-    ax.legend(fontsize=9, framealpha=0.7)
-    ax.tick_params(labelsize=9)
+    ax.legend(fontsize=7, framealpha=0.7)
+    ax.tick_params(labelsize=7)
     fig.text(
         0.5,
         0.01,
         "Dashed & dotted lines show $\\mathcal{O}(N)$ and $\\mathcal{O}(\\log N)$ reference scaling from median values.",
         ha="center",
-        fontsize=8,
+        fontsize=7,
         color="0.4",
     )
     fig.tight_layout(rect=(0, 0.04, 1, 0.98))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
     return True
 
@@ -1915,7 +1950,7 @@ def _plot_metric_value_heatmap(
         else:
             norm_heat[:, cidx] = (col - vmin) / span
 
-    fig, ax = plt.subplots(figsize=(10, 3 + 0.6 * n_methods))
+    fig, ax = plt.subplots(figsize=(_THESIS_TEXTWIDTH_IN, 2.5 + 0.5 * n_methods))
     im = ax.imshow(norm_heat, cmap="RdYlGn_r", vmin=0, vmax=1, aspect="auto")
     ax.set_xticks(range(n_metrics))
     ax.set_xticklabels(
@@ -1969,7 +2004,7 @@ def _plot_metric_value_heatmap(
     )
     fig.tight_layout(rect=(0, 0.04, 1, 0.97))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
     return True
 
@@ -1985,9 +2020,8 @@ def _plot_metric_vs_tseg(
     log_y: bool = False,
     reference_lines: list[float] | None = None,
 ) -> bool:
-    """Aggregate metric vs T_seg, one subplot per budget, with mean±std bands.
+    """Aggregate metric vs T_seg, one subplot per budget, with mean and min-max bands.
 
-    Individual seed values are shown as faint scatter underneath.
     All subplots share y-axis limits for direct visual comparison.
     """
     try:
@@ -2012,97 +2046,74 @@ def _plot_metric_vs_tseg(
     ncols = min(3, len(budgets))
     nrows = int(np.ceil(len(budgets) / ncols))
     fig, axes = plt.subplots(
-        nrows, ncols, figsize=(5.5 * ncols, 4.5 * nrows), squeeze=False
+        nrows,
+        ncols,
+        figsize=(_THESIS_TEXTWIDTH_IN, 3.2 * nrows),
+        squeeze=False,
     )
     axes_flat = axes.flatten()
 
-    # Compute global y-limits across all panels for shared axes
-    global_ys: list[float] = []
-    for r in param_agg:
-        entry = r.get(metric_key)
-        if isinstance(entry, dict) and entry.get("mean") is not None:
-            m, s = float(entry["mean"]), float(entry.get("std", 0.0))
-            global_ys.extend([m - s, m + s])
-    # Also include raw seed points
+    # Compute global y-limits from raw seed values
     raw_param = [
         row
         for row in raw_rows
         if row["params"] == params and row.get(metric_key) is not None
     ]
-    global_ys.extend(float(r[metric_key]) for r in raw_param)
+    global_ys: list[float] = [float(r[metric_key]) for r in raw_param]
 
     plotted_any = False
     for bidx, budget in enumerate(budgets):
         ax = axes_flat[bidx]
-        budget_agg = sorted(
-            [
-                r
-                for r in param_agg
-                if int(r["requested_budget_steps"]) == budget
-                and isinstance(r.get(metric_key), dict)
-                and r[metric_key].get("mean") is not None
-            ],
-            key=lambda r: int(r["T_seg"]),
-        )
-        # Raw seed scatter
+        # Use raw rows to compute mean / min / max per method per T_seg
         budget_raw = [
             r for r in raw_param if int(r.get("requested_budget_steps") or 0) == budget
         ]
 
         for method in methods:
-            # Aggregate line with band
-            m_rows = [r for r in budget_agg if r["method"] == method]
-            if m_rows:
-                tsegs = [int(r["T_seg"]) for r in m_rows]
-                means = [float(r[metric_key]["mean"]) for r in m_rows]
-                stds = [float(r[metric_key]["std"]) for r in m_rows]
-                ax.plot(
-                    tsegs,
-                    means,
-                    marker="o",
-                    color=method_colors[method],
-                    linewidth=1.8,
-                    markersize=5,
-                    label=method.upper(),
-                    zorder=3,
-                )
-                ax.fill_between(
-                    tsegs,
-                    [m - s for m, s in zip(means, stds)],
-                    [m + s for m, s in zip(means, stds)],
-                    color=method_colors[method],
-                    alpha=0.12,
-                    zorder=1,
-                )
-                plotted_any = True
-
-            # Faint individual seed points
-            seed_rows = [r for r in budget_raw if r["method"] == method]
-            if seed_rows:
-                ax.scatter(
-                    [int(r["T_seg"]) for r in seed_rows],
-                    [float(r[metric_key]) for r in seed_rows],
-                    color=method_colors[method],
-                    alpha=0.25,
-                    s=18,
-                    zorder=2,
-                    edgecolors="none",
-                )
+            m_rows = [r for r in budget_raw if r["method"] == method]
+            if not m_rows:
+                continue
+            by_tseg: dict[int, list[float]] = {}
+            for r in m_rows:
+                by_tseg.setdefault(int(r["T_seg"]), []).append(float(r[metric_key]))
+            tsegs_sorted = sorted(by_tseg.keys())
+            means = [float(np.mean(by_tseg[t])) for t in tsegs_sorted]
+            lo = [float(np.min(by_tseg[t])) for t in tsegs_sorted]
+            hi = [float(np.max(by_tseg[t])) for t in tsegs_sorted]
+            ax.plot(
+                tsegs_sorted,
+                means,
+                marker="o",
+                color=method_colors[method],
+                linewidth=1.6,
+                markersize=4,
+                label=method.upper(),
+                zorder=3,
+            )
+            ax.fill_between(
+                tsegs_sorted,
+                lo,
+                hi,
+                color=method_colors[method],
+                alpha=0.15,
+                zorder=1,
+            )
+            plotted_any = True
 
         if reference_lines:
             for val in reference_lines:
                 ax.axhline(val, color="0.45", linestyle="--", linewidth=1.0, alpha=0.7)
         ax.set_title(
             f"Budget = {_budget_to_label(budget)}",
-            fontsize=10,
+            fontsize=9,
             fontweight="semibold",
         )
-        ax.set_xlabel("Trajectory Segment Length ($T_{seg}$)", fontsize=9)
-        ax.set_ylabel(metric_label, fontsize=9)
+        ax.set_xlabel("Trajectory Segment Length ($T_{seg}$)", fontsize=8)
+        ax.set_ylabel(metric_label, fontsize=8)
         ax.grid(True, alpha=0.2, linewidth=0.5)
-        ax.tick_params(labelsize=8)
+        ax.tick_params(labelsize=7)
         if bidx == 0:
-            ax.legend(fontsize=8, framealpha=0.7)
+            ax.legend(fontsize=7, framealpha=0.7)
 
     # Shared y-limits
     if global_ys:
@@ -2123,20 +2134,20 @@ def _plot_metric_vs_tseg(
 
     fig.suptitle(
         f"{metric_label} vs $T_{{seg}}$ | params={params}",
-        fontsize=13,
+        fontsize=10,
         fontweight="bold",
     )
     fig.text(
         0.5,
         0.01,
-        "Solid lines: aggregate mean across seeds. Shaded bands: \u00b11 std. Faint points: individual seeds.",
+        "Solid lines: mean across seeds. Shaded bands: min\u2013max range.",
         ha="center",
-        fontsize=8,
+        fontsize=7,
         color="0.4",
     )
-    fig.tight_layout(rect=(0, 0.03, 1, 0.96))
+    fig.tight_layout(rect=(0, 0.04, 1, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
     return True
 
@@ -2255,19 +2266,11 @@ def _collect_plot_gallery(
     completed_runs: list[dict[str, Any]],
     output_dir: Path,
 ) -> dict[str, Any]:
-    try:
-        import matplotlib
+    """Auto-select best config per method: highest budget, largest T_seg, first seed.
 
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception:
-        return {
-            "copied": [],
-            "contact_sheets": [],
-            "comparison_sheets_by_seed": [],
-            "comparison_sheets_by_method": [],
-        }
-
+    Copies one posterior and one PPC plot per method into a flat gallery directory.
+    No contact sheets are generated.
+    """
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -2277,8 +2280,8 @@ def _collect_plot_gallery(
         "ppc": "ppc_timeseries_simulated_test_ex*.png",
     }
 
-    copied: list[dict[str, Any]] = []
-
+    # Index all available figures
+    entries: list[dict[str, Any]] = []
     for record in completed_runs:
         cfg = record["cfg"]
         metrics = record["metrics"]
@@ -2289,7 +2292,7 @@ def _collect_plot_gallery(
 
         params = _flatten_active_parameters(cfg.get("active_parameters", []))
         params_slug = _slugify(params)
-        budget = (
+        budget = int(
             metrics.get("budget_metadata", {}).get("requested_budget_steps")
             or metrics.get("budget_metadata", {}).get("total_simulation_budget_steps")
             or 0
@@ -2300,202 +2303,60 @@ def _collect_plot_gallery(
 
         for plot_kind, pattern in patterns.items():
             for src in sorted(figures_dir.glob(pattern)):
-                example_key = src.stem
-                dst_dir = output_dir / plot_kind / params_slug
-                dst_dir.mkdir(parents=True, exist_ok=True)
-                dst_name = f"{method}_b{int(budget)}_t{tseg}_s{seed}_{src.name}"
-                dst = dst_dir / dst_name
-                shutil.copy2(src, dst)
-                entry = {
-                    "plot_kind": plot_kind,
-                    "params": params,
-                    "params_slug": params_slug,
-                    "method": method,
-                    "requested_budget_steps": int(budget),
-                    "T_seg": tseg,
-                    "seed": seed,
-                    "source": str(src),
-                    "copied_to": str(dst),
-                    "example_key": example_key,
-                }
-                copied.append(entry)
+                entries.append(
+                    {
+                        "plot_kind": plot_kind,
+                        "params": params,
+                        "params_slug": params_slug,
+                        "method": method,
+                        "requested_budget_steps": budget,
+                        "T_seg": tseg,
+                        "seed": seed,
+                        "source": str(src),
+                        "example_key": src.stem,
+                    }
+                )
 
-    contact_sheets: list[str] = []
-    comparison_sheets_by_seed: list[dict[str, Any]] = []
-    group_by_budget_tseg: dict[tuple[str, str, str, int, int], list[dict[str, Any]]] = (
-        {}
-    )
-    for entry in copied:
-        group_by_budget_tseg.setdefault(
-            (
-                str(entry["plot_kind"]),
-                str(entry["params_slug"]),
-                str(entry["example_key"]),
-                int(entry["requested_budget_steps"]),
-                int(entry["T_seg"]),
-            ),
-            [],
-        ).append(entry)
+    # For each (method, params, plot_kind, example_key), pick:
+    #   highest budget -> largest T_seg -> smallest seed
+    best: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for e in entries:
+        key = (e["method"], e["params_slug"], e["plot_kind"], e["example_key"])
+        prev = best.get(key)
+        if prev is None or (
+            e["requested_budget_steps"],
+            e["T_seg"],
+            -e["seed"],
+        ) > (
+            prev["requested_budget_steps"],
+            prev["T_seg"],
+            -prev["seed"],
+        ):
+            best[key] = e
 
-    for (
-        plot_kind,
-        params_slug,
-        example_key,
-        budget,
-        tseg,
-    ), entries in group_by_budget_tseg.items():
-        methods = sorted({str(entry["method"]) for entry in entries})
-        seeds = sorted({int(entry["seed"]) for entry in entries})
-        if not methods or not seeds:
+    copied: list[dict[str, Any]] = []
+    for (_method, _params_slug, _plot_kind, _example_key), entry in sorted(
+        best.items()
+    ):
+        src = Path(entry["source"])
+        if not src.exists():
             continue
-        entry_lookup = {
-            (str(entry["method"]), int(entry["seed"])): entry for entry in entries
-        }
-        fig, axes = plt.subplots(
-            len(methods),
-            len(seeds),
-            figsize=(3.3 * len(seeds), 3.0 * len(methods)),
-            squeeze=False,
+        dst_dir = output_dir / _plot_kind / _params_slug
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        dst_name = (
+            f"{_method}_b{entry['requested_budget_steps']}"
+            f"_t{entry['T_seg']}_s{entry['seed']}_{src.name}"
         )
-        for row_idx, method in enumerate(methods):
-            for col_idx, seed in enumerate(seeds):
-                ax = axes[row_idx][col_idx]
-                entry = entry_lookup.get((method, seed))
-                if entry is None:
-                    ax.axis("off")
-                    ax.text(
-                        0.5,
-                        0.5,
-                        "No plot",
-                        ha="center",
-                        va="center",
-                        fontsize=9,
-                        color="0.4",
-                    )
-                else:
-                    image = plt.imread(entry["copied_to"])
-                    ax.imshow(image)
-                    ax.axis("off")
-                if row_idx == 0:
-                    ax.set_title(f"seed={seed}", fontsize=9)
-                if col_idx == 0:
-                    ax.set_ylabel(method.upper(), fontsize=10)
-        fig.suptitle(
-            f"{plot_kind.upper()} comparison | params={params_slug} | {example_key} | b={_budget_to_label(budget)} | T={tseg}",
-            fontsize=12,
-        )
-        fig.tight_layout(rect=(0, 0, 1, 0.96))
-        sheet_path = (
-            output_dir
-            / f"{plot_kind}_{params_slug}_{example_key}_b{budget}_t{tseg}_methods_by_seed.png"
-        )
-        fig.savefig(sheet_path, dpi=150, bbox_inches="tight")
-        plt.close(fig)
-        contact_sheets.append(str(sheet_path))
-        comparison_sheets_by_seed.append(
+        dst = dst_dir / dst_name
+        shutil.copy2(src, dst)
+        copied.append(
             {
-                "plot_kind": plot_kind,
-                "params_slug": params_slug,
-                "example_key": example_key,
-                "requested_budget_steps": int(budget),
-                "T_seg": int(tseg),
-                "sheet_path": str(sheet_path),
-                "methods": methods,
-                "seeds": seeds,
+                **entry,
+                "copied_to": str(dst),
             }
         )
 
-    comparison_sheets_by_method: list[dict[str, Any]] = []
-    group_by_method_seed: dict[tuple[str, str, str, str, int], list[dict[str, Any]]] = (
-        {}
-    )
-    for entry in copied:
-        group_by_method_seed.setdefault(
-            (
-                str(entry["plot_kind"]),
-                str(entry["params_slug"]),
-                str(entry["example_key"]),
-                str(entry["method"]),
-                int(entry["seed"]),
-            ),
-            [],
-        ).append(entry)
-
-    for (
-        plot_kind,
-        params_slug,
-        example_key,
-        method,
-        seed,
-    ), entries in group_by_method_seed.items():
-        budgets = sorted({int(entry["requested_budget_steps"]) for entry in entries})
-        tsegs = sorted({int(entry["T_seg"]) for entry in entries})
-        if not budgets or not tsegs:
-            continue
-        entry_lookup = {
-            (int(entry["requested_budget_steps"]), int(entry["T_seg"])): entry
-            for entry in entries
-        }
-        fig, axes = plt.subplots(
-            len(budgets),
-            len(tsegs),
-            figsize=(3.2 * len(tsegs), 3.0 * len(budgets)),
-            squeeze=False,
-        )
-        for row_idx, budget in enumerate(budgets):
-            for col_idx, tseg_col in enumerate(tsegs):
-                ax = axes[row_idx][col_idx]
-                entry = entry_lookup.get((budget, tseg_col))
-                if entry is None:
-                    ax.axis("off")
-                    ax.text(
-                        0.5,
-                        0.5,
-                        "No plot",
-                        ha="center",
-                        va="center",
-                        fontsize=9,
-                        color="0.4",
-                    )
-                else:
-                    image = plt.imread(entry["copied_to"])
-                    ax.imshow(image)
-                    ax.axis("off")
-                if row_idx == 0:
-                    ax.set_title(f"T={tseg_col}", fontsize=9)
-                if col_idx == 0:
-                    ax.set_ylabel(f"b={_budget_to_label(budget)}", fontsize=10)
-        fig.suptitle(
-            f"{plot_kind.upper()} comparison | params={params_slug} | {example_key} | {method.upper()} | seed={seed}",
-            fontsize=12,
-        )
-        fig.tight_layout(rect=(0, 0, 1, 0.96))
-        sheet_path = (
-            output_dir
-            / f"{plot_kind}_{params_slug}_{example_key}_{method}_seed{seed}_budget_by_tseg.png"
-        )
-        fig.savefig(sheet_path, dpi=150, bbox_inches="tight")
-        plt.close(fig)
-        contact_sheets.append(str(sheet_path))
-        comparison_sheets_by_method.append(
-            {
-                "plot_kind": plot_kind,
-                "params_slug": params_slug,
-                "example_key": example_key,
-                "method": method,
-                "seed": seed,
-                "sheet_path": str(sheet_path),
-                "budgets": budgets,
-                "tsegs": tsegs,
-            }
-        )
-
-    return {
-        "copied": copied,
-        "contact_sheets": contact_sheets,
-        "comparison_sheets_by_seed": comparison_sheets_by_seed,
-        "comparison_sheets_by_method": comparison_sheets_by_method,
-    }
+    return {"copied": copied}
 
 
 def _load_completed_runs(
@@ -2945,97 +2806,41 @@ def main() -> None:
 
     _write_csv(output_csv, aggregate_rows)
 
+    plots_dir = output_json.parent / f"{args.exp_prefix}_plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
     generated_plots: list[str] = []
     for params in sorted({row["params"] for row in rows}):
         params_slug = _slugify(params)
 
-        # --- 1. Method overview dashboard (single multi-panel figure) ---
-        dashboard_path = (
-            output_json.parent
-            / f"{output_json.stem}_overview_dashboard_{params_slug}.png"
-        )
-        if _plot_method_overview_dashboard(aggregate_rows, params, dashboard_path):
-            generated_plots.append(str(dashboard_path))
-
-        # --- 2. Individual budget plots (primary metrics only) ---
+        # --- 1. Individual budget plots (primary metrics only) ---
         for plot_spec in plot_registry["budget"]:
-            output_path = (
-                output_json.parent
-                / f"{output_json.stem}_{plot_spec['slug']}_{params_slug}.png"
-            )
+            output_path = plots_dir / f"{plot_spec['slug']}_{params_slug}.png"
             if _plot_metric_vs_budget(rows, params, plot_spec, output_path):
                 generated_plots.append(str(output_path))
 
-        # --- 3. Calibration diagnostic panel ---
-        calibration_path = (
-            output_json.parent
-            / f"{output_json.stem}_calibration_panel_{params_slug}.png"
-        )
+        # --- 2. Calibration diagnostic panel ---
+        calibration_path = plots_dir / f"calibration_panel_{params_slug}.png"
         if _plot_calibration_panel(aggregate_rows, params, calibration_path):
             generated_plots.append(str(calibration_path))
 
-        # --- 4. Per-parameter comparison bars ---
-        per_param_path = (
-            output_json.parent
-            / f"{output_json.stem}_per_parameter_bars_{params_slug}.png"
-        )
+        # --- 3. Per-parameter comparison bars ---
+        per_param_path = plots_dir / f"per_parameter_bars_{params_slug}.png"
         if _plot_per_parameter_bars(aggregate_rows, rows, params, per_param_path):
             generated_plots.append(str(per_param_path))
 
-        # --- 5. Radar / spider chart ---
-        radar_path = (
-            output_json.parent / f"{output_json.stem}_radar_chart_{params_slug}.png"
-        )
-        if _plot_radar_chart(aggregate_rows, params, radar_path):
-            generated_plots.append(str(radar_path))
-
-        # --- 6. Pareto efficiency frontier (aggregate only) ---
-        for plot_spec in plot_registry["pareto"]:
-            pareto_aggregate_path = (
-                output_json.parent
-                / f"{output_json.stem}_{plot_spec['slug']}_aggregate_{params_slug}.png"
-            )
-            if _plot_pareto_aggregate_scatter(
-                rows, aggregate_rows, params, plot_spec, pareto_aggregate_path
-            ):
-                generated_plots.append(str(pareto_aggregate_path))
-
-        # --- 7. Convergence / sample efficiency profile ---
-        convergence_path = (
-            output_json.parent
-            / f"{output_json.stem}_convergence_profile_{params_slug}.png"
-        )
-        if _plot_convergence_profile(aggregate_rows, params, convergence_path):
-            generated_plots.append(str(convergence_path))
-
-        # --- 8. Training time scaling (with O(N) references) ---
-        scaling_path = (
-            output_json.parent
-            / f"{output_json.stem}_training_time_scaling_{params_slug}.png"
-        )
+        # --- 4. Training time scaling ---
+        scaling_path = plots_dir / f"training_time_scaling_{params_slug}.png"
         if _plot_training_time_scaling(aggregate_rows, params, scaling_path):
             generated_plots.append(str(scaling_path))
 
-        # --- 9. Pairwise win/loss matrix ---
-        win_matrix_path = (
-            output_json.parent
-            / f"{output_json.stem}_pairwise_win_matrix_{params_slug}.png"
-        )
-        if _plot_pairwise_win_matrix(pairwise_tests, params, win_matrix_path):
-            generated_plots.append(str(win_matrix_path))
-
-        # --- 10. Metric value heatmap (summary at best budget) ---
-        value_heatmap_path = (
-            output_json.parent
-            / f"{output_json.stem}_metric_value_heatmap_{params_slug}.png"
-        )
+        # --- 5. Metric value heatmap ---
+        value_heatmap_path = plots_dir / f"metric_value_heatmap_{params_slug}.png"
         if _plot_metric_value_heatmap(aggregate_rows, params, value_heatmap_path):
             generated_plots.append(str(value_heatmap_path))
 
-        # --- 11. W2 vs T_seg ---
-        w2_tseg_path = (
-            output_json.parent / f"{output_json.stem}_w2_vs_tseg_{params_slug}.png"
-        )
+        # --- 6. W2 vs T_seg ---
+        w2_tseg_path = plots_dir / f"w2_vs_tseg_{params_slug}.png"
         if _plot_metric_vs_tseg(
             aggregate_rows,
             rows,
@@ -3046,11 +2851,8 @@ def main() -> None:
         ):
             generated_plots.append(str(w2_tseg_path))
 
-        # --- 12. Sampling time vs T_seg ---
-        sampling_tseg_path = (
-            output_json.parent
-            / f"{output_json.stem}_sampling_time_vs_tseg_{params_slug}.png"
-        )
+        # --- 7. Sampling time vs T_seg ---
+        sampling_tseg_path = plots_dir / f"sampling_time_vs_tseg_{params_slug}.png"
         if _plot_metric_vs_tseg(
             aggregate_rows,
             rows,
@@ -3062,11 +2864,8 @@ def main() -> None:
         ):
             generated_plots.append(str(sampling_tseg_path))
 
-        # --- 13. PPC RMSE vs T_seg ---
-        ppc_tseg_path = (
-            output_json.parent
-            / f"{output_json.stem}_ppc_rmse_vs_tseg_{params_slug}.png"
-        )
+        # --- 8. PPC RMSE vs T_seg ---
+        ppc_tseg_path = plots_dir / f"ppc_rmse_vs_tseg_{params_slug}.png"
         if _plot_metric_vs_tseg(
             aggregate_rows,
             rows,
@@ -3077,18 +2876,7 @@ def main() -> None:
         ):
             generated_plots.append(str(ppc_tseg_path))
 
-        # --- 14. Rank heatmaps (curated key metrics) ---
-        for plot_spec in plot_registry["heatmap"]:
-            heatmap_path = (
-                output_json.parent
-                / f"{output_json.stem}_{plot_spec['slug']}_rank_heatmap_{params_slug}.png"
-            )
-            if _plot_metric_rank_heatmap(
-                aggregate_rows, params, plot_spec, heatmap_path
-            ):
-                generated_plots.append(str(heatmap_path))
-
-    plot_collection_dir = output_json.parent / f"{args.exp_prefix}_plot_collection"
+    plot_collection_dir = plots_dir / "plot_collection"
     plot_collection = _collect_plot_gallery(completed_runs, plot_collection_dir)
     plot_collection_payload = {
         "root": str(plot_collection_dir),
@@ -3145,11 +2933,12 @@ def main() -> None:
     print(f"Wrote {plot_manifest_json}")
     print(f"Wrote {output_csv}")
     print(f"Deduplicated completed runs: {len(completed_runs)}")
+    print(f"Plots saved to {plots_dir}")
     for plot_path in generated_plots:
         print(f"Wrote {plot_path}")
-    print(f"Wrote plot collection to {plot_collection_dir}")
-    for sheet_path in plot_collection.get("contact_sheets", []):
-        print(f"Wrote {sheet_path}")
+    print(
+        f"Wrote plot collection ({len(plot_collection.get('copied', []))} files) to {plot_collection_dir}"
+    )
 
 
 if __name__ == "__main__":
