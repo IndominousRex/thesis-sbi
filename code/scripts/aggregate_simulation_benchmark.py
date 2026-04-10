@@ -1876,14 +1876,6 @@ def _plot_metric_value_heatmap(
     except Exception:
         return False
 
-    summary_metrics = [
-        ("w2_mean", "W2", "lower"),
-        ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
-        ("c2st_mean", "C2ST", "target_0.5"),
-        ("one_step_rmse", "1-Step", "lower"),
-        ("train_time_s", "Train (s)", "lower"),
-    ]
-
     param_rows = [row for row in aggregate_rows if row["params"] == params]
     if not param_rows:
         return False
@@ -1891,7 +1883,6 @@ def _plot_metric_value_heatmap(
     methods = sorted({row["method"] for row in param_rows})
     budgets = sorted({int(row["requested_budget_steps"]) for row in param_rows})
     n_methods = len(methods)
-    n_metrics = len(summary_metrics)
 
     if not budgets or n_methods == 0:
         return False
@@ -1902,6 +1893,40 @@ def _plot_metric_value_heatmap(
         r for r in param_rows if int(r["requested_budget_steps"]) == max_budget
     ]
 
+    # Compute per-method average normalised RMSE across active parameters.
+    # This replaces the physical-space W2 which is dominated by the mass parameter.
+    active_params = [p.strip() for p in params.split(",")]
+    norm_rmse_keys = [f"{p}_rmse_norm" for p in active_params]
+    avg_norm_rmse_by_method: dict[str, float] = {}
+    for _method in methods:
+        _row = next((r for r in best_rows if r["method"] == _method), None)
+        if _row is None:
+            avg_norm_rmse_by_method[_method] = float("nan")
+            continue
+        _vals = [
+            float(_row[k]["mean"])
+            for k in norm_rmse_keys
+            if isinstance(_row.get(k), dict) and _row[k].get("mean") is not None
+        ]
+        avg_norm_rmse_by_method[_method] = (
+            float(np.mean(_vals)) if _vals else float("nan")
+        )
+
+    _have_norm_rmse = any(not np.isnan(v) for v in avg_norm_rmse_by_method.values())
+    _first_metric: tuple[str, str, str] = (
+        ("_avg_norm_rmse", "RMSE\n(norm)", "lower")
+        if _have_norm_rmse
+        else ("w2_mean", "W2", "lower")
+    )
+    summary_metrics = [
+        _first_metric,
+        ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
+        ("c2st_mean", "C2ST", "target_0.5"),
+        ("one_step_rmse", "1-Step", "lower"),
+        ("train_time_s", "Train (s)", "lower"),
+    ]
+    n_metrics = len(summary_metrics)
+
     heat = np.full((n_methods, n_metrics), np.nan, dtype=np.float64)
     raw_values = np.full((n_methods, n_metrics), np.nan, dtype=np.float64)
 
@@ -1910,6 +1935,12 @@ def _plot_metric_value_heatmap(
         if method_row is None:
             continue
         for cidx, (metric_key, _, direction) in enumerate(summary_metrics):
+            if metric_key == "_avg_norm_rmse":
+                v = avg_norm_rmse_by_method.get(method, float("nan"))
+                if not np.isnan(v):
+                    raw_values[midx, cidx] = v
+                    heat[midx, cidx] = v
+                continue
             entry = method_row.get(metric_key)
             if isinstance(entry, dict) and entry.get("mean") is not None:
                 v = float(entry["mean"])
