@@ -11,7 +11,6 @@
 # ==============================================================================
 
 #SBATCH --job-name=agg_bench
-#SBATCH --partition=small_cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
