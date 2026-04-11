@@ -1273,7 +1273,7 @@ def _plot_calibration_panel(
 
     fig, axes = plt.subplots(1, 3, figsize=(_THESIS_TEXTWIDTH_IN, 3.5))
 
-    # Panel 1: coverage 90% as grouped bars per budget
+    # Panel 1: coverage 90% — one bar per (method, budget), averaged over T_seg values
     ax = axes.flat[0]
     _cov90_metric = "coverage_90"
     _cov90_target = 0.9
@@ -1281,22 +1281,31 @@ def _plot_calibration_panel(
     bar_width = 0.8 / max(n_methods, 1)
     has_data = False
     for midx, method in enumerate(methods):
-        method_rows = sorted(
-            [
+        means: list[float] = []
+        stds: list[float] = []
+        valid_budgets: list[int] = []
+        for budget in budgets:
+            brows = [
                 r
                 for r in param_rows
                 if r["method"] == method
+                and int(r.get("requested_budget_steps") or 0) == budget
                 and isinstance(r.get(_cov90_metric), dict)
                 and r[_cov90_metric].get("mean") is not None
-            ],
-            key=lambda r: int(r.get("requested_budget_steps") or 0),
-        )
-        if not method_rows:
+            ]
+            if not brows:
+                continue
+            means.append(
+                float(np.mean([float(r[_cov90_metric]["mean"]) for r in brows]))
+            )
+            stds.append(
+                float(np.mean([float(r[_cov90_metric].get("std", 0.0)) for r in brows]))
+            )
+            valid_budgets.append(budget)
+        if not valid_budgets:
             continue
         has_data = True
-        x_pos = np.arange(len(method_rows))
-        means = [float(r[_cov90_metric]["mean"]) for r in method_rows]
-        stds = [float(r[_cov90_metric]["std"]) for r in method_rows]
+        x_pos = np.array([budgets.index(b) for b in valid_budgets])
         ax.bar(
             x_pos + midx * bar_width,
             means,
@@ -1404,7 +1413,7 @@ def _plot_calibration_panel(
     ax.axhline(0.5, color="red", linestyle="--", linewidth=1.0, alpha=0.7)
     ax.set_xlabel("Simulation Budget", fontsize=9)
     ax.set_ylabel("C2ST Mean", fontsize=9)
-    ax.set_title("C2ST (0.5 = indistinguishable)", fontsize=10, fontweight="semibold")
+    ax.set_title("C2ST", fontsize=10, fontweight="semibold")
     ax.grid(True, alpha=0.2, linewidth=0.5)
     _format_budget_axis(ax)
     ax.tick_params(labelsize=8)
@@ -1474,8 +1483,25 @@ def _plot_per_parameter_bars(
         r for r in param_rows if int(r["requested_budget_steps"]) == max_budget
     ]
 
+    # W2/dim: joint W2 ÷ #params, averaged over all T_seg rows at max_budget.
+    # W2 measures distance from ground-truth posterior; dividing by #params
+    # prevents the mass parameter from dominating in multi-param settings.
+    _w2_n = max(len(param_names), 1)
+    w2_per_dim_by_method: dict[str, float] = {}
+    for _method in methods:
+        _m_rows = [r for r in best_rows if r["method"] == _method]
+        _w2_vals = [
+            float(r["w2_mean"]["mean"])
+            for r in _m_rows
+            if isinstance(r.get("w2_mean"), dict)
+            and r["w2_mean"].get("mean") is not None
+        ]
+        w2_per_dim_by_method[_method] = (
+            float(np.mean(_w2_vals)) / _w2_n if _w2_vals else float("nan")
+        )
+
     metrics_to_plot = [
-        ("rmse_norm", "RMSE (normalized)", []),
+        ("_w2_per_dim", "W2/dim (joint)", []),
         ("bias_mean_norm", "Bias (normalized)", [0.0]),
         ("coverage_90_phys", "Coverage 90%", [0.9]),
     ]
@@ -1488,39 +1514,56 @@ def _plot_per_parameter_bars(
 
     for panel_idx, (suffix, panel_label, ref_vals) in enumerate(metrics_to_plot):
         ax = axes[panel_idx]
-        for midx, method in enumerate(methods):
-            method_row = next((r for r in best_rows if r["method"] == method), None)
-            if method_row is None:
-                continue
-            vals: list[float] = []
-            errs: list[float] = []
-            for pname in param_names:
-                key = f"{pname}_{suffix}"
-                entry = method_row.get(key)
-                if isinstance(entry, dict) and entry.get("mean") is not None:
-                    vals.append(float(entry["mean"]))
-                    errs.append(float(entry.get("std", 0.0)))
-                else:
-                    vals.append(0.0)
-                    errs.append(0.0)
-            x_pos = np.arange(n_params)
-            ax.bar(
-                x_pos + midx * bar_width,
-                vals,
-                bar_width,
-                yerr=errs,
-                label=method.upper() if panel_idx == 0 else None,
-                color=method_colors[method],
-                alpha=0.85,
-                capsize=2,
-                error_kw={"linewidth": 0.8},
-            )
-            plotted_any = True
-
+        if suffix == "_w2_per_dim":
+            # Single-group panel: one bar per method, x = "all params (joint)"
+            for midx, method in enumerate(methods):
+                w2_val = w2_per_dim_by_method.get(method, float("nan"))
+                if np.isnan(w2_val):
+                    continue
+                ax.bar(
+                    midx * bar_width,
+                    w2_val,
+                    bar_width,
+                    label=method.upper(),
+                    color=method_colors[method],
+                    alpha=0.85,
+                    capsize=2,
+                )
+                plotted_any = True
+            ax.set_xticks([(n_methods - 1) * bar_width / 2])
+            ax.set_xticklabels(["joint"], fontsize=9, fontweight="semibold")
+        else:
+            for midx, method in enumerate(methods):
+                method_row = next((r for r in best_rows if r["method"] == method), None)
+                if method_row is None:
+                    continue
+                vals: list[float] = []
+                errs: list[float] = []
+                for pname in param_names:
+                    key = f"{pname}_{suffix}"
+                    entry = method_row.get(key)
+                    if isinstance(entry, dict) and entry.get("mean") is not None:
+                        vals.append(float(entry["mean"]))
+                        errs.append(float(entry.get("std", 0.0)))
+                    else:
+                        vals.append(0.0)
+                        errs.append(0.0)
+                x_pos = np.arange(n_params)
+                ax.bar(
+                    x_pos + midx * bar_width,
+                    vals,
+                    bar_width,
+                    yerr=errs,
+                    color=method_colors[method],
+                    alpha=0.85,
+                    capsize=2,
+                    error_kw={"linewidth": 0.8},
+                )
+                plotted_any = True
+            ax.set_xticks(np.arange(n_params) + bar_width * (n_methods - 1) / 2)
+            ax.set_xticklabels(param_names, fontsize=9, fontweight="semibold")
         for val in ref_vals:
             ax.axhline(val, color="red", linestyle="--", linewidth=1.0, alpha=0.7)
-        ax.set_xticks(np.arange(n_params) + bar_width * (n_methods - 1) / 2)
-        ax.set_xticklabels(param_names, fontsize=9, fontweight="semibold")
         ax.set_ylabel(panel_label, fontsize=9)
         ax.set_title(panel_label, fontsize=10, fontweight="semibold")
         ax.grid(True, axis="y", alpha=0.2, linewidth=0.5)
@@ -1539,7 +1582,7 @@ def _plot_per_parameter_bars(
     fig.text(
         0.5,
         0.01,
-        f"Evaluated at largest budget ({_budget_to_label(max_budget)}). Error bars: \u00b11 std across seeds.",
+        f"W2/dim: joint posterior distance from ground truth ÷ #params. Budget={_budget_to_label(max_budget)}. Error bars: \u00b11 std.",
         ha="center",
         fontsize=7,
         color="0.4",
@@ -1862,12 +1905,16 @@ def _plot_training_time_scaling(
     return True
 
 
-def _plot_metric_value_heatmap(
+def _plot_training_time_per_tseg(
     aggregate_rows: list[dict[str, Any]],
     params: str,
     output_path: Path,
 ) -> bool:
-    """Summary heatmap: actual metric values color-coded by column-normalized performance."""
+    """Training time vs budget with one clean line per (method, T_seg) combination.
+
+    Each line is coloured by method and distinguished by marker/dash style per
+    T_seg, avoiding the zigzag artefact of the aggregated training-time plot.
+    """
     try:
         import matplotlib
 
@@ -1877,6 +1924,124 @@ def _plot_metric_value_heatmap(
         return False
 
     param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if not param_rows:
+        return False
+    methods = sorted({row["method"] for row in param_rows})
+    tsegs = sorted({int(r["T_seg"]) for r in param_rows})
+    method_colors = _method_color_map(methods, plt)
+
+    tseg_linestyles = ["-", "--", ":"]
+    tseg_markers = ["o", "s", "^"]
+
+    fig, ax = plt.subplots(figsize=(_THESIS_TEXTWIDTH_IN, 4.0))
+    plotted_any = False
+
+    for method in methods:
+        for tidx, tseg in enumerate(tsegs):
+            tseg_rows = sorted(
+                [
+                    r
+                    for r in param_rows
+                    if r["method"] == method
+                    and int(r.get("T_seg", 0)) == tseg
+                    and isinstance(r.get("train_time_s"), dict)
+                    and r["train_time_s"].get("mean") is not None
+                ],
+                key=lambda r: int(r.get("requested_budget_steps") or 0),
+            )
+            if not tseg_rows:
+                continue
+            budgets = [int(r["requested_budget_steps"]) for r in tseg_rows]
+            means = [float(r["train_time_s"]["mean"]) for r in tseg_rows]
+            stds = [float(r["train_time_s"]["std"]) for r in tseg_rows]
+            ls = tseg_linestyles[tidx % len(tseg_linestyles)]
+            mk = tseg_markers[tidx % len(tseg_markers)]
+            label = (
+                f"{method.upper()} $T_{{seg}}$={tseg}"
+                if tidx == 0
+                else f"$T_{{seg}}$={tseg}"
+            )
+            ax.plot(
+                budgets,
+                means,
+                linestyle=ls,
+                marker=mk,
+                color=method_colors[method],
+                linewidth=1.6,
+                markersize=5,
+                label=f"{method.upper()} / $T_{{seg}}$={tseg}",
+                zorder=3,
+            )
+            ax.fill_between(
+                budgets,
+                [max(1e-1, m - s) for m, s in zip(means, stds)],
+                [m + s for m, s in zip(means, stds)],
+                color=method_colors[method],
+                alpha=0.08,
+                zorder=1,
+            )
+            plotted_any = True
+
+    if not plotted_any:
+        plt.close(fig)
+        return False
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Simulation Budget $N$", fontsize=9)
+    ax.set_ylabel("Training Time (s)", fontsize=9)
+    ax.set_title(
+        f"Training Time per Segment Length | params={params}",
+        fontsize=10,
+        fontweight="bold",
+    )
+    ax.grid(True, alpha=0.2, linewidth=0.5)
+    ax.legend(
+        fontsize=6,
+        framealpha=0.7,
+        ncol=len(tsegs),
+        loc="upper left",
+        title="Method / $T_{seg}$",
+        title_fontsize=7,
+    )
+    ax.tick_params(labelsize=7)
+    fig.text(
+        0.5,
+        0.01,
+        "Each line = one method × segment length. Shaded band: ±1 std across seeds.",
+        ha="center",
+        fontsize=7,
+        color="0.4",
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 0.98))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
+def _plot_metric_value_heatmap(
+    aggregate_rows: list[dict[str, Any]],
+    params: str,
+    output_path: Path,
+    tseg_filter: int | None = None,
+) -> bool:
+    """Summary heatmap of metric values, color-coded by column-normalized performance.
+
+    *tseg_filter*: if given, restrict rows to that T_seg; otherwise average over all
+    T_seg values at the largest budget.
+    """
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return False
+
+    param_rows = [row for row in aggregate_rows if row["params"] == params]
+    if tseg_filter is not None:
+        param_rows = [r for r in param_rows if int(r.get("T_seg", 0)) == tseg_filter]
     if not param_rows:
         return False
 
@@ -1893,33 +2058,29 @@ def _plot_metric_value_heatmap(
         r for r in param_rows if int(r["requested_budget_steps"]) == max_budget
     ]
 
-    # Compute per-method average normalised RMSE across active parameters.
-    # This replaces the physical-space W2 which is dominated by the mass parameter.
+    # W2 / n_active_params: normalises by dimensionality so mass doesn't dominate.
+    # W2 measures Wasserstein-2 distance between the inferred posterior and the
+    # ground-truth posterior — lower is better.
     active_params = [p.strip() for p in params.split(",")]
-    norm_rmse_keys = [f"{p}_rmse_norm" for p in active_params]
-    avg_norm_rmse_by_method: dict[str, float] = {}
+    n_active_params = max(len(active_params), 1)
+    w2_per_dim_by_method: dict[str, float] = {}
     for _method in methods:
-        _row = next((r for r in best_rows if r["method"] == _method), None)
-        if _row is None:
-            avg_norm_rmse_by_method[_method] = float("nan")
-            continue
+        _m_rows = [r for r in best_rows if r["method"] == _method]
         _vals = [
-            float(_row[k]["mean"])
-            for k in norm_rmse_keys
-            if isinstance(_row.get(k), dict) and _row[k].get("mean") is not None
+            float(r["w2_mean"]["mean"])
+            for r in _m_rows
+            if isinstance(r.get("w2_mean"), dict)
+            and r["w2_mean"].get("mean") is not None
         ]
-        avg_norm_rmse_by_method[_method] = (
-            float(np.mean(_vals)) if _vals else float("nan")
+        w2_per_dim_by_method[_method] = (
+            float(np.mean(_vals)) / n_active_params if _vals else float("nan")
         )
 
-    _have_norm_rmse = any(not np.isnan(v) for v in avg_norm_rmse_by_method.values())
-    _first_metric: tuple[str, str, str] = (
-        ("_avg_norm_rmse", "RMSE\n(norm)", "lower")
-        if _have_norm_rmse
-        else ("w2_mean", "W2", "lower")
-    )
-    summary_metrics = [
-        _first_metric,
+    _have_w2 = any(not np.isnan(v) for v in w2_per_dim_by_method.values())
+    summary_metrics: list[tuple[str, str, str]] = []
+    if _have_w2:
+        summary_metrics.append(("_w2_per_dim", "W2/dim", "lower"))
+    summary_metrics += [
         ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
         ("c2st_mean", "C2ST", "target_0.5"),
         ("one_step_rmse", "1-Step", "lower"),
@@ -1931,24 +2092,31 @@ def _plot_metric_value_heatmap(
     raw_values = np.full((n_methods, n_metrics), np.nan, dtype=np.float64)
 
     for midx, method in enumerate(methods):
-        method_row = next((r for r in best_rows if r["method"] == method), None)
-        if method_row is None:
+        # Average over all T_seg rows at max_budget (fixes arbitrary T_seg selection)
+        method_rows_at_budget = [r for r in best_rows if r["method"] == method]
+        if not method_rows_at_budget:
             continue
         for cidx, (metric_key, _, direction) in enumerate(summary_metrics):
-            if metric_key == "_avg_norm_rmse":
-                v = avg_norm_rmse_by_method.get(method, float("nan"))
+            if metric_key == "_w2_per_dim":
+                v = w2_per_dim_by_method.get(method, float("nan"))
                 if not np.isnan(v):
                     raw_values[midx, cidx] = v
                     heat[midx, cidx] = v
                 continue
-            entry = method_row.get(metric_key)
-            if isinstance(entry, dict) and entry.get("mean") is not None:
-                v = float(entry["mean"])
-                raw_values[midx, cidx] = v
-                if direction == "target_0.5":
-                    heat[midx, cidx] = abs(v - 0.5)
-                else:
-                    heat[midx, cidx] = v
+            vals = [
+                float(r[metric_key]["mean"])
+                for r in method_rows_at_budget
+                if isinstance(r.get(metric_key), dict)
+                and r[metric_key].get("mean") is not None
+            ]
+            if not vals:
+                continue
+            v = float(np.mean(vals))
+            raw_values[midx, cidx] = v
+            if direction == "target_0.5":
+                heat[midx, cidx] = abs(v - 0.5)
+            else:
+                heat[midx, cidx] = v
 
     # Column-normalize: 0 = best, 1 = worst
     norm_heat = np.full_like(heat, np.nan)
@@ -2006,9 +2174,14 @@ def _plot_metric_value_heatmap(
 
     cbar = fig.colorbar(im, ax=ax, shrink=0.8)
     cbar.set_label("Normalized (0 = best, 1 = worst)", fontsize=9)
+    _tseg_label = (
+        f" | $T_{{seg}}$={tseg_filter}"
+        if tseg_filter is not None
+        else " | T_seg: averaged"
+    )
     ax.set_title(
-        f"Metric Summary at Budget={_budget_to_label(max_budget)} | params={params}",
-        fontsize=12,
+        f"Metric Summary — Budget={_budget_to_label(max_budget)} | params={params}{_tseg_label}",
+        fontsize=11,
         fontweight="bold",
     )
     n_param_fields = len(params.split(","))
@@ -2020,7 +2193,7 @@ def _plot_metric_value_heatmap(
     fig.text(
         0.5,
         0.01,
-        "Cell values are raw metric means. Color shows column-normalized performance (green = best)."
+        "W2/dim = Wasserstein-2 vs. ground truth ÷ #params. Cell values averaged over segment lengths. Green = best."
         + joint_note,
         ha="center",
         fontsize=8,
@@ -2133,7 +2306,7 @@ def _plot_metric_vs_tseg(
             fontsize=9,
             fontweight="semibold",
         )
-        ax.set_xlabel("Trajectory Segment Length ($T_{seg}$)", fontsize=8)
+        ax.set_xlabel("Segment Length ($T_{seg}$)", fontsize=8)
         ax.set_ylabel(metric_label, fontsize=8)
         ax.grid(True, alpha=0.2, linewidth=0.5)
         ax.tick_params(labelsize=7)
@@ -2858,11 +3031,25 @@ def main() -> None:
         scaling_path = plots_dir / f"training_time_scaling_{params_slug}.png"
         if _plot_training_time_scaling(aggregate_rows, params, scaling_path):
             generated_plots.append(str(scaling_path))
+        tseg_scaling_path = plots_dir / f"training_time_per_tseg_{params_slug}.png"
+        if _plot_training_time_per_tseg(aggregate_rows, params, tseg_scaling_path):
+            generated_plots.append(str(tseg_scaling_path))
 
-        # --- 5. Metric value heatmap ---
+        # --- 5. Metric value heatmap (averaged over T_seg) + one per T_seg ---
         value_heatmap_path = plots_dir / f"metric_value_heatmap_{params_slug}.png"
         if _plot_metric_value_heatmap(aggregate_rows, params, value_heatmap_path):
             generated_plots.append(str(value_heatmap_path))
+        _tsegs_available = sorted(
+            {int(r["T_seg"]) for r in aggregate_rows if r["params"] == params}
+        )
+        for _tseg in _tsegs_available:
+            _tseg_path = (
+                plots_dir / f"metric_value_heatmap_{params_slug}_tseg{_tseg}.png"
+            )
+            if _plot_metric_value_heatmap(
+                aggregate_rows, params, _tseg_path, tseg_filter=_tseg
+            ):
+                generated_plots.append(str(_tseg_path))
 
         # --- 6. W2 vs T_seg ---
         w2_tseg_path = plots_dir / f"w2_vs_tseg_{params_slug}.png"
