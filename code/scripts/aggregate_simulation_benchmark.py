@@ -1418,7 +1418,23 @@ def _plot_calibration_panel(
     _format_budget_axis(ax)
     ax.tick_params(labelsize=8)
 
-    axes.flat[0].legend(fontsize=6, framealpha=0.7, ncol=2)
+    # Collect all unique handles/labels from all panels for a single outside legend
+    _handles, _labels = [], []
+    for _ax in axes.flat:
+        for _h, _l in zip(*_ax.get_legend_handles_labels()):
+            if _l not in _labels:
+                _handles.append(_h)
+                _labels.append(_l)
+    fig.legend(
+        _handles,
+        _labels,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.0),
+        ncol=len(_labels),
+        fontsize=7,
+        framealpha=0.8,
+        borderaxespad=0.0,
+    )
     fig.suptitle(
         f"Calibration & Posterior Quality Diagnostics | params={params}",
         fontsize=10,
@@ -1426,13 +1442,13 @@ def _plot_calibration_panel(
     )
     fig.text(
         0.5,
-        0.01,
+        -0.04,
         "Coverage bars show mean \u00b11 std across seeds. Dashed lines indicate ideal targets.",
         ha="center",
         fontsize=7,
         color="0.4",
     )
-    fig.tight_layout(rect=(0, 0.04, 1, 0.96))
+    fig.tight_layout(rect=(0, 0.08, 1, 0.96))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
@@ -1483,30 +1499,13 @@ def _plot_per_parameter_bars(
         r for r in param_rows if int(r["requested_budget_steps"]) == max_budget
     ]
 
-    # W2/dim: joint W2 ÷ #params, averaged over all T_seg rows at max_budget.
-    # W2 measures distance from ground-truth posterior; dividing by #params
-    # prevents the mass parameter from dominating in multi-param settings.
-    _w2_n = max(len(param_names), 1)
-    w2_per_dim_by_method: dict[str, float] = {}
-    for _method in methods:
-        _m_rows = [r for r in best_rows if r["method"] == _method]
-        _w2_vals = [
-            float(r["w2_mean"]["mean"])
-            for r in _m_rows
-            if isinstance(r.get("w2_mean"), dict)
-            and r["w2_mean"].get("mean") is not None
-        ]
-        w2_per_dim_by_method[_method] = (
-            float(np.mean(_w2_vals)) / _w2_n if _w2_vals else float("nan")
-        )
-
     metrics_to_plot = [
-        ("_w2_per_dim", "W2/dim (joint)", []),
-        ("bias_mean_norm", "Bias (normalized)", [0.0]),
+        ("rmse_norm", "RMSE (normalised)", []),
+        ("bias_mean_norm", "Bias (normalised)", [0.0]),
         ("coverage_90_phys", "Coverage 90%", [0.9]),
     ]
 
-    fig, axes = plt.subplots(1, 3, figsize=(_THESIS_TEXTWIDTH_IN, 3.5))
+    fig, axes = plt.subplots(1, 3, figsize=(_THESIS_TEXTWIDTH_IN, 3.8))
     n_params = len(param_names)
     n_methods = len(methods)
     bar_width = 0.75 / max(n_methods, 1)
@@ -1514,54 +1513,36 @@ def _plot_per_parameter_bars(
 
     for panel_idx, (suffix, panel_label, ref_vals) in enumerate(metrics_to_plot):
         ax = axes[panel_idx]
-        if suffix == "_w2_per_dim":
-            # Single-group panel: one bar per method, x = "all params (joint)"
-            for midx, method in enumerate(methods):
-                w2_val = w2_per_dim_by_method.get(method, float("nan"))
-                if np.isnan(w2_val):
-                    continue
-                ax.bar(
-                    midx * bar_width,
-                    w2_val,
-                    bar_width,
-                    label=method.upper(),
-                    color=method_colors[method],
-                    alpha=0.85,
-                    capsize=2,
-                )
-                plotted_any = True
-            ax.set_xticks([(n_methods - 1) * bar_width / 2])
-            ax.set_xticklabels(["joint"], fontsize=9, fontweight="semibold")
-        else:
-            for midx, method in enumerate(methods):
-                method_row = next((r for r in best_rows if r["method"] == method), None)
-                if method_row is None:
-                    continue
-                vals: list[float] = []
-                errs: list[float] = []
-                for pname in param_names:
-                    key = f"{pname}_{suffix}"
-                    entry = method_row.get(key)
-                    if isinstance(entry, dict) and entry.get("mean") is not None:
-                        vals.append(float(entry["mean"]))
-                        errs.append(float(entry.get("std", 0.0)))
-                    else:
-                        vals.append(0.0)
-                        errs.append(0.0)
-                x_pos = np.arange(n_params)
-                ax.bar(
-                    x_pos + midx * bar_width,
-                    vals,
-                    bar_width,
-                    yerr=errs,
-                    color=method_colors[method],
-                    alpha=0.85,
-                    capsize=2,
-                    error_kw={"linewidth": 0.8},
-                )
-                plotted_any = True
-            ax.set_xticks(np.arange(n_params) + bar_width * (n_methods - 1) / 2)
-            ax.set_xticklabels(param_names, fontsize=9, fontweight="semibold")
+        for midx, method in enumerate(methods):
+            method_row = next((r for r in best_rows if r["method"] == method), None)
+            if method_row is None:
+                continue
+            vals: list[float] = []
+            errs: list[float] = []
+            for pname in param_names:
+                key = f"{pname}_{suffix}"
+                entry = method_row.get(key)
+                if isinstance(entry, dict) and entry.get("mean") is not None:
+                    vals.append(float(entry["mean"]))
+                    errs.append(float(entry.get("std", 0.0)))
+                else:
+                    vals.append(0.0)
+                    errs.append(0.0)
+            x_pos = np.arange(n_params)
+            ax.bar(
+                x_pos + midx * bar_width,
+                vals,
+                bar_width,
+                yerr=errs,
+                label=method.upper() if panel_idx == 0 else None,
+                color=method_colors[method],
+                alpha=0.85,
+                capsize=2,
+                error_kw={"linewidth": 0.8},
+            )
+            plotted_any = True
+        ax.set_xticks(np.arange(n_params) + bar_width * (n_methods - 1) / 2)
+        ax.set_xticklabels(param_names, fontsize=9, fontweight="semibold")
         for val in ref_vals:
             ax.axhline(val, color="red", linestyle="--", linewidth=1.0, alpha=0.7)
         ax.set_ylabel(panel_label, fontsize=9)
@@ -1573,7 +1554,18 @@ def _plot_per_parameter_bars(
         plt.close(fig)
         return False
 
-    axes[0].legend(fontsize=6, framealpha=0.7)
+    # Legend outside all subplots, below the figure
+    _handles, _labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        _handles,
+        _labels,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.0),
+        ncol=len(_labels),
+        fontsize=7,
+        framealpha=0.8,
+        borderaxespad=0.0,
+    )
     fig.suptitle(
         f"Per-Parameter Comparison at Budget={_budget_to_label(max_budget)} | params={params}",
         fontsize=10,
@@ -1581,13 +1573,13 @@ def _plot_per_parameter_bars(
     )
     fig.text(
         0.5,
-        0.01,
-        f"W2/dim: joint posterior distance from ground truth ÷ #params. Budget={_budget_to_label(max_budget)}. Error bars: \u00b11 std.",
+        -0.05,
+        f"RMSE & Bias normalised by prior range. Coverage 90% in physical units. Budget={_budget_to_label(max_budget)}. Error bars: \u00b11 std.",
         ha="center",
         fontsize=7,
         color="0.4",
     )
-    fig.tight_layout(rect=(0, 0.04, 1, 0.95))
+    fig.tight_layout(rect=(0, 0.1, 1, 0.95))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
@@ -2058,28 +2050,29 @@ def _plot_metric_value_heatmap(
         r for r in param_rows if int(r["requested_budget_steps"]) == max_budget
     ]
 
-    # W2 / n_active_params: normalises by dimensionality so mass doesn't dominate.
-    # W2 measures Wasserstein-2 distance between the inferred posterior and the
-    # ground-truth posterior — lower is better.
+    # Avg normalised RMSE: mean of {param}_rmse_norm across active parameters.
+    # Each param's RMSE is already divided by its prior range, so mass (large scale)
+    # gets the same weight as mu (small scale).  This is the correct scale-free
+    # accuracy summary and replaces raw W2 which is dominated by the mass parameter.
     active_params = [p.strip() for p in params.split(",")]
-    n_active_params = max(len(active_params), 1)
-    w2_per_dim_by_method: dict[str, float] = {}
+    norm_rmse_keys = [f"{p}_rmse_norm" for p in active_params]
+    avg_norm_rmse_by_method: dict[str, float] = {}
     for _method in methods:
         _m_rows = [r for r in best_rows if r["method"] == _method]
         _vals = [
-            float(r["w2_mean"]["mean"])
+            float(r[k]["mean"])
             for r in _m_rows
-            if isinstance(r.get("w2_mean"), dict)
-            and r["w2_mean"].get("mean") is not None
+            for k in norm_rmse_keys
+            if isinstance(r.get(k), dict) and r[k].get("mean") is not None
         ]
-        w2_per_dim_by_method[_method] = (
-            float(np.mean(_vals)) / n_active_params if _vals else float("nan")
-        )
+        avg_norm_rmse_by_method[_method] = float(np.mean(_vals)) if _vals else float("nan")
 
-    _have_w2 = any(not np.isnan(v) for v in w2_per_dim_by_method.values())
+    _have_norm_rmse = any(not np.isnan(v) for v in avg_norm_rmse_by_method.values())
     summary_metrics: list[tuple[str, str, str]] = []
-    if _have_w2:
-        summary_metrics.append(("_w2_per_dim", "W2/dim", "lower"))
+    if _have_norm_rmse:
+        summary_metrics.append(("_avg_norm_rmse", "RMSE\n(norm, avg)", "lower"))
+    else:
+        summary_metrics.append(("w2_mean", "W2", "lower"))
     summary_metrics += [
         ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
         ("c2st_mean", "C2ST", "target_0.5"),
@@ -2097,8 +2090,8 @@ def _plot_metric_value_heatmap(
         if not method_rows_at_budget:
             continue
         for cidx, (metric_key, _, direction) in enumerate(summary_metrics):
-            if metric_key == "_w2_per_dim":
-                v = w2_per_dim_by_method.get(method, float("nan"))
+            if metric_key == "_avg_norm_rmse":
+                v = avg_norm_rmse_by_method.get(method, float("nan"))
                 if not np.isnan(v):
                     raw_values[midx, cidx] = v
                     heat[midx, cidx] = v
@@ -2193,7 +2186,7 @@ def _plot_metric_value_heatmap(
     fig.text(
         0.5,
         0.01,
-        "W2/dim = Wasserstein-2 vs. ground truth ÷ #params. Cell values averaged over segment lengths. Green = best."
+        "RMSE(norm,avg) = mean per-param RMSE ÷ prior range (scale-free). Cell values averaged over segment lengths. Green = best."
         + joint_note,
         ha="center",
         fontsize=8,
