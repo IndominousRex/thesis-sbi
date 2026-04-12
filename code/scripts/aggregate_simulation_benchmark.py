@@ -720,8 +720,12 @@ def _plot_pareto_aggregate_scatter(
     plot_spec: dict[str, Any],
     output_path: Path,
 ) -> bool:
-    """Pareto efficiency scatter: aggregate means with error bars, Pareto frontier
-    highlighted. No text annotations — colour encodes method, marker encodes T_seg."""
+    """Pareto efficiency scatter, one subplot per budget level.
+
+    Each subplot shows method×T_seg means only (no error bars) so points never
+    overlap. Colour = method, marker = T_seg. Pareto front drawn per-subplot.
+    Legend shared outside below.
+    """
     try:
         import matplotlib
 
@@ -734,7 +738,7 @@ def _plot_pareto_aggregate_scatter(
     x_metric_key = plot_spec["x_metric_key"]
     y_metric_key = plot_spec["y_metric_key"]
 
-    summary_rows = [
+    all_rows = [
         row
         for row in aggregate_rows
         if row["params"] == params
@@ -743,92 +747,102 @@ def _plot_pareto_aggregate_scatter(
         and row[x_metric_key].get("mean") is not None
         and row[y_metric_key].get("mean") is not None
     ]
-    if not summary_rows:
+    if not all_rows:
         return False
 
-    methods = sorted({row["method"] for row in summary_rows})
+    methods = sorted({row["method"] for row in all_rows})
     method_colors = _method_color_map(methods, plt)
-    tsegs = sorted({int(row["T_seg"]) for row in summary_rows})
+    tsegs = sorted({int(row["T_seg"]) for row in all_rows})
     marker_cycle = ["o", "s", "^", "D", "P"]
     tseg_markers = {
         tseg: marker_cycle[idx % len(marker_cycle)] for idx, tseg in enumerate(tsegs)
     }
 
-    fig, ax = plt.subplots(figsize=(_THESIS_TEXTWIDTH_IN, _THESIS_TEXTWIDTH_IN * 0.72))
-
-    # --- Compute Pareto mask ---
-    summary_points = [
-        (float(row[x_metric_key]["mean"]), float(row[y_metric_key]["mean"]))
-        for row in summary_rows
-    ]
-    pareto_mask = _pareto_front_mask(summary_points)
-
-    # --- Draw Pareto frontier step-line (sorted by x) ---
-    front_pts = sorted(
-        [pt for pt, on_front in zip(summary_points, pareto_mask) if on_front],
-        key=lambda p: p[0],
+    # One subplot per budget level (sorted ascending)
+    budgets = sorted(
+        {
+            int(row.get("requested_budget_steps") or row.get("total_budget_steps") or 0)
+            for row in all_rows
+        },
+        key=lambda b: b,
     )
-    if len(front_pts) >= 2:
-        fx = [p[0] for p in front_pts]
-        fy = [p[1] for p in front_pts]
-        ax.step(
-            fx,
-            fy,
-            where="post",
-            color="0.55",
-            linewidth=1.2,
-            linestyle="--",
-            zorder=1,
-            label="_nolegend_",
+    budgets = [b for b in budgets if b > 0]
+    if not budgets:
+        return False
+
+    ncols = len(budgets)
+    fig_w = _THESIS_TEXTWIDTH_IN * max(1.0, ncols * 0.55)
+    fig_h = _THESIS_TEXTWIDTH_IN * 0.72
+    fig, axes = plt.subplots(1, ncols, figsize=(fig_w, fig_h), sharey=False)
+    if ncols == 1:
+        axes = [axes]
+
+    for ax, budget in zip(axes, budgets):
+        budget_rows = [
+            row
+            for row in all_rows
+            if int(
+                row.get("requested_budget_steps") or row.get("total_budget_steps") or 0
+            )
+            == budget
+        ]
+        if not budget_rows:
+            ax.set_visible(False)
+            continue
+
+        pts = [
+            (float(r[x_metric_key]["mean"]), float(r[y_metric_key]["mean"]))
+            for r in budget_rows
+        ]
+        pareto_mask = _pareto_front_mask(pts)
+
+        # Pareto frontier step-line
+        front_pts = sorted(
+            [p for p, on_front in zip(pts, pareto_mask) if on_front],
+            key=lambda p: p[0],
         )
+        if len(front_pts) >= 2:
+            fx = [p[0] for p in front_pts]
+            fy = [p[1] for p in front_pts]
+            ax.step(
+                fx,
+                fy,
+                where="post",
+                color="0.60",
+                linewidth=1.0,
+                linestyle="--",
+                zorder=1,
+            )
 
-    # --- Plot aggregate means with error bars ---
-    for row, is_front in zip(summary_rows, pareto_mask):
-        x_val = float(row[x_metric_key]["mean"])
-        y_val = float(row[y_metric_key]["mean"])
-        x_err = float(row[x_metric_key].get("std") or 0.0)
-        y_err = float(row[y_metric_key].get("std") or 0.0)
-        color = method_colors[row["method"]]
-        marker = tseg_markers[int(row["T_seg"])]
+        # Scatter means (no error bars)
+        # Size varies slightly by T_seg so overlapping shapes are also size-distinct
+        tseg_sizes = {t: 45 + 20 * i for i, t in enumerate(tsegs)}
+        for row, is_front in zip(budget_rows, pareto_mask):
+            x_val = float(row[x_metric_key]["mean"])
+            y_val = float(row[y_metric_key]["mean"])
+            base_s = tseg_sizes[int(row["T_seg"])]
+            ax.scatter(
+                x_val,
+                y_val,
+                color=method_colors[row["method"]],
+                marker=tseg_markers[int(row["T_seg"])],
+                s=base_s + 25 if is_front else base_s,
+                edgecolors="black" if is_front else "white",
+                linewidths=0.9 if is_front else 0.6,
+                alpha=1.0,
+                zorder=3,
+            )
 
-        ax.errorbar(
-            x_val,
-            y_val,
-            xerr=x_err if x_err > 0 else None,
-            yerr=y_err if y_err > 0 else None,
-            fmt="none",
-            ecolor=color,
-            elinewidth=0.8,
-            capsize=2.5,
-            alpha=0.55,
-            zorder=2,
-        )
-        ax.scatter(
-            x_val,
-            y_val,
-            color=color,
-            marker=marker,
-            s=90 if is_front else 55,
-            edgecolors="black" if is_front else "none",
-            linewidths=0.8,
-            alpha=1.0,
-            zorder=3,
-        )
+        if plot_spec.get("log_x"):
+            ax.set_xscale("log")
+        ax.set_xlabel(plot_spec["x_label"], fontsize=8)
+        ax.set_title(f"Budget = {_budget_to_label(budget)}", fontsize=8, pad=4)
+        ax.grid(True, alpha=0.22, linewidth=0.5)
+        ax.tick_params(labelsize=7)
 
-    if plot_spec.get("log_x"):
-        ax.set_xscale("log")
+    axes[0].set_ylabel(plot_spec["y_label"], fontsize=8)
 
-    ax.set_xlabel(plot_spec["x_label"], fontsize=9)
-    ax.set_ylabel(plot_spec["y_label"], fontsize=9)
-    ax.set_title(
-        f"{plot_spec['y_label']} vs {plot_spec['x_label']}",
-        fontsize=10,
-        pad=6,
-    )
-    ax.grid(True, alpha=0.25, linewidth=0.6)
-    ax.tick_params(labelsize=8)
-
-    # --- Single legend outside (below), method colours + T_seg markers ---
+    # Shared legend outside below
     method_handles = [
         Line2D(
             [0],
@@ -854,30 +868,34 @@ def _plot_pareto_aggregate_scatter(
         )
         for t in tsegs
     ]
-    # Separator handle
     sep = Line2D([0], [0], color="none", label=" ")
-    # Pareto front indicator
     pareto_handle = Line2D(
         [0],
         [0],
-        color="0.55",
+        color="0.60",
         linestyle="--",
-        linewidth=1.2,
+        linewidth=1.0,
         label="Pareto front",
     )
-
     all_handles = method_handles + [sep] + tseg_handles + [sep, pareto_handle]
     fig.legend(
         handles=all_handles,
         loc="lower center",
         bbox_to_anchor=(0.5, 0.0),
-        ncol=len(methods) + len(tsegs) + 2,
+        ncol=len(all_handles),
         fontsize=8,
         frameon=True,
         borderpad=0.5,
+        handletextpad=0.4,
+        columnspacing=0.8,
     )
 
-    fig.tight_layout(rect=(0, 0.10, 1, 0.97))
+    fig.suptitle(
+        f"{plot_spec['y_label']} vs {plot_spec['x_label']}",
+        fontsize=9,
+        y=0.99,
+    )
+    fig.tight_layout(rect=(0, 0.11, 1, 0.97))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
