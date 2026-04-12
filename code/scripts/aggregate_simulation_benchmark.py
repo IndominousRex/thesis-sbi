@@ -720,6 +720,8 @@ def _plot_pareto_aggregate_scatter(
     plot_spec: dict[str, Any],
     output_path: Path,
 ) -> bool:
+    """Pareto efficiency scatter: aggregate means with error bars, Pareto frontier
+    highlighted. No text annotations — colour encodes method, marker encodes T_seg."""
     try:
         import matplotlib
 
@@ -731,13 +733,7 @@ def _plot_pareto_aggregate_scatter(
 
     x_metric_key = plot_spec["x_metric_key"]
     y_metric_key = plot_spec["y_metric_key"]
-    background_rows = [
-        row
-        for row in raw_rows
-        if row["params"] == params
-        and row.get(x_metric_key) is not None
-        and row.get(y_metric_key) is not None
-    ]
+
     summary_rows = [
         row
         for row in aggregate_rows
@@ -750,111 +746,140 @@ def _plot_pareto_aggregate_scatter(
     if not summary_rows:
         return False
 
-    fig, ax = plt.subplots(figsize=(8.5, 6.5))
     methods = sorted({row["method"] for row in summary_rows})
     method_colors = _method_color_map(methods, plt)
     tsegs = sorted({int(row["T_seg"]) for row in summary_rows})
-    marker_cycle = ["o", "s", "^", "D", "P", "X", "v", "<", ">"]
+    marker_cycle = ["o", "s", "^", "D", "P"]
     tseg_markers = {
         tseg: marker_cycle[idx % len(marker_cycle)] for idx, tseg in enumerate(tsegs)
     }
 
-    for row in background_rows:
-        ax.scatter(
-            float(row[x_metric_key]),
-            float(row[y_metric_key]),
-            color=method_colors[row["method"]],
-            marker=tseg_markers[int(row["T_seg"])],
-            s=28,
-            alpha=0.18,
-            edgecolors="none",
-            zorder=1,
-        )
+    fig, ax = plt.subplots(figsize=(_THESIS_TEXTWIDTH_IN, _THESIS_TEXTWIDTH_IN * 0.72))
 
+    # --- Compute Pareto mask ---
     summary_points = [
-        (
-            float(row[x_metric_key]["mean"]),
-            float(row[y_metric_key]["mean"]),
-        )
+        (float(row[x_metric_key]["mean"]), float(row[y_metric_key]["mean"]))
         for row in summary_rows
     ]
     pareto_mask = _pareto_front_mask(summary_points)
+
+    # --- Draw Pareto frontier step-line (sorted by x) ---
+    front_pts = sorted(
+        [pt for pt, on_front in zip(summary_points, pareto_mask) if on_front],
+        key=lambda p: p[0],
+    )
+    if len(front_pts) >= 2:
+        fx = [p[0] for p in front_pts]
+        fy = [p[1] for p in front_pts]
+        ax.step(
+            fx,
+            fy,
+            where="post",
+            color="0.55",
+            linewidth=1.2,
+            linestyle="--",
+            zorder=1,
+            label="_nolegend_",
+        )
+
+    # --- Plot aggregate means with error bars ---
     for row, is_front in zip(summary_rows, pareto_mask):
         x_val = float(row[x_metric_key]["mean"])
         y_val = float(row[y_metric_key]["mean"])
+        x_err = float(row[x_metric_key].get("std") or 0.0)
+        y_err = float(row[y_metric_key].get("std") or 0.0)
+        color = method_colors[row["method"]]
+        marker = tseg_markers[int(row["T_seg"])]
+
+        ax.errorbar(
+            x_val,
+            y_val,
+            xerr=x_err if x_err > 0 else None,
+            yerr=y_err if y_err > 0 else None,
+            fmt="none",
+            ecolor=color,
+            elinewidth=0.8,
+            capsize=2.5,
+            alpha=0.55,
+            zorder=2,
+        )
         ax.scatter(
             x_val,
             y_val,
-            color=method_colors[row["method"]],
-            marker=tseg_markers[int(row["T_seg"])],
-            s=110 if is_front else 80,
-            alpha=0.95,
-            edgecolors="black" if is_front else "white",
-            linewidths=0.6,
+            color=color,
+            marker=marker,
+            s=90 if is_front else 55,
+            edgecolors="black" if is_front else "none",
+            linewidths=0.8,
+            alpha=1.0,
             zorder=3,
         )
-        if is_front:
-            label = (
-                f"{row['method'].upper()} "
-                f"b={_budget_to_label(int(row['requested_budget_steps']))} "
-                f"T={int(row['T_seg'])}"
-            )
-            ax.annotate(
-                label,
-                (x_val, y_val),
-                xytext=(5, 4),
-                textcoords="offset points",
-                fontsize=8,
-            )
 
     if plot_spec.get("log_x"):
         ax.set_xscale("log")
-    ax.set_xlabel(f"{plot_spec['x_label']} (aggregate mean)")
-    ax.set_ylabel(f"{plot_spec['y_label']} (aggregate mean)")
-    ax.set_title(
-        f"Aggregate Pareto | {plot_spec['y_label']} vs {plot_spec['x_label']} | params={params}"
-    )
-    ax.grid(True, alpha=0.3)
 
+    ax.set_xlabel(plot_spec["x_label"], fontsize=9)
+    ax.set_ylabel(plot_spec["y_label"], fontsize=9)
+    ax.set_title(
+        f"{plot_spec['y_label']} vs {plot_spec['x_label']}",
+        fontsize=10,
+        pad=6,
+    )
+    ax.grid(True, alpha=0.25, linewidth=0.6)
+    ax.tick_params(labelsize=8)
+
+    # --- Single legend outside (below), method colours + T_seg markers ---
     method_handles = [
         Line2D(
             [0],
             [0],
             marker="o",
             color="none",
-            markerfacecolor=method_colors[method],
+            markerfacecolor=method_colors[m],
             markeredgecolor="none",
-            markersize=8,
-            label=method.upper(),
+            markersize=7,
+            label=m.upper(),
         )
-        for method in methods
+        for m in methods
     ]
     tseg_handles = [
         Line2D(
             [0],
             [0],
-            marker=tseg_markers[tseg],
-            color="black",
+            marker=tseg_markers[t],
+            color="0.3",
             linestyle="None",
-            markersize=8,
-            label=f"T_seg={tseg}",
+            markersize=7,
+            label=f"$T_{{\\mathrm{{seg}}}}$={t}",
         )
-        for tseg in tsegs
+        for t in tsegs
     ]
-    first_legend = ax.legend(handles=method_handles, title="Method", loc="upper right")
-    ax.add_artist(first_legend)
-    ax.legend(handles=tseg_handles, title="T_seg", loc="lower left")
-
-    fig.text(
-        0.5,
-        0.02,
-        "Large points are aggregate means by method/budget/T_seg; faint points show individual seed runs in the background.",
-        ha="center",
-        fontsize=9,
+    # Separator handle
+    sep = Line2D([0], [0], color="none", label=" ")
+    # Pareto front indicator
+    pareto_handle = Line2D(
+        [0],
+        [0],
+        color="0.55",
+        linestyle="--",
+        linewidth=1.2,
+        label="Pareto front",
     )
-    fig.tight_layout(rect=(0, 0.05, 1, 0.98))
+
+    all_handles = method_handles + [sep] + tseg_handles + [sep, pareto_handle]
+    fig.legend(
+        handles=all_handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.0),
+        ncol=len(methods) + len(tsegs) + 2,
+        fontsize=8,
+        frameon=True,
+        borderpad=0.5,
+    )
+
+    fig.tight_layout(rect=(0, 0.10, 1, 0.97))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    fig.savefig(output_path, dpi=_THESIS_DPI, bbox_inches="tight")
     plt.close(fig)
     return True
 
@@ -1505,7 +1530,27 @@ def _plot_per_parameter_bars(
         ("coverage_90_phys", "Coverage 90%", [0.9]),
     ]
 
-    fig, axes = plt.subplots(1, 3, figsize=(_THESIS_TEXTWIDTH_IN, 3.8))
+    # Joint W2 per method (not per-parameter — only joint value exists in data)
+    w2_by_method: dict[str, float] = {}
+    w2_std_by_method: dict[str, float] = {}
+    for _method in methods:
+        _m_rows = [r for r in best_rows if r["method"] == _method]
+        _vals = [
+            float(r["w2_mean"]["mean"])
+            for r in _m_rows
+            if isinstance(r.get("w2_mean"), dict)
+            and r["w2_mean"].get("mean") is not None
+        ]
+        _stds = [
+            float(r["w2_mean"]["std"])
+            for r in _m_rows
+            if isinstance(r.get("w2_mean"), dict)
+            and r["w2_mean"].get("std") is not None
+        ]
+        w2_by_method[_method] = float(np.mean(_vals)) if _vals else float("nan")
+        w2_std_by_method[_method] = float(np.mean(_stds)) if _stds else 0.0
+
+    fig, axes = plt.subplots(1, 4, figsize=(_THESIS_TEXTWIDTH_IN * 1.35, 3.8))
     n_params = len(param_names)
     n_methods = len(methods)
     bar_width = 0.75 / max(n_methods, 1)
@@ -1550,6 +1595,33 @@ def _plot_per_parameter_bars(
         ax.grid(True, axis="y", alpha=0.2, linewidth=0.5)
         ax.tick_params(labelsize=8)
 
+    # Panel 4: joint W2 per method (no per-param breakdown available)
+    ax = axes[3]
+    for midx, method in enumerate(methods):
+        w2v = w2_by_method.get(method, float("nan"))
+        w2s = w2_std_by_method.get(method, 0.0)
+        if np.isnan(w2v):
+            continue
+        ax.bar(
+            midx * bar_width,
+            w2v,
+            bar_width,
+            yerr=w2s,
+            color=method_colors[method],
+            alpha=0.85,
+            capsize=2,
+            error_kw={"linewidth": 0.8},
+        )
+        plotted_any = True
+    ax.set_xticks(np.arange(n_methods) * bar_width)
+    ax.set_xticklabels(
+        [m.upper() for m in methods], fontsize=7, rotation=30, ha="right"
+    )
+    ax.set_ylabel("W2 (joint, physical)", fontsize=9)
+    ax.set_title("W2\n(joint, physical)", fontsize=10, fontweight="semibold")
+    ax.grid(True, axis="y", alpha=0.2, linewidth=0.5)
+    ax.tick_params(labelsize=8)
+
     if not plotted_any:
         plt.close(fig)
         return False
@@ -1574,7 +1646,7 @@ def _plot_per_parameter_bars(
     fig.text(
         0.5,
         -0.05,
-        f"RMSE & Bias normalised by prior range. Coverage 90% in physical units. Budget={_budget_to_label(max_budget)}. Error bars: \u00b11 std.",
+        f"RMSE & Bias normalised by prior range (scale-free). W2 is joint physical-space Wasserstein-2. Budget={_budget_to_label(max_budget)}. Error bars: \u00b11 std.",
         ha="center",
         fontsize=7,
         color="0.4",
@@ -2051,9 +2123,8 @@ def _plot_metric_value_heatmap(
     ]
 
     # Avg normalised RMSE: mean of {param}_rmse_norm across active parameters.
-    # Each param's RMSE is already divided by its prior range, so mass (large scale)
-    # gets the same weight as mu (small scale).  This is the correct scale-free
-    # accuracy summary and replaces raw W2 which is dominated by the mass parameter.
+    # Each param's RMSE is already divided by its prior range, so all params
+    # contribute equally regardless of physical scale.
     active_params = [p.strip() for p in params.split(",")]
     norm_rmse_keys = [f"{p}_rmse_norm" for p in active_params]
     avg_norm_rmse_by_method: dict[str, float] = {}
@@ -2065,13 +2136,31 @@ def _plot_metric_value_heatmap(
             for k in norm_rmse_keys
             if isinstance(r.get(k), dict) and r[k].get("mean") is not None
         ]
-        avg_norm_rmse_by_method[_method] = float(np.mean(_vals)) if _vals else float("nan")
+        avg_norm_rmse_by_method[_method] = (
+            float(np.mean(_vals)) if _vals else float("nan")
+        )
+
+    # Joint W2: Wasserstein-2 distance between inferred and ground-truth posterior.
+    # Raw physical-space value — scale dominated by the largest-scale parameter.
+    w2_by_method: dict[str, float] = {}
+    for _method in methods:
+        _m_rows = [r for r in best_rows if r["method"] == _method]
+        _vals = [
+            float(r["w2_mean"]["mean"])
+            for r in _m_rows
+            if isinstance(r.get("w2_mean"), dict)
+            and r["w2_mean"].get("mean") is not None
+        ]
+        w2_by_method[_method] = float(np.mean(_vals)) if _vals else float("nan")
 
     _have_norm_rmse = any(not np.isnan(v) for v in avg_norm_rmse_by_method.values())
+    _have_w2 = any(not np.isnan(v) for v in w2_by_method.values())
     summary_metrics: list[tuple[str, str, str]] = []
     if _have_norm_rmse:
-        summary_metrics.append(("_avg_norm_rmse", "RMSE\n(norm, avg)", "lower"))
-    else:
+        summary_metrics.append(("_avg_norm_rmse", "RMSE\n(norm)", "lower"))
+    if _have_w2:
+        summary_metrics.append(("_w2_joint", "W2\n(joint)", "lower"))
+    if not summary_metrics:
         summary_metrics.append(("w2_mean", "W2", "lower"))
     summary_metrics += [
         ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
@@ -2092,6 +2181,12 @@ def _plot_metric_value_heatmap(
         for cidx, (metric_key, _, direction) in enumerate(summary_metrics):
             if metric_key == "_avg_norm_rmse":
                 v = avg_norm_rmse_by_method.get(method, float("nan"))
+                if not np.isnan(v):
+                    raw_values[midx, cidx] = v
+                    heat[midx, cidx] = v
+                continue
+            if metric_key == "_w2_joint":
+                v = w2_by_method.get(method, float("nan"))
                 if not np.isnan(v):
                     raw_values[midx, cidx] = v
                     heat[midx, cidx] = v
@@ -2186,7 +2281,7 @@ def _plot_metric_value_heatmap(
     fig.text(
         0.5,
         0.01,
-        "RMSE(norm,avg) = mean per-param RMSE ÷ prior range (scale-free). Cell values averaged over segment lengths. Green = best."
+        "RMSE(norm) = avg per-param RMSE÷prior range. W2(joint) = Wasserstein-2 vs ground truth (physical space). Green = best."
         + joint_note,
         ha="center",
         fontsize=8,
@@ -3080,6 +3175,14 @@ def main() -> None:
             ppc_tseg_path,
         ):
             generated_plots.append(str(ppc_tseg_path))
+
+        # --- 9. Pareto efficiency scatter (accuracy vs cost) ---
+        for pareto_spec in plot_registry["pareto"]:
+            pareto_path = plots_dir / f"{pareto_spec['slug']}_{params_slug}.png"
+            if _plot_pareto_aggregate_scatter(
+                rows, aggregate_rows, params, pareto_spec, pareto_path
+            ):
+                generated_plots.append(str(pareto_path))
 
     plot_collection_dir = plots_dir / "plot_collection"
     plot_collection = _collect_plot_gallery(completed_runs, plot_collection_dir)
