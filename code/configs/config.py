@@ -211,14 +211,30 @@ class ExperimentConfig:
 
     def __post_init__(self) -> None:
         self.method = self._normalize_choice("method", self.method, VALID_METHODS)
-        self.encoder_type = self._normalize_choice("encoder_type", self.encoder_type, VALID_ENCODERS)
-        self.sde_type = self._normalize_choice("sde_type", self.sde_type, VALID_SDE_TYPES)
-        self.fnpe_model_type = self._normalize_choice("fnpe_model_type", self.fnpe_model_type, VALID_FNPE_MODEL_TYPES)
-        self.fnpe_optimizer = self._normalize_choice("fnpe_optimizer", self.fnpe_optimizer, VALID_FNPE_OPTIMIZERS)
-        self.fnpe_scheduler = self._normalize_choice("fnpe_scheduler", self.fnpe_scheduler, VALID_FNPE_SCHEDULERS)
-        self.fnpe_score_fn_type = self._normalize_choice("fnpe_score_fn_type", self.fnpe_score_fn_type, VALID_FNPE_SCORE_FNS)
-        self.fnpe_proposal_type = self._normalize_choice("fnpe_proposal_type", self.fnpe_proposal_type, VALID_FNPE_PROPOSALS)
-        self.active_parameters = self._normalize_active_parameters(self.active_parameters)
+        self.encoder_type = self._normalize_choice(
+            "encoder_type", self.encoder_type, VALID_ENCODERS
+        )
+        self.sde_type = self._normalize_choice(
+            "sde_type", self.sde_type, VALID_SDE_TYPES
+        )
+        self.fnpe_model_type = self._normalize_choice(
+            "fnpe_model_type", self.fnpe_model_type, VALID_FNPE_MODEL_TYPES
+        )
+        self.fnpe_optimizer = self._normalize_choice(
+            "fnpe_optimizer", self.fnpe_optimizer, VALID_FNPE_OPTIMIZERS
+        )
+        self.fnpe_scheduler = self._normalize_choice(
+            "fnpe_scheduler", self.fnpe_scheduler, VALID_FNPE_SCHEDULERS
+        )
+        self.fnpe_score_fn_type = self._normalize_choice(
+            "fnpe_score_fn_type", self.fnpe_score_fn_type, VALID_FNPE_SCORE_FNS
+        )
+        self.fnpe_proposal_type = self._normalize_choice(
+            "fnpe_proposal_type", self.fnpe_proposal_type, VALID_FNPE_PROPOSALS
+        )
+        self.active_parameters = self._normalize_active_parameters(
+            self.active_parameters
+        )
         self.dataset_cache_dir = str(self.dataset_cache_dir).strip()
         self.real_data_dir = str(self.real_data_dir).strip()
         if not self.dataset_cache_dir:
@@ -236,30 +252,45 @@ class ExperimentConfig:
         if self.requested_budget_steps is None and self.derived_num_simulations is None:
             self.derived_num_simulations = int(self.num_simulations)
         if self.transformer_feature_dim is None:
-            self.transformer_feature_dim = int(self.transformer_heads * self.transformer_head_dim)
+            self.transformer_feature_dim = int(
+                self.transformer_heads * self.transformer_head_dim
+            )
         self._validate_base_fields()
         self._validate_relationships()
         self._validate_method_specific_fields()
-        if self.requested_budget_steps is None or self.derived_num_simulations is not None:
+        if (
+            self.requested_budget_steps is None
+            or self.derived_num_simulations is not None
+        ):
             self.ensure_dataset_ids()
 
     @staticmethod
     def _normalize_choice(name: str, value: str, valid: set[str]) -> str:
         normalized = str(value).strip().lower()
         if normalized not in valid:
-            raise ValueError(f"Unknown {name} '{value}'. Valid options: {sorted(valid)}")
+            raise ValueError(
+                f"Unknown {name} '{value}'. Valid options: {sorted(valid)}"
+            )
         return normalized
 
     @staticmethod
-    def _normalize_active_parameters(value: Tuple[str, ...] | list[str] | str) -> Tuple[str, ...]:
-        raw_names = [part.strip() for part in value.split(",")] if isinstance(value, str) else list(value)
+    def _normalize_active_parameters(
+        value: Tuple[str, ...] | list[str] | str,
+    ) -> Tuple[str, ...]:
+        raw_names = (
+            [part.strip() for part in value.split(",")]
+            if isinstance(value, str)
+            else list(value)
+        )
         cleaned = []
         for name in raw_names:
             normalized = str(name).strip().lower()
             if not normalized:
                 continue
             if normalized not in PARAMETER_ORDER:
-                raise ValueError(f"Unknown parameter '{name}'. Valid options: {PARAMETER_ORDER}")
+                raise ValueError(
+                    f"Unknown parameter '{name}'. Valid options: {PARAMETER_ORDER}"
+                )
             if normalized not in cleaned:
                 cleaned.append(normalized)
         if not cleaned:
@@ -274,23 +305,45 @@ class ExperimentConfig:
         if value < 0:
             raise ValueError(f"{name} must be >= 0, got {value}.")
 
-    def _require_fraction(self, name: str, value: float, *, lower: float = 0.0, upper: float = 1.0, inclusive_lower: bool = True, inclusive_upper: bool = True) -> None:
+    def _require_fraction(
+        self,
+        name: str,
+        value: float,
+        *,
+        lower: float = 0.0,
+        upper: float = 1.0,
+        inclusive_lower: bool = True,
+        inclusive_upper: bool = True,
+    ) -> None:
         lower_ok = value >= lower if inclusive_lower else value > lower
         upper_ok = value <= upper if inclusive_upper else value < upper
         if not (lower_ok and upper_ok):
             left = "[" if inclusive_lower else "("
             right = "]" if inclusive_upper else ")"
-            raise ValueError(f"{name} must be in {left}{lower}, {upper}{right}, got {value}.")
+            raise ValueError(
+                f"{name} must be in {left}{lower}, {upper}{right}, got {value}."
+            )
 
     def _validate_base_fields(self) -> None:
         for name, value in {
-            "dt": self.dt, "T_seg": self.T_seg, "state_dim": self.state_dim, "obs_dim": self.obs_dim,
-            "num_simulations": self.num_simulations, "batch_sim": self.batch_sim, "encoder_hidden": self.encoder_hidden,
-            "embedding_output_dim": self.embedding_output_dim, "maf_hidden_features": self.maf_hidden_features,
-            "maf_num_transforms": self.maf_num_transforms, "training_batch_size": self.training_batch_size,
-            "learning_rate": self.learning_rate, "clip_max_norm": self.clip_max_norm, "num_epochs": self.num_epochs,
-            "num_sbc_samples": self.num_sbc_samples, "num_posterior_samples_sbc": self.num_posterior_samples_sbc,
-            "num_calibration_items": self.num_calibration_items, "num_swd_projections": self.num_swd_projections,
+            "dt": self.dt,
+            "T_seg": self.T_seg,
+            "state_dim": self.state_dim,
+            "obs_dim": self.obs_dim,
+            "num_simulations": self.num_simulations,
+            "batch_sim": self.batch_sim,
+            "encoder_hidden": self.encoder_hidden,
+            "embedding_output_dim": self.embedding_output_dim,
+            "maf_hidden_features": self.maf_hidden_features,
+            "maf_num_transforms": self.maf_num_transforms,
+            "training_batch_size": self.training_batch_size,
+            "learning_rate": self.learning_rate,
+            "clip_max_norm": self.clip_max_norm,
+            "num_epochs": self.num_epochs,
+            "num_sbc_samples": self.num_sbc_samples,
+            "num_posterior_samples_sbc": self.num_posterior_samples_sbc,
+            "num_calibration_items": self.num_calibration_items,
+            "num_swd_projections": self.num_swd_projections,
             "benchmark_posterior_plot_examples": self.benchmark_posterior_plot_examples,
             "benchmark_posterior_plot_samples": self.benchmark_posterior_plot_samples,
             "benchmark_pairplot_examples": self.benchmark_pairplot_examples,
@@ -299,105 +352,303 @@ class ExperimentConfig:
             "benchmark_c2st_posterior_samples": self.benchmark_c2st_posterior_samples,
             "benchmark_one_step_cases": self.benchmark_one_step_cases,
             "benchmark_one_step_posterior_samples": self.benchmark_one_step_posterior_samples,
-            "benchmark_w2_cases": self.benchmark_w2_cases, "benchmark_w2_posterior_samples": self.benchmark_w2_posterior_samples,
-            "test_region_min_driving_flags": self.test_region_min_driving_flags, "benchmark_max_attempt_factor": self.benchmark_max_attempt_factor,
-            "K_ppc": self.K_ppc
+            "benchmark_w2_cases": self.benchmark_w2_cases,
+            "benchmark_w2_posterior_samples": self.benchmark_w2_posterior_samples,
+            "test_region_min_driving_flags": self.test_region_min_driving_flags,
+            "benchmark_max_attempt_factor": self.benchmark_max_attempt_factor,
+            "K_ppc": self.K_ppc,
         }.items():
             self._require_positive(name, value)
         for name, value in {
-            "brake_block_fraction": self.brake_block_fraction, "ramp_s": self.ramp_s, "obs_noise_scale": self.obs_noise_scale,
-            "process_noise_scale": self.process_noise_scale, "num_test_simulations": self.num_test_simulations,
-            "num_simulated_ppc_examples": self.num_simulated_ppc_examples, "num_simulated_ppc_plot_examples": self.num_simulated_ppc_plot_examples
+            "brake_block_fraction": self.brake_block_fraction,
+            "ramp_s": self.ramp_s,
+            "obs_noise_scale": self.obs_noise_scale,
+            "process_noise_scale": self.process_noise_scale,
+            "num_test_simulations": self.num_test_simulations,
+            "num_simulated_ppc_examples": self.num_simulated_ppc_examples,
+            "num_simulated_ppc_plot_examples": self.num_simulated_ppc_plot_examples,
         }.items():
             if value is not None:
                 self._require_nonnegative(name, value)
-        for name, value in {"requested_budget_steps": self.requested_budget_steps, "derived_num_simulations": self.derived_num_simulations}.items():
+        for name, value in {
+            "requested_budget_steps": self.requested_budget_steps,
+            "derived_num_simulations": self.derived_num_simulations,
+        }.items():
             if value is not None:
                 self._require_positive(name, value)
         self._require_positive("steer_scale", self.steer_scale)
         self._require_positive("init_speed_center_ms", self.init_speed_center_ms)
         self._require_positive("init_speed_range_ms", self.init_speed_range_ms)
         self._require_positive("accel_scale", self.accel_scale)
-        self._require_positive("simulated_test_ppc_samples", self.simulated_test_ppc_samples)
-        self._require_positive("test_region_min_abs_steer_deg", self.test_region_min_abs_steer_deg)
+        self._require_positive(
+            "simulated_test_ppc_samples", self.simulated_test_ppc_samples
+        )
+        self._require_positive(
+            "test_region_min_abs_steer_deg", self.test_region_min_abs_steer_deg
+        )
         self._require_positive("test_region_min_brake", self.test_region_min_brake)
-        self._require_fraction("emergency_brake_fraction", self.emergency_brake_fraction)
-        self._require_fraction("validation_fraction", self.validation_fraction, upper=1.0, inclusive_upper=False)
-        self._require_fraction("simformer_validation_fraction", self.simformer_validation_fraction, upper=1.0, inclusive_upper=False)
-        self._require_fraction("fnpe_pilot_fraction", self.fnpe_pilot_fraction, lower=0.0, inclusive_lower=False)
-        self._require_fraction("test_region_theta_tail_frac", self.test_region_theta_tail_frac, lower=0.0, inclusive_lower=False)
-        self._require_fraction("test_region_speed_margin_frac", self.test_region_speed_margin_frac, lower=0.0, inclusive_lower=False)
+        self._require_fraction(
+            "emergency_brake_fraction", self.emergency_brake_fraction
+        )
+        self._require_fraction(
+            "validation_fraction",
+            self.validation_fraction,
+            upper=1.0,
+            inclusive_upper=False,
+        )
+        self._require_fraction(
+            "simformer_validation_fraction",
+            self.simformer_validation_fraction,
+            upper=1.0,
+            inclusive_upper=False,
+        )
+        self._require_fraction(
+            "fnpe_pilot_fraction",
+            self.fnpe_pilot_fraction,
+            lower=0.0,
+            inclusive_lower=False,
+        )
+        self._require_fraction(
+            "test_region_theta_tail_frac",
+            self.test_region_theta_tail_frac,
+            lower=0.0,
+            inclusive_lower=False,
+        )
+        self._require_fraction(
+            "test_region_speed_margin_frac",
+            self.test_region_speed_margin_frac,
+            lower=0.0,
+            inclusive_lower=False,
+        )
         for name, (low, high) in self.param_bounds().items():
             if low >= high:
-                raise ValueError(f"Prior bounds for {name} must satisfy low < high, got ({low}, {high}).")
+                raise ValueError(
+                    f"Prior bounds for {name} must satisfy low < high, got ({low}, {high})."
+                )
         for name, value in self.fixed_param_values().items():
             low, high = self.param_bounds()[name]
             if not (low <= value <= high):
-                raise ValueError(f"fixed_{name}={value} must lie within prior bounds [{low}, {high}].")
+                raise ValueError(
+                    f"fixed_{name}={value} must lie within prior bounds [{low}, {high}]."
+                )
 
     def _validate_relationships(self) -> None:
         if self.run_simulated_ppc and not self.run_simulated_test_eval:
-            raise ValueError("run_simulated_ppc=True requires run_simulated_test_eval=True.")
+            raise ValueError(
+                "run_simulated_ppc=True requires run_simulated_test_eval=True."
+            )
         if self.num_simulated_ppc_plot_examples > self.num_simulated_ppc_examples:
-            raise ValueError("num_simulated_ppc_plot_examples must be <= num_simulated_ppc_examples.")
+            raise ValueError(
+                "num_simulated_ppc_plot_examples must be <= num_simulated_ppc_examples."
+            )
         if self.run_simulated_test_eval and self.num_test_simulations <= 0:
-            raise ValueError("num_test_simulations must be > 0 when run_simulated_test_eval=True.")
+            raise ValueError(
+                "num_test_simulations must be > 0 when run_simulated_test_eval=True."
+            )
         if self.run_simulated_test_eval:
-            for name, value in {"benchmark_posterior_plot_examples": self.benchmark_posterior_plot_examples, "benchmark_pairplot_examples": self.benchmark_pairplot_examples, "benchmark_c2st_examples": self.benchmark_c2st_examples}.items():
+            for name, value in {
+                "benchmark_posterior_plot_examples": self.benchmark_posterior_plot_examples,
+                "benchmark_pairplot_examples": self.benchmark_pairplot_examples,
+                "benchmark_c2st_examples": self.benchmark_c2st_examples,
+            }.items():
                 if value > self.num_test_simulations:
-                    raise ValueError(f"{name}={value} must be <= num_test_simulations={self.num_test_simulations}.")
-        for name, value in {"transformer_layers": self.transformer_layers, "transformer_heads": self.transformer_heads, "transformer_head_dim": self.transformer_head_dim, "transformer_feature_dim": int(self.transformer_feature_dim), "causalcnn_num_layers": self.causalcnn_num_layers, "causalcnn_kernel_size": self.causalcnn_kernel_size, "causalcnn_pool_kernel": self.causalcnn_pool_kernel}.items():
+                    raise ValueError(
+                        f"{name}={value} must be <= num_test_simulations={self.num_test_simulations}."
+                    )
+        for name, value in {
+            "transformer_layers": self.transformer_layers,
+            "transformer_heads": self.transformer_heads,
+            "transformer_head_dim": self.transformer_head_dim,
+            "transformer_feature_dim": int(self.transformer_feature_dim),
+            "causalcnn_num_layers": self.causalcnn_num_layers,
+            "causalcnn_kernel_size": self.causalcnn_kernel_size,
+            "causalcnn_pool_kernel": self.causalcnn_pool_kernel,
+        }.items():
             self._require_positive(name, value)
-        if self.encoder_type == "transformer" and self.transformer_feature_dim % self.transformer_heads != 0:
-            raise ValueError("transformer_feature_dim must be divisible by transformer_heads.")
+        if (
+            self.encoder_type == "transformer"
+            and self.transformer_feature_dim % self.transformer_heads != 0
+        ):
+            raise ValueError(
+                "transformer_feature_dim must be divisible by transformer_heads."
+            )
 
     def _validate_method_specific_fields(self) -> None:
         if self.method == "fnpe":
-            for name, value in {"fnpe_hidden_dim": self.fnpe_hidden_dim, "fnpe_num_hidden": self.fnpe_num_hidden, "fnpe_window_size": self.fnpe_window_size, "fnpe_num_diffusion_steps": self.fnpe_num_diffusion_steps, "fnpe_num_simulations": self.fnpe_num_simulations, "fnpe_num_outer_epochs": self.fnpe_num_outer_epochs, "fnpe_num_inner_epochs": self.fnpe_num_inner_epochs, "fnpe_batch_size": self.fnpe_batch_size, "fnpe_learning_rate": self.fnpe_learning_rate, "fnpe_clip_max_norm": self.fnpe_clip_max_norm, "fnpe_pilot_length": self.fnpe_pilot_length, "fnpe_sampling_batch_size": self.fnpe_sampling_batch_size, "fnpe_gauss_hyper_num_steps": self.fnpe_gauss_hyper_num_steps, "fnpe_gauss_hyper_num_samples": self.fnpe_gauss_hyper_num_samples}.items():
+            for name, value in {
+                "fnpe_hidden_dim": self.fnpe_hidden_dim,
+                "fnpe_num_hidden": self.fnpe_num_hidden,
+                "fnpe_window_size": self.fnpe_window_size,
+                "fnpe_num_diffusion_steps": self.fnpe_num_diffusion_steps,
+                "fnpe_num_simulations": self.fnpe_num_simulations,
+                "fnpe_num_outer_epochs": self.fnpe_num_outer_epochs,
+                "fnpe_num_inner_epochs": self.fnpe_num_inner_epochs,
+                "fnpe_batch_size": self.fnpe_batch_size,
+                "fnpe_learning_rate": self.fnpe_learning_rate,
+                "fnpe_clip_max_norm": self.fnpe_clip_max_norm,
+                "fnpe_pilot_length": self.fnpe_pilot_length,
+                "fnpe_sampling_batch_size": self.fnpe_sampling_batch_size,
+                "fnpe_gauss_hyper_num_steps": self.fnpe_gauss_hyper_num_steps,
+                "fnpe_gauss_hyper_num_samples": self.fnpe_gauss_hyper_num_samples,
+            }.items():
                 self._require_positive(name, value)
             self._require_positive("fnpe_t_min", self.fnpe_t_min)
             self._require_nonnegative("fnpe_proposal_noise", self.fnpe_proposal_noise)
             if self.fnpe_gauss_precision_scale is not None:
-                self._require_positive("fnpe_gauss_precision_scale", self.fnpe_gauss_precision_scale)
+                self._require_positive(
+                    "fnpe_gauss_precision_scale", self.fnpe_gauss_precision_scale
+                )
         if self.method == "simformer":
-            for name, value in {"simformer_num_timepoints": self.simformer_num_timepoints, "simformer_token_dim": self.simformer_token_dim, "simformer_condition_token_dim": self.simformer_condition_token_dim, "simformer_time_embedding_dim": self.simformer_time_embedding_dim, "simformer_num_heads": self.simformer_num_heads, "simformer_num_layers": self.simformer_num_layers, "simformer_attn_size": self.simformer_attn_size, "simformer_widening_factor": self.simformer_widening_factor, "simformer_num_hidden_layers": self.simformer_num_hidden_layers, "simformer_num_diffusion_steps": self.simformer_num_diffusion_steps, "simformer_sampling_batch_size": self.simformer_sampling_batch_size, "simformer_learning_rate": self.simformer_learning_rate, "simformer_min_learning_rate": self.simformer_min_learning_rate, "simformer_clip_max_norm": self.simformer_clip_max_norm, "simformer_batch_size": self.simformer_batch_size, "simformer_train_steps_scaling": self.simformer_train_steps_scaling, "simformer_min_train_steps": self.simformer_min_train_steps, "simformer_max_train_steps": self.simformer_max_train_steps, "simformer_val_repeat": self.simformer_val_repeat, "simformer_val_every": self.simformer_val_every, "simformer_stop_early_count": self.simformer_stop_early_count}.items():
+            for name, value in {
+                "simformer_num_timepoints": self.simformer_num_timepoints,
+                "simformer_token_dim": self.simformer_token_dim,
+                "simformer_condition_token_dim": self.simformer_condition_token_dim,
+                "simformer_time_embedding_dim": self.simformer_time_embedding_dim,
+                "simformer_num_heads": self.simformer_num_heads,
+                "simformer_num_layers": self.simformer_num_layers,
+                "simformer_attn_size": self.simformer_attn_size,
+                "simformer_widening_factor": self.simformer_widening_factor,
+                "simformer_num_hidden_layers": self.simformer_num_hidden_layers,
+                "simformer_num_diffusion_steps": self.simformer_num_diffusion_steps,
+                "simformer_sampling_batch_size": self.simformer_sampling_batch_size,
+                "simformer_learning_rate": self.simformer_learning_rate,
+                "simformer_min_learning_rate": self.simformer_min_learning_rate,
+                "simformer_clip_max_norm": self.simformer_clip_max_norm,
+                "simformer_batch_size": self.simformer_batch_size,
+                "simformer_train_steps_scaling": self.simformer_train_steps_scaling,
+                "simformer_min_train_steps": self.simformer_min_train_steps,
+                "simformer_max_train_steps": self.simformer_max_train_steps,
+                "simformer_val_repeat": self.simformer_val_repeat,
+                "simformer_val_every": self.simformer_val_every,
+                "simformer_stop_early_count": self.simformer_stop_early_count,
+            }.items():
                 self._require_positive(name, value)
             self._require_positive("simformer_sigma_min", self.simformer_sigma_min)
             self._require_positive("simformer_sigma_max", self.simformer_sigma_max)
             self._require_positive("simformer_t_min", self.simformer_t_min)
-            self._require_positive("simformer_val_error_ratio", self.simformer_val_error_ratio)
+            self._require_positive(
+                "simformer_val_error_ratio", self.simformer_val_error_ratio
+            )
             if self.simformer_t_min >= self.simformer_t_max:
                 raise ValueError("simformer_t_min must be < simformer_t_max.")
             if self.simformer_sigma_min >= self.simformer_sigma_max:
                 raise ValueError("simformer_sigma_min must be < simformer_sigma_max.")
-            for name, value in {"simformer_condition_mask_p_joint": self.simformer_condition_mask_p_joint, "simformer_condition_mask_p_posterior": self.simformer_condition_mask_p_posterior, "simformer_condition_mask_p_likelihood": self.simformer_condition_mask_p_likelihood, "simformer_condition_mask_p_rnd1": self.simformer_condition_mask_p_rnd1, "simformer_condition_mask_p_rnd2": self.simformer_condition_mask_p_rnd2, "simformer_condition_mask_rnd1_prob": self.simformer_condition_mask_rnd1_prob, "simformer_condition_mask_rnd2_prob": self.simformer_condition_mask_rnd2_prob}.items():
+            for name, value in {
+                "simformer_condition_mask_p_joint": self.simformer_condition_mask_p_joint,
+                "simformer_condition_mask_p_posterior": self.simformer_condition_mask_p_posterior,
+                "simformer_condition_mask_p_likelihood": self.simformer_condition_mask_p_likelihood,
+                "simformer_condition_mask_p_rnd1": self.simformer_condition_mask_p_rnd1,
+                "simformer_condition_mask_p_rnd2": self.simformer_condition_mask_p_rnd2,
+                "simformer_condition_mask_rnd1_prob": self.simformer_condition_mask_rnd1_prob,
+                "simformer_condition_mask_rnd2_prob": self.simformer_condition_mask_rnd2_prob,
+            }.items():
                 self._require_fraction(name, value)
-            mask_sum = self.simformer_condition_mask_p_joint + self.simformer_condition_mask_p_posterior + self.simformer_condition_mask_p_likelihood + self.simformer_condition_mask_p_rnd1 + self.simformer_condition_mask_p_rnd2
+            mask_sum = (
+                self.simformer_condition_mask_p_joint
+                + self.simformer_condition_mask_p_posterior
+                + self.simformer_condition_mask_p_likelihood
+                + self.simformer_condition_mask_p_rnd1
+                + self.simformer_condition_mask_p_rnd2
+            )
             if abs(mask_sum - 1.0) > 1e-6:
-                raise ValueError(f"Simformer condition-mask probabilities must sum to 1.0, got {mask_sum}.")
+                raise ValueError(
+                    f"Simformer condition-mask probabilities must sum to 1.0, got {mask_sum}."
+                )
 
     def assert_budget_resolution_ready(self, entrypoint: str) -> None:
-        if self.requested_budget_steps is not None and self.derived_num_simulations is None:
-            raise ValueError(f"{entrypoint} requires derived_num_simulations to be resolved before data generation for budget-driven runs.")
+        if (
+            self.requested_budget_steps is not None
+            and self.derived_num_simulations is None
+        ):
+            raise ValueError(
+                f"{entrypoint} requires derived_num_simulations to be resolved before data generation for budget-driven runs."
+            )
 
     def ensure_dataset_ids(self) -> None:
         if (self.cache_dataset or self.reuse_dataset) and self.dataset_id is None:
             self.dataset_id = self._generate_dataset_id()
-        if self.run_simulated_test_eval and (self.cache_dataset or self.reuse_dataset) and self.test_dataset_id is None:
+        if (
+            self.run_simulated_test_eval
+            and (self.cache_dataset or self.reuse_dataset)
+            and self.test_dataset_id is None
+        ):
             self.test_dataset_id = self._generate_test_dataset_id()
 
     def _generate_dataset_id(self) -> str:
-        payload = {"config_version": self.config_version, "dataset_recipe_version": self.dataset_recipe_version, "sim_seed": self.sim_seed, "num_simulations": self.num_simulations, "obs_dim": self.obs_dim, "state_dim": self.state_dim, "T_seg": self.T_seg, "dt": self.dt, "steer_scale": self.steer_scale, "init_speed_center_ms": self.init_speed_center_ms, "init_speed_range_ms": self.init_speed_range_ms, "brake_block_fraction": self.brake_block_fraction, "accel_scale": self.accel_scale, "emergency_brake_fraction": self.emergency_brake_fraction, "ramp_s": self.ramp_s, "obs_noise_scale": self.obs_noise_scale, "process_noise_scale": self.process_noise_scale, "active_parameters": self.active_parameters, "prior_bounds": self.param_bounds(), "fixed_values": self.fixed_param_values(), "test_region_theta_tail_frac": self.test_region_theta_tail_frac, "test_region_require_joint_holdout": self.test_region_require_joint_holdout, "test_region_speed_margin_frac": self.test_region_speed_margin_frac, "test_region_min_abs_steer_deg": self.test_region_min_abs_steer_deg, "test_region_min_brake": self.test_region_min_brake, "test_region_min_driving_flags": self.test_region_min_driving_flags}
-        hash_val = hashlib.md5(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:12]
+        payload = {
+            "config_version": self.config_version,
+            "dataset_recipe_version": self.dataset_recipe_version,
+            "sim_seed": self.sim_seed,
+            "num_simulations": self.num_simulations,
+            "obs_dim": self.obs_dim,
+            "state_dim": self.state_dim,
+            "T_seg": self.T_seg,
+            "dt": self.dt,
+            "steer_scale": self.steer_scale,
+            "init_speed_center_ms": self.init_speed_center_ms,
+            "init_speed_range_ms": self.init_speed_range_ms,
+            "brake_block_fraction": self.brake_block_fraction,
+            "accel_scale": self.accel_scale,
+            "emergency_brake_fraction": self.emergency_brake_fraction,
+            "ramp_s": self.ramp_s,
+            "obs_noise_scale": self.obs_noise_scale,
+            "process_noise_scale": self.process_noise_scale,
+            "active_parameters": self.active_parameters,
+            "prior_bounds": self.param_bounds(),
+            "fixed_values": self.fixed_param_values(),
+            "test_region_theta_tail_frac": self.test_region_theta_tail_frac,
+            "test_region_require_joint_holdout": self.test_region_require_joint_holdout,
+            "test_region_speed_margin_frac": self.test_region_speed_margin_frac,
+            "test_region_min_abs_steer_deg": self.test_region_min_abs_steer_deg,
+            "test_region_min_brake": self.test_region_min_brake,
+            "test_region_min_driving_flags": self.test_region_min_driving_flags,
+        }
+        hash_val = hashlib.md5(
+            json.dumps(payload, sort_keys=True).encode()
+        ).hexdigest()[:12]
         return f"dataset_{hash_val}"
 
     def _generate_test_dataset_id(self) -> str:
-        payload = {"config_version": self.config_version, "dataset_recipe_version": self.dataset_recipe_version, "test_dataset_format_version": self.test_dataset_format_version, "benchmark_eval_seed": self.benchmark_eval_seed, "num_test_simulations": self.num_test_simulations, "obs_dim": self.obs_dim, "state_dim": self.state_dim, "T_seg": self.T_seg, "dt": self.dt, "steer_scale": self.steer_scale, "init_speed_center_ms": self.init_speed_center_ms, "init_speed_range_ms": self.init_speed_range_ms, "brake_block_fraction": self.brake_block_fraction, "accel_scale": self.accel_scale, "emergency_brake_fraction": self.emergency_brake_fraction, "ramp_s": self.ramp_s, "obs_noise_scale": self.obs_noise_scale, "process_noise_scale": self.process_noise_scale, "active_parameters": self.active_parameters, "prior_bounds": self.param_bounds(), "fixed_values": self.fixed_param_values(), "test_region_theta_tail_frac": self.test_region_theta_tail_frac, "test_region_require_joint_holdout": self.test_region_require_joint_holdout, "test_region_speed_margin_frac": self.test_region_speed_margin_frac, "test_region_min_abs_steer_deg": self.test_region_min_abs_steer_deg, "test_region_min_brake": self.test_region_min_brake, "test_region_min_driving_flags": self.test_region_min_driving_flags}
-        hash_val = hashlib.md5(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:12]
+        payload = {
+            "config_version": self.config_version,
+            "dataset_recipe_version": self.dataset_recipe_version,
+            "test_dataset_format_version": self.test_dataset_format_version,
+            "benchmark_eval_seed": self.benchmark_eval_seed,
+            "num_test_simulations": self.num_test_simulations,
+            "obs_dim": self.obs_dim,
+            "state_dim": self.state_dim,
+            "T_seg": self.T_seg,
+            "dt": self.dt,
+            "steer_scale": self.steer_scale,
+            "init_speed_center_ms": self.init_speed_center_ms,
+            "init_speed_range_ms": self.init_speed_range_ms,
+            "brake_block_fraction": self.brake_block_fraction,
+            "accel_scale": self.accel_scale,
+            "emergency_brake_fraction": self.emergency_brake_fraction,
+            "ramp_s": self.ramp_s,
+            "obs_noise_scale": self.obs_noise_scale,
+            "process_noise_scale": self.process_noise_scale,
+            "active_parameters": self.active_parameters,
+            "prior_bounds": self.param_bounds(),
+            "fixed_values": self.fixed_param_values(),
+            "test_region_theta_tail_frac": self.test_region_theta_tail_frac,
+            "test_region_require_joint_holdout": self.test_region_require_joint_holdout,
+            "test_region_speed_margin_frac": self.test_region_speed_margin_frac,
+            "test_region_min_abs_steer_deg": self.test_region_min_abs_steer_deg,
+            "test_region_min_brake": self.test_region_min_brake,
+            "test_region_min_driving_flags": self.test_region_min_driving_flags,
+        }
+        hash_val = hashlib.md5(
+            json.dumps(payload, sort_keys=True).encode()
+        ).hexdigest()[:12]
         return f"dataset_test_{hash_val}"
 
     def param_bounds(self) -> Dict[str, tuple]:
-        return {"mu": (self.prior_low_mu, self.prior_high_mu), "cd": (self.prior_low_cd, self.prior_high_cd), "m": (self.prior_low_m, self.prior_high_m)}
+        return {
+            "mu": (self.prior_low_mu, self.prior_high_mu),
+            "cd": (self.prior_low_cd, self.prior_high_cd),
+            "m": (self.prior_low_m, self.prior_high_m),
+        }
 
     def fixed_param_values(self) -> Dict[str, float]:
         return {"mu": self.fixed_mu, "cd": self.fixed_cd, "m": self.fixed_m}
@@ -416,7 +667,11 @@ class ExperimentConfig:
 
     def get_experiment_name(self) -> str:
         params_slug = "_".join(self.active_parameters)
-        budget_part = f"b{int(self.requested_budget_steps)}" if self.requested_budget_steps is not None else f"n{int(self.num_simulations)}"
+        budget_part = (
+            f"b{int(self.requested_budget_steps)}"
+            if self.requested_budget_steps is not None
+            else f"n{int(self.num_simulations)}"
+        )
         exp_prefix = self.exp_name
         if not (
             exp_prefix == self.method
@@ -432,6 +687,7 @@ class ExperimentConfig:
             d["active_parameters"] = tuple(d["active_parameters"])
         # Filter out unknown keys that may exist in saved configs from older versions
         import dataclasses
+
         valid_fields = {f.name for f in dataclasses.fields(cls)}
         d = {k: v for k, v in d.items() if k in valid_fields}
         return cls(**d)
