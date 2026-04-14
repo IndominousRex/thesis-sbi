@@ -1,0 +1,13 @@
+{
+  "exp_prefix": "bench_budget_v3_fixed",
+  "num_runs": 504,
+  "notes": [
+    "Pairwise Wilcoxon tests are descriptive only. With very small shared seed counts they should not be interpreted as strong inferential evidence."
+  ],
+  "files": {
+    "metrics": "experiments/bench_budget_v3_fixed_aggregate_metrics.json",
+    "pairwise": "experiments/bench_budget_v3_fixed_aggregate_pairwise.json",
+    "plot_manifest": "experiments/bench_budget_v3_fixed_aggregate_plot_manifest.json",
+    "csv": "experiments/bench_budget_v3_fixed_aggregate.csv"
+  }
+}

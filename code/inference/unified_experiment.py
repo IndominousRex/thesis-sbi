@@ -141,7 +141,11 @@ def _hash_payload(*items: Any) -> str:
         elif isinstance(item, np.ndarray):
             arr = np.ascontiguousarray(item)
         else:
-            digest.update(json.dumps(item, sort_keys=True, default=tensor_to_python).encode("utf-8"))
+            digest.update(
+                json.dumps(item, sort_keys=True, default=tensor_to_python).encode(
+                    "utf-8"
+                )
+            )
             continue
         digest.update(str(arr.shape).encode("utf-8"))
         digest.update(str(arr.dtype).encode("utf-8"))
@@ -173,10 +177,14 @@ def _dataset_artifact_metadata(
         "cache_hit": bool(cache_hit),
         "config_hash": config_hash,
         "artifact_hash": str(artifact_hash),
-        "num_examples": int(theta.shape[0]) if isinstance(theta, torch.Tensor) else None,
+        "num_examples": (
+            int(theta.shape[0]) if isinstance(theta, torch.Tensor) else None
+        ),
         "theta_shape": list(theta.shape) if isinstance(theta, torch.Tensor) else None,
         "x_shape": list(x.shape) if isinstance(x, torch.Tensor) else None,
-        "state0_shape": list(state0.shape) if isinstance(state0, torch.Tensor) else None,
+        "state0_shape": (
+            list(state0.shape) if isinstance(state0, torch.Tensor) else None
+        ),
         "acceptance": acceptance,
     }
     cached_meta = bundle.get("cache_metadata")
@@ -197,17 +205,16 @@ def _posterior_case_summary(
         theta_samples_np = theta_samples_np.reshape(-1, theta_samples_np.shape[-1])
 
     posterior_mean = theta_samples_np.mean(axis=0)
-    posterior_std = theta_samples_np.std(axis=0, ddof=1 if theta_samples_np.shape[0] > 1 else 0)
+    posterior_std = theta_samples_np.std(
+        axis=0, ddof=1 if theta_samples_np.shape[0] > 1 else 0
+    )
     q05, q50, q95 = np.quantile(theta_samples_np, [0.05, 0.5, 0.95], axis=0)
     mean_abs_error = np.abs(posterior_mean - theta_true_np)
     sq_dists = np.sum((theta_samples_np - theta_true_np[None, :]) ** 2, axis=1)
     w2_pointmass = float(np.sqrt(np.mean(sq_dists)))
     l2_posterior_mean = float(np.linalg.norm(posterior_mean - theta_true_np))
     entropy_diag_gaussian = float(
-        0.5
-        * np.sum(
-            np.log(2.0 * np.pi * np.e * np.maximum(posterior_std**2, 1e-12))
-        )
+        0.5 * np.sum(np.log(2.0 * np.pi * np.e * np.maximum(posterior_std**2, 1e-12)))
     )
 
     return {
@@ -321,7 +328,8 @@ def _get_test_region_metadata(cfg: ExperimentConfig) -> Dict[str, Any]:
             }
 
     speed_threshold = float(
-        cfg.init_speed_center_ms + cfg.test_region_speed_margin_frac * cfg.init_speed_range_ms
+        cfg.init_speed_center_ms
+        + cfg.test_region_speed_margin_frac * cfg.init_speed_range_ms
     )
     return {
         "theta_tail_fraction": frac,
@@ -616,7 +624,12 @@ def get_or_generate_training_dataset(
             cache_enabled=bool(cfg.cache_dataset or cfg.reuse_dataset),
             config_hash=cfg.dataset_id,
         )
-        return cached["theta"], cached["x"], cached.get("region_metadata", region_meta), meta
+        return (
+            cached["theta"],
+            cached["x"],
+            cached.get("region_metadata", region_meta),
+            meta,
+        )
 
     if cfg.cache_dataset or cfg.reuse_dataset:
         _acquire_cache_lock(lock_path)
@@ -773,7 +786,9 @@ def get_or_generate_test_dataset(
                         config_hash=cfg.test_dataset_id,
                     ),
                 )
-            print(f"[DATA] Generating {cfg.num_test_simulations} held-out test simulations...")
+            print(
+                f"[DATA] Generating {cfg.num_test_simulations} held-out test simulations..."
+            )
             original_seed = cfg.random_seed
             original_sim_seed = cfg.sim_seed
             original_batch_idx = getattr(simulator, "_batch_idx", 0)
@@ -1073,7 +1088,11 @@ def build_examples_from_dataset(
         examples.append(
             {
                 "ex_idx": ex_idx,
-                "theta_true": theta_phys[ex_idx].detach().cpu().numpy().astype(np.float32),
+                "theta_true": theta_phys[ex_idx]
+                .detach()
+                .cpu()
+                .numpy()
+                .astype(np.float32),
                 "x_phys": x_phys[ex_idx].detach().cpu().numpy().astype(np.float32),
                 "x_cond": x_norm[ex_idx : ex_idx + 1],
             }
@@ -1088,7 +1107,9 @@ def _controls_dict_from_x_case(
     """Extract simulator-style control dict from a single [obs||ctrl] trajectory."""
     if x_case_phys.ndim != 2:
         raise ValueError(f"x_case_phys must be (T,D), got {tuple(x_case_phys.shape)}")
-    ctrl = x_case_phys[:, obs_dim : obs_dim + 4].detach().cpu().numpy().astype(np.float32)
+    ctrl = (
+        x_case_phys[:, obs_dim : obs_dim + 4].detach().cpu().numpy().astype(np.float32)
+    )
     import jax.numpy as jnp
 
     return {
@@ -1178,7 +1199,9 @@ def compute_heldout_posterior_stats(
 
     rank_uniformity: Dict[str, Any] = {}
     for dim_idx, name in enumerate(cfg.active_parameters):
-        ranks = np.sum(theta_samples_np[:, :, dim_idx] < theta_true_np[:, None, dim_idx], axis=1)
+        ranks = np.sum(
+            theta_samples_np[:, :, dim_idx] < theta_true_np[:, None, dim_idx], axis=1
+        )
         rank_scaled = (ranks + 1.0) / (K + 1.0)
         ks_result = kstest(rank_scaled, "uniform")
         rank_uniformity[name] = {
@@ -1208,7 +1231,9 @@ def compute_heldout_posterior_stats(
                 "pvalue": float(test.pvalue),
             }
         overall_flat = np.concatenate(overall_hits)
-        overall_test = binomtest(int(overall_flat.sum()), int(overall_flat.size), p=level)
+        overall_test = binomtest(
+            int(overall_flat.sum()), int(overall_flat.size), p=level
+        )
         coverage_tests[level_key]["overall"] = {
             "empirical": float(np.mean(overall_flat)),
             "count": int(overall_flat.sum()),
@@ -1222,14 +1247,10 @@ def compute_heldout_posterior_stats(
         "coverage_tests": coverage_tests,
         "coverage_distance_summary": {
             "coverage_50_abs_error": float(
-                abs(
-                    coverage_tests["coverage_50"]["overall"]["empirical"] - 0.50
-                )
+                abs(coverage_tests["coverage_50"]["overall"]["empirical"] - 0.50)
             ),
             "coverage_90_abs_error": float(
-                abs(
-                    coverage_tests["coverage_90"]["overall"]["empirical"] - 0.90
-                )
+                abs(coverage_tests["coverage_90"]["overall"]["empirical"] - 0.90)
             ),
         },
         "bootstrap_ci": {
@@ -1314,7 +1335,9 @@ def run_simulated_ppc_diagnostic(
         posterior_summary = (
             _posterior_case_summary(
                 theta_true_np=theta_true_np,
-                theta_samples_np=np.asarray(ppc_meta["posterior_samples_phys"], dtype=np.float32),
+                theta_samples_np=np.asarray(
+                    ppc_meta["posterior_samples_phys"], dtype=np.float32
+                ),
                 param_names=list(cfg.active_parameters),
             )
             if theta_true_np is not None
@@ -1356,14 +1379,19 @@ def run_simulated_ppc_diagnostic(
         per_example.append(
             {
                 "example_idx": ex_idx,
-                "theta_true": theta_true_np.tolist() if theta_true_np is not None else None,
+                "theta_true": (
+                    theta_true_np.tolist() if theta_true_np is not None else None
+                ),
                 "metrics": metrics,
                 "posterior_summary": posterior_summary,
                 "timing_s": {
-                    "posterior_sampling_time_s": float(ppc_meta["posterior_sampling_time_s"]),
+                    "posterior_sampling_time_s": float(
+                        ppc_meta["posterior_sampling_time_s"]
+                    ),
                     "ppc_simulation_time_s": float(ppc_meta["ppc_simulation_time_s"]),
                     "total_case_time_s": float(
-                        ppc_meta["posterior_sampling_time_s"] + ppc_meta["ppc_simulation_time_s"]
+                        ppc_meta["posterior_sampling_time_s"]
+                        + ppc_meta["ppc_simulation_time_s"]
                     ),
                 },
                 "figure_path": str(plot_path) if plot_path is not None else None,
@@ -1557,8 +1585,12 @@ def run_parameter_posterior_plots(
                     example_idx=ex_idx,
                     theta_true_np=theta_true_np,
                     extra={
-                        "difficulty_score_l2": posterior_summary["posterior_mean_l2_error"],
-                        "difficulty_score_w2": posterior_summary["posterior_w2_pointmass"],
+                        "difficulty_score_l2": posterior_summary[
+                            "posterior_mean_l2_error"
+                        ],
+                        "difficulty_score_w2": posterior_summary[
+                            "posterior_w2_pointmass"
+                        ],
                         "posterior_summary": posterior_summary,
                     },
                 )
@@ -1663,9 +1695,11 @@ def run_sbc_diagnostic(
     cuda_devices = []
     if sbc_device.type == "cuda":
         cuda_devices = [
-            sbc_device.index
-            if sbc_device.index is not None
-            else torch.cuda.current_device()
+            (
+                sbc_device.index
+                if sbc_device.index is not None
+                else torch.cuda.current_device()
+            )
         ]
 
     with torch.random.fork_rng(devices=cuda_devices):
@@ -1802,8 +1836,12 @@ def run_pairplot_diagnostic(
                     example_idx=ex_idx,
                     theta_true_np=theta_true_np,
                     extra={
-                        "difficulty_score_l2": posterior_summary["posterior_mean_l2_error"],
-                        "difficulty_score_w2": posterior_summary["posterior_w2_pointmass"],
+                        "difficulty_score_l2": posterior_summary[
+                            "posterior_mean_l2_error"
+                        ],
+                        "difficulty_score_w2": posterior_summary[
+                            "posterior_w2_pointmass"
+                        ],
                         "posterior_summary": posterior_summary,
                     },
                 )
@@ -2144,10 +2182,11 @@ def run_w2_posterior_diagnostic(
     true theta values for each observation.
     """
     # Outside strict comparison mode, keep slower methods lighter.
-    if (
-        not getattr(cfg, "unify_eval_budgets", False)
-        and cfg.method in ["npse", "fnpe", "simformer"]
-    ):
+    if not getattr(cfg, "unify_eval_budgets", False) and cfg.method in [
+        "npse",
+        "fnpe",
+        "simformer",
+    ]:
         num_cases = min(num_cases, 50)
         num_posterior_samples = min(num_posterior_samples, 200)
 
@@ -2170,7 +2209,9 @@ def run_w2_posterior_diagnostic(
             print(f"[W2-POST] No successful samples, skipping metric: {e}")
             return {}
     else:
-        theta_samples = theta_samples_phys[: min(num_cases, theta_samples_phys.shape[0])]
+        theta_samples = theta_samples_phys[
+            : min(num_cases, theta_samples_phys.shape[0])
+        ]
         theta_true_sub = theta_test_phys[: theta_samples.shape[0]].cpu()
 
     # Compute metrics
@@ -2186,9 +2227,13 @@ def run_w2_posterior_diagnostic(
         param_names=list(cfg.active_parameters),
     )
     theta_true_norm = normalizer.normalize_theta(theta_true_sub.to(device)).cpu()
-    theta_samples_norm = normalizer.normalize_theta(
-        theta_samples.to(device).reshape(-1, theta_samples.shape[-1])
-    ).reshape(theta_samples.shape[0], theta_samples.shape[1], theta_samples.shape[2]).cpu()
+    theta_samples_norm = (
+        normalizer.normalize_theta(
+            theta_samples.to(device).reshape(-1, theta_samples.shape[-1])
+        )
+        .reshape(theta_samples.shape[0], theta_samples.shape[1], theta_samples.shape[2])
+        .cpu()
+    )
     w2_results["per_parameter_normalized"] = per_parameter_posterior_metrics(
         theta_true_norm,
         theta_samples_norm,
@@ -2238,10 +2283,11 @@ def run_one_step_rmse_diagnostic(
 ) -> Dict[str, Any]:
     """1-step-ahead RMSE diagnostic."""
     # Outside strict comparison mode, keep slower methods lighter.
-    if (
-        not getattr(cfg, "unify_eval_budgets", False)
-        and cfg.method in ["npse", "fnpe", "simformer"]
-    ):
+    if not getattr(cfg, "unify_eval_budgets", False) and cfg.method in [
+        "npse",
+        "fnpe",
+        "simformer",
+    ]:
         num_posterior_samples = min(num_posterior_samples, 50)
 
     print(f"[1-STEP] Running RMSE diagnostic ({num_cases} cases)...")
@@ -2794,7 +2840,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     checkpoint_dir: Path | None = None
     if cfg.checkpoint:
         checkpoint_path = Path(cfg.checkpoint)
-        checkpoint_dir = checkpoint_path if checkpoint_path.is_dir() else checkpoint_path.parent
+        checkpoint_dir = (
+            checkpoint_path if checkpoint_path.is_dir() else checkpoint_path.parent
+        )
 
     # --- Create experiment directory ---
     exp_dir = make_experiment_dir(cfg)
@@ -2811,7 +2859,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
     figure_metadata: Dict[str, Any] = {}
     stage_failures: Dict[str, Any] = {}
 
-    def mark_status(stage: str, *, state: str = "running", extra: Optional[Dict[str, Any]] = None) -> None:
+    def mark_status(
+        stage: str, *, state: str = "running", extra: Optional[Dict[str, Any]] = None
+    ) -> None:
         if stage not in completed_stages and state in {
             "completed",
             "complete",
@@ -2827,7 +2877,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             extra=extra,
         )
 
-    def record_stage_failure(stage: str, exc: Exception, *, fatal: bool = False) -> None:
+    def record_stage_failure(
+        stage: str, exc: Exception, *, fatal: bool = False
+    ) -> None:
         stage_failures[stage] = {
             "type": type(exc).__name__,
             "message": str(exc),
@@ -2875,15 +2927,15 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 test_region_metadata,
                 x_test_state0,
                 test_dataset_artifact,
-            ) = get_or_generate_test_dataset(
-                cfg, prior_phys, simulator, device
-            )
+            ) = get_or_generate_test_dataset(cfg, prior_phys, simulator, device)
             heldout_dataset_time_s = float(time.time() - t0)
             timing_breakdown["heldout_dataset_prepare_time_s"] = heldout_dataset_time_s
             if test_dataset_artifact and test_dataset_artifact.get("cache_hit"):
                 timing_breakdown["heldout_dataset_load_time_s"] = heldout_dataset_time_s
             else:
-                timing_breakdown["heldout_dataset_generation_time_s"] = heldout_dataset_time_s
+                timing_breakdown["heldout_dataset_generation_time_s"] = (
+                    heldout_dataset_time_s
+                )
             mark_status(
                 "heldout_dataset_ready",
                 state="completed",
@@ -2932,15 +2984,19 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 x_train_phys,
                 train_region_metadata,
                 train_dataset_artifact,
-            ) = get_or_generate_training_dataset(
-                cfg, prior_phys, simulator, device
-            )
+            ) = get_or_generate_training_dataset(cfg, prior_phys, simulator, device)
             training_dataset_time_s = float(time.time() - t0)
-            timing_breakdown["training_dataset_prepare_time_s"] = training_dataset_time_s
+            timing_breakdown["training_dataset_prepare_time_s"] = (
+                training_dataset_time_s
+            )
             if train_dataset_artifact and train_dataset_artifact.get("cache_hit"):
-                timing_breakdown["training_dataset_load_time_s"] = training_dataset_time_s
+                timing_breakdown["training_dataset_load_time_s"] = (
+                    training_dataset_time_s
+                )
             else:
-                timing_breakdown["training_dataset_generation_time_s"] = training_dataset_time_s
+                timing_breakdown["training_dataset_generation_time_s"] = (
+                    training_dataset_time_s
+                )
             mark_status(
                 "training_dataset_ready",
                 state="completed",
@@ -3136,8 +3192,12 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                         obs_std=torch.ones(obs_dim, dtype=torch.float32),
                         ctrl_mean=torch.zeros(4, dtype=torch.float32),
                         ctrl_std=torch.ones(4, dtype=torch.float32),
-                        theta_mean=torch.zeros(cfg.active_param_dim(), dtype=torch.float32),
-                        theta_std=torch.ones(cfg.active_param_dim(), dtype=torch.float32),
+                        theta_mean=torch.zeros(
+                            cfg.active_param_dim(), dtype=torch.float32
+                        ),
+                        theta_std=torch.ones(
+                            cfg.active_param_dim(), dtype=torch.float32
+                        ),
                     ).to(device)
                 else:
                     ctrl_mean = norm_stats.get("ctrl_mean")
@@ -3152,7 +3212,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                         obs_std=torch.tensor(
                             np.array(norm_stats["obs_std"]), dtype=torch.float32
                         ),
-                        ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
+                        ctrl_mean=torch.tensor(
+                            np.array(ctrl_mean), dtype=torch.float32
+                        ),
                         ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
                         theta_mean=torch.tensor(
                             np.array(norm_stats["theta_mean"]), dtype=torch.float32
@@ -3209,7 +3271,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                         obs_std=torch.tensor(
                             np.array(norm_stats["obs_std"]), dtype=torch.float32
                         ),
-                        ctrl_mean=torch.tensor(np.array(ctrl_mean), dtype=torch.float32),
+                        ctrl_mean=torch.tensor(
+                            np.array(ctrl_mean), dtype=torch.float32
+                        ),
                         ctrl_std=torch.tensor(np.array(ctrl_std), dtype=torch.float32),
                         theta_mean=torch.tensor(
                             np.array(norm_stats["theta_mean"]), dtype=torch.float32
@@ -3225,7 +3289,10 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             mark_status(
                 "trained",
                 state="completed",
-                extra={"loaded_from_checkpoint": True, "checkpoint": str(cfg.checkpoint)},
+                extra={
+                    "loaded_from_checkpoint": True,
+                    "checkpoint": str(cfg.checkpoint),
+                },
             )
         except Exception as e:
             record_stage_failure("checkpoint_load", e, fatal=True)
@@ -3365,7 +3432,9 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
                 ),
             )
         else:
-            print("[DIAG] Held-out dataset unavailable, falling back to random diagnostic examples.")
+            print(
+                "[DIAG] Held-out dataset unavailable, falling back to random diagnostic examples."
+            )
             try:
                 shared_examples = build_shared_diagnostic_examples(
                     cfg,
@@ -3446,15 +3515,17 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         try:
             if shared_eval_theta_phys is None or shared_eval_x_norm is None:
                 raise RuntimeError("shared evaluation dataset unavailable")
-            theta_eval_subset, theta_eval_samples, sample_times_s = sample_posterior_on_dataset(
-                cfg,
-                shared_eval_theta_phys,
-                shared_eval_x_norm,
-                posterior,
-                normalizer,
-                device,
-                num_cases=w2_cases,
-                num_posterior_samples=w2_posterior_samples,
+            theta_eval_subset, theta_eval_samples, sample_times_s = (
+                sample_posterior_on_dataset(
+                    cfg,
+                    shared_eval_theta_phys,
+                    shared_eval_x_norm,
+                    posterior,
+                    normalizer,
+                    device,
+                    num_cases=w2_cases,
+                    num_posterior_samples=w2_posterior_samples,
+                )
             )
             w2_post_results = run_w2_posterior_diagnostic(
                 cfg,
@@ -3505,7 +3576,11 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             print(f"[DIAG] W2 posterior diagnostic failed: {e}")
             record_stage_failure("heldout_posterior_eval", e)
 
-        if cfg.run_simulated_ppc and shared_eval_x_phys is not None and shared_eval_x_phys.shape[0] > 0:
+        if (
+            cfg.run_simulated_ppc
+            and shared_eval_x_phys is not None
+            and shared_eval_x_phys.shape[0] > 0
+        ):
             print("\n[DIAG] Running held-out simulated PPC...")
             try:
                 simulated_ppc = run_simulated_ppc_diagnostic(
@@ -3626,8 +3701,7 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
         )
 
     # --- Real data eval (inline) ---
-    # Simformer/comparison runs are simulation-only; skip real-data inference.
-    if cfg.real_data_csv and cfg.do_eval and cfg.method != "simformer":
+    if cfg.real_data_csv and cfg.do_eval:
         print("\n[EVAL] Running real-data evaluation (inline)...")
         real_metrics = run_real_data_evaluation(
             cfg=cfg,
@@ -3662,10 +3736,6 @@ def run_experiment(cfg: ExperimentConfig) -> Dict[str, Any]:
             record_stage_failure("multi_traj_ppc", _e)
         if real_metrics:
             metrics["real_metrics"] = real_metrics
-    elif cfg.real_data_csv and cfg.do_eval and cfg.method == "simformer":
-        print(
-            "[EVAL] Skipping real-data evaluation for Simformer (simulation-only mode)."
-        )
 
     # --- Save config and metrics ---
     cfg.save(str(exp_dir / "config.json"))
