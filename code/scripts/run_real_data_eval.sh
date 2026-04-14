@@ -78,7 +78,7 @@ LABEL=${LABELS[$IDX]}
 
 REAL_CSV="../data/measurements/Jeversen_2022_10_12_110132.csv"
 REAL_DIR="../data/measurements"
-CKPT_BASE="/bigwork/nhkbarit/thesis-code/sbi-logs/NPE_C"
+CKPT_BASE="/bigwork/nhkbarit/thesis-code/code/experiments"
 
 echo "=================================================="
 echo "Real-Data Evaluation: ${LABEL}"
