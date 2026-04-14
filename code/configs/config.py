@@ -430,6 +430,10 @@ class ExperimentConfig:
     def from_dict(cls, d: Dict[str, Any]) -> "ExperimentConfig":
         if "active_parameters" in d and isinstance(d["active_parameters"], list):
             d["active_parameters"] = tuple(d["active_parameters"])
+        # Filter out unknown keys that may exist in saved configs from older versions
+        import dataclasses
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        d = {k: v for k, v in d.items() if k in valid_fields}
         return cls(**d)
 
     @classmethod

@@ -36,6 +36,9 @@ class NPEMethod(BaseMethod):
 
     def build(self, input_dim: int, seq_len: int) -> None:
         """Build NPE inference with embedding network and MAF flow."""
+        self._input_dim = input_dim
+        self._seq_len = seq_len
+
         # Build embedding network
         self.embedding_net = build_embedding(self.cfg, input_dim, seq_len, self.device)
 
@@ -104,6 +107,8 @@ class NPEMethod(BaseMethod):
 
     def build_posterior(self) -> Any:
         """Build posterior from trained density estimator."""
+        if self.posterior is not None:
+            return self.posterior
         if self.model is None:
             raise RuntimeError("Model not trained. Call train() first.")
 
@@ -147,7 +152,18 @@ class NPEMethod(BaseMethod):
             raise FileNotFoundError(f"Model file not found: {model_path}")
 
         if self.model is None:
-            raise RuntimeError("Must call build() before load() when loading weights")
+            if self.inference is None:
+                raise RuntimeError(
+                    "Must call build() before load() when loading weights, "
+                    "and posterior.pkl was not loadable."
+                )
+            # Initialize model architecture from the inference builder using dummy data
+            d_theta = len(self.cfg.active_parameters)
+            dummy_theta = torch.randn(2, d_theta)
+            dummy_x = torch.randn(2, self._seq_len, self._input_dim)
+            self.model = self.inference._build_neural_net(
+                dummy_theta.to("cpu"), dummy_x.to("cpu")
+            )
 
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.to(self.device).eval()

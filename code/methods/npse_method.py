@@ -181,13 +181,15 @@ class NPSEMethod(BaseMethod):
         # Rebuild inference object
         self.build(self._input_dim, self._seq_len)
 
-        # Load weights into the neural net
-        # We need to append dummy data to initialize the neural net first
+        # Initialize neural net architecture with dummy data, then load saved weights
         dummy_theta = self.prior.sample((2,))
         dummy_x = torch.randn(2, self._seq_len, self._input_dim)
         self.inference.append_simulations(dummy_theta, dummy_x)
 
-        # Now load the saved weights
+        # Build the neural net (append_simulations only stores data, net is built lazily)
+        self.inference._neural_net = self.inference._build_neural_net(
+            dummy_theta.to("cpu"), dummy_x.to("cpu")
+        )
         self.model = self.inference._neural_net
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.to(self.device)

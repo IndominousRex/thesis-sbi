@@ -2,6 +2,8 @@
 """Unified entry point for SBI experiments."""
 
 import argparse
+import json
+from pathlib import Path
 from configs.config import ExperimentConfig, PARAMETER_ORDER
 from inference.unified_experiment import run_experiment
 
@@ -331,6 +333,32 @@ def main():
         do_eval = False
     elif args.eval and not args.train:
         do_train = False
+
+    # --- Eval-only from checkpoint: load the training config and override ---
+    if not do_train and args.checkpoint:
+        ckpt_path = Path(args.checkpoint)
+        ckpt_dir = ckpt_path if ckpt_path.is_dir() else ckpt_path.parent
+        config_json = ckpt_dir / "config.json"
+        if config_json.exists():
+            print(f"[EVAL] Loading training config from {config_json}")
+            cfg = ExperimentConfig.load(str(config_json))
+            # Override eval-specific settings from CLI
+            cfg.do_train = False
+            cfg.do_eval = True
+            cfg.checkpoint = args.checkpoint
+            cfg.device = args.device
+            if args.real_data_csv:
+                cfg.real_data_csv = args.real_data_csv
+            cfg.real_data_dir = args.real_data_dir
+            cfg.K_ppc = args.k_ppc
+            cfg.prefer_low_brake = args.prefer_low_brake
+            cfg.no_plots = args.no_plots
+            cfg.exp_name = args.exp_name
+            cfg.results_root = args.results_root
+            run_experiment(cfg)
+            return
+        else:
+            print(f"[EVAL] Warning: no config.json in checkpoint dir, using CLI args")
 
     # Build config
     cfg = ExperimentConfig(
