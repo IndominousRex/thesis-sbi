@@ -7,6 +7,7 @@
 #
 # Each array task loads a trained checkpoint and runs real-data inference
 # (PPC on Jeversen_2022_10_12_110132.csv + multi-trajectory PPC).
+# Only T_seg=1000 checkpoints (real CSVs have 1070-1436 rows; T_seg=2000 won't fit).
 # ==============================================================================
 
 #SBATCH --job-name=real_eval
@@ -21,7 +22,7 @@
 #SBATCH --error=real_eval_%A_%a.err
 
 # ==============================================================================
-# Job definitions: METHOD  CHECKPOINT_DIR
+# Job definitions: 4 methods × 3 param sets = 12 jobs  (T_seg=1000 only)
 # ==============================================================================
 METHODS=(
   npe
@@ -44,13 +45,13 @@ CHECKPOINTS=(
   "bench_budget_v3_fixed_b20000000_pmu_cd_m_t1000_s44_npe_pmu_cd_m_t1000_s44_tr45_b20000000_20260412-010920"
   "bench_budget_v3_fixed_b60000000_pmu_t1000_s46_npse_pmu_t1000_s46_tr47_b60000000_20260411-121143"
   "bench_budget_v3_fixed_b60000000_pmu_cd_t1000_s42_npse_pmu_cd_t1000_s42_tr43_b60000000_20260405-192917"
-  "bench_budget_v3_fixed_b60000000_pmu_cd_m_t2000_s42_npse_pmu_cd_m_t2000_s42_tr43_b60000000_20260405-214553"
-  "bench_budget_v3_fixed_b60000000_pmu_t2000_s46_fnpe_pmu_t2000_s46_tr47_b60000000_20260410-232008"
+  "bench_budget_v3_fixed_b40000000_pmu_cd_m_t1000_s44_npse_pmu_cd_m_t1000_s44_tr45_b40000000_20260412-023618"
+  "bench_budget_v3_fixed_b40000000_pmu_t1000_s42_fnpe_pmu_t1000_s42_tr43_b40000000_20260404-233933"
   "bench_budget_v3_fixed_b20000000_pmu_cd_t1000_s42_fnpe_pmu_cd_t1000_s42_tr43_b20000000_20260404-135124"
   "bench_budget_v3_fixed_b20000000_pmu_cd_m_t1000_s44_fnpe_pmu_cd_m_t1000_s44_tr45_b20000000_20260409-222417"
   "bench_budget_v3_fixed_b40000000_pmu_t1000_s44_simformer_pmu_t1000_s44_tr45_b40000000_20260411-063031"
   "bench_budget_v3_fixed_b60000000_pmu_cd_t1000_s46_simformer_pmu_cd_t1000_s46_tr47_b60000000_20260411-201343"
-  "bench_budget_v3_fixed_b60000000_pmu_cd_m_t2000_s43_simformer_pmu_cd_m_t2000_s43_tr44_b60000000_20260408-221851"
+  "bench_budget_v3_fixed_b40000000_pmu_cd_m_t1000_s44_simformer_pmu_cd_m_t1000_s44_tr45_b40000000_20260412-024051"
 )
 
 LABELS=(
