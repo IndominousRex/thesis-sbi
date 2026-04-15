@@ -163,9 +163,13 @@ class SimformerPosterior:
         chunk_arrays = []
         for start in range(0, num_samples, self.sampling_batch_size):
             stop = min(start + self.sampling_batch_size, num_samples)
+            actual_count = stop - start
+            # Always sample a full batch to avoid JAX recompilation on
+            # the last (smaller) chunk, then slice to the needed count.
+            n_sample = self.sampling_batch_size
             key_chunk = jrandom.fold_in(key, start)
             samples = self.model.sample(
-                stop - start,
+                n_sample,
                 x_o=x_o,
                 rng=key_chunk,
                 node_id=self.node_id,
@@ -174,6 +178,7 @@ class SimformerPosterior:
                 num_steps=self.num_steps,
                 unique_nodes=False,
             )
+            samples = samples[:actual_count]
             if self.clip_low is not None and self.clip_high is not None:
                 samples = jnp.clip(samples, self.clip_low, self.clip_high)
             chunk_arrays.append(np.asarray(samples, dtype=np.float32))
