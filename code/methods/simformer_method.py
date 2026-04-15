@@ -40,6 +40,7 @@ if not hasattr(jax, "linear_util"):
 
 try:
     from jax._src import api_util as _jax_api_util
+
     if not hasattr(_jax_api_util, "shaped_abstractify"):
         from jax._src.core import shaped_abstractify as _shaped_abstractify
 
@@ -299,7 +300,9 @@ class SimformerMethod(BaseMethod):
         self.eval_times = jnp.linspace(0.0, 1.0, self.num_timepoints, dtype=jnp.float32)
         obs_node_ids = np.concatenate(
             [
-                np.full(self.num_timepoints, self.theta_dim + channel_idx, dtype=np.int32)
+                np.full(
+                    self.num_timepoints, self.theta_dim + channel_idx, dtype=np.int32
+                )
                 for channel_idx in range(self._input_dim)
             ]
         )
@@ -343,11 +346,15 @@ class SimformerMethod(BaseMethod):
         def _interp_single(x_single: jnp.ndarray, times_single: jnp.ndarray):
             x_channels = jnp.swapaxes(x_single, 0, 1)
             obs = jax.vmap(
-                lambda channel_values: jnp.interp(times_single, dense_grid, channel_values)
+                lambda channel_values: jnp.interp(
+                    times_single, dense_grid, channel_values
+                )
             )(x_channels)
             obs_flat = obs.reshape(-1)
             if self.use_metadata:
-                meta_flat = jnp.repeat(times_single[None, :], input_dim, axis=0).reshape(-1)
+                meta_flat = jnp.repeat(
+                    times_single[None, :], input_dim, axis=0
+                ).reshape(-1)
                 return obs_flat, meta_flat
             return obs_flat, None
 
@@ -360,12 +367,16 @@ class SimformerMethod(BaseMethod):
         x_dense_batch: jnp.ndarray,
         sample_times: jnp.ndarray,
     ) -> tuple[jnp.ndarray, Optional[jnp.ndarray]]:
-        obs_nodes, obs_meta = self._subsample_dense_observations(x_dense_batch, sample_times)
+        obs_nodes, obs_meta = self._subsample_dense_observations(
+            x_dense_batch, sample_times
+        )
         joint = jnp.concatenate([theta_batch, obs_nodes], axis=1)[..., None]
         if not self.use_metadata:
             return joint, None
 
-        theta_meta = jnp.full((theta_batch.shape[0], self.theta_dim), jnp.nan, dtype=jnp.float32)
+        theta_meta = jnp.full(
+            (theta_batch.shape[0], self.theta_dim), jnp.nan, dtype=jnp.float32
+        )
         joint_meta = jnp.concatenate([theta_meta, obs_meta], axis=1)[..., None]
         return joint, joint_meta
 
@@ -409,20 +420,22 @@ class SimformerMethod(BaseMethod):
         theta_data = jnp.asarray(theta_train.detach().cpu().numpy(), dtype=jnp.float32)
         x_dense = jnp.asarray(x_train.detach().cpu().numpy(), dtype=jnp.float32)
 
-        joint_reference, joint_meta_reference = self._deterministic_joint_representation(
-            theta_data, x_dense
+        joint_reference, joint_meta_reference = (
+            self._deterministic_joint_representation(theta_data, x_dense)
         )
         sde_ref_count = min(int(joint_reference.shape[0]), 4096)
         sde_reference = joint_reference[:sde_ref_count]
         self._sde_reference_data = np.asarray(sde_reference)
 
-        self.sde, self.T_min, self.T_max, self.weight_fn, self._output_scale_fn = init_sde_related(
-            sde_reference,
-            name="vesde",
-            sigma_min=self.sigma_min,
-            sigma_max=self.sigma_max,
-            T_min=self.T_min,
-            T_max=self.T_max,
+        self.sde, self.T_min, self.T_max, self.weight_fn, self._output_scale_fn = (
+            init_sde_related(
+                sde_reference,
+                name="vesde",
+                sigma_min=self.sigma_min,
+                sigma_max=self.sigma_max,
+                T_min=self.T_min,
+                T_max=self.T_max,
+            )
         )
 
         init_fn, self.model_fn = self._build_model_fn()
@@ -450,7 +463,9 @@ class SimformerMethod(BaseMethod):
         train_count = int(theta_data.shape[0])
         val_count = 0
         if self.validation_fraction > 0.0 and train_count > 1:
-            val_count = min(max(int(train_count * self.validation_fraction), 1), train_count - 1)
+            val_count = min(
+                max(int(train_count * self.validation_fraction), 1), train_count - 1
+            )
 
         if val_count > 0:
             theta_val, theta_data = theta_data[:val_count], theta_data[val_count:]
@@ -509,7 +524,9 @@ class SimformerMethod(BaseMethod):
                 ),
                 axis=1,
             )
-            joint_batch, joint_meta = self._build_joint_batch(theta_batch, x_batch, times)
+            joint_batch, joint_meta = self._build_joint_batch(
+                theta_batch, x_batch, times
+            )
             return joint_batch, joint_meta
 
         def _loss_core(
@@ -556,7 +573,9 @@ class SimformerMethod(BaseMethod):
             x_source: jnp.ndarray,
         ):
             key_batch, key_loss = jrandom.split(rng)
-            joint_batch, joint_meta = _sample_train_batch(theta_source, x_source, key_batch)
+            joint_batch, joint_meta = _sample_train_batch(
+                theta_source, x_source, key_batch
+            )
             loss, grads = jax.value_and_grad(_loss_core)(
                 params, key_loss, joint_batch, joint_meta
             )
@@ -582,7 +601,9 @@ class SimformerMethod(BaseMethod):
                 ),
                 axis=1,
             )
-            joint_eval, joint_meta = self._build_joint_batch(theta_eval, x_eval, eval_times)
+            joint_eval, joint_meta = self._build_joint_batch(
+                theta_eval, x_eval, eval_times
+            )
             return _loss_core(params, key_loss, joint_eval, joint_meta)
 
         def _eval_loss_batched(
@@ -628,7 +649,11 @@ class SimformerMethod(BaseMethod):
                 self.params, opt_state, key_step, theta_data, x_dense
             )
             train_loss = float(loss)
-            train_ema = train_loss if train_ema is None else (0.9 * train_ema + 0.1 * train_loss)
+            train_ema = (
+                train_loss
+                if train_ema is None
+                else (0.9 * train_ema + 0.1 * train_loss)
+            )
 
             if (step + 1) % print_every == 0 or step == 0:
                 print(
@@ -654,7 +679,10 @@ class SimformerMethod(BaseMethod):
                     best_validation_step = int(step + 1)
                     best_params = self.params
 
-                if train_ema is not None and mean_val_loss / max(train_ema, 1e-8) > self.val_error_ratio:
+                if (
+                    train_ema is not None
+                    and mean_val_loss / max(train_ema, 1e-8) > self.val_error_ratio
+                ):
                     early_counter += 1
                 else:
                     early_counter = 0
@@ -855,9 +883,9 @@ class SimformerMethod(BaseMethod):
             },
             "node_id": np.asarray(self.node_id),
             "posterior_condition_mask": np.asarray(self.posterior_condition_mask),
-            "eval_meta_data": None
-            if self.eval_meta_data is None
-            else np.asarray(self.eval_meta_data),
+            "eval_meta_data": (
+                None if self.eval_meta_data is None else np.asarray(self.eval_meta_data)
+            ),
             "sde_reference_data": self._sde_reference_data,
             "training_summary": self._training_summary,
         }
@@ -898,13 +926,15 @@ class SimformerMethod(BaseMethod):
         self.eval_times = jnp.linspace(0.0, 1.0, self.num_timepoints, dtype=jnp.float32)
 
         sde_reference = jnp.asarray(self._sde_reference_data, dtype=jnp.float32)
-        self.sde, self.T_min, self.T_max, self.weight_fn, self._output_scale_fn = init_sde_related(
-            sde_reference,
-            name="vesde",
-            sigma_min=self.sigma_min,
-            sigma_max=self.sigma_max,
-            T_min=self.T_min,
-            T_max=self.T_max,
+        self.sde, self.T_min, self.T_max, self.weight_fn, self._output_scale_fn = (
+            init_sde_related(
+                sde_reference,
+                name="vesde",
+                sigma_min=self.sigma_min,
+                sigma_max=self.sigma_max,
+                T_min=self.T_min,
+                T_max=self.T_max,
+            )
         )
         _init_fn, self.model_fn = self._build_model_fn()
         self.model = AllConditionalScoreModel(

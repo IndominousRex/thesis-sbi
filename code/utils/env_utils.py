@@ -13,7 +13,12 @@ def setup_environment(seed: int = 42) -> None:
     """
     # JAX & HPC-related env vars
     os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-    os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")  # Force JAX to use CPU
+    # Only default JAX to CPU when no GPU is available; Simformer needs GPU.
+    if "JAX_PLATFORM_NAME" not in os.environ:
+        if torch.cuda.is_available():
+            os.environ["JAX_PLATFORM_NAME"] = "gpu"
+        else:
+            os.environ["JAX_PLATFORM_NAME"] = "cpu"
     os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("SLURM_CPUS_PER_TASK", "4"))
 
     # PyTorch numeric behaviour
