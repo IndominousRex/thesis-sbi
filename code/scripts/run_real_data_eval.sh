@@ -17,7 +17,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=04:00:00
+#SBATCH --time=15:00:00
 #SBATCH --output=real_eval_%A_%a.out
 #SBATCH --error=real_eval_%A_%a.err
 
@@ -106,7 +106,14 @@ unset JAX_PLATFORM_NAME || true
 
 # ==============================================================================
 # Run evaluation
+# Method-specific K_ppc: Simformer's 500-step diffusion is ~100x slower per
+# sample than NPE, so we reduce K_ppc to keep wall time under the SLURM limit.
 # ==============================================================================
+K_PPC=300
+if [ "${METHOD}" = "simformer" ]; then
+    K_PPC=50
+fi
+
 srun python run.py \
     --method ${METHOD} \
     --exp-name real_eval_${LABEL} \
@@ -114,7 +121,7 @@ srun python run.py \
     --checkpoint "${CKPT_BASE}/${CKPT}" \
     --real-data-csv "${REAL_CSV}" \
     --real-data-dir "${REAL_DIR}" \
-    --k-ppc 300 \
+    --k-ppc ${K_PPC} \
     --device cuda
 
 echo "=================================================="
