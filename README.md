@@ -13,8 +13,8 @@ The core research question: **Can amortized simulation-based inference (SBI) eff
 Four neural posterior estimation methods are implemented and benchmarked on a JAX two-track vehicle dynamics simulator and real measurement data:
 - **NPE** — Neural Posterior Estimation with normalizing flows (MAF)
 - **NPSE** — Neural Posterior Score Estimation with diffusion models
-- **FNPE** — Factorized NPE via the MarkovSBI framework (JAX)
-- **Simformer** — All-conditional score transformer
+- **FNPE** — Factorized NPE via the MarkovSBI framework (JAX) — [Gloeckler et al., 2024](https://arxiv.org/abs/2411.02728)
+- **Simformer** — All-conditional score transformer — [Gloeckler et al., 2024](https://arxiv.org/abs/2404.09636)
 
 ---
 
@@ -52,9 +52,6 @@ Four neural posterior estimation methods are implemented and benchmarked on a JA
     - [Prior](#prior)
     - [Dataset Caching](#dataset-caching)
     - [FNPE Score Compositions](#fnpe-score-compositions)
-  - [Meeting Protocol](#meeting-protocol)
-    - [01.12.2025](#01122025)
-    - [Kick-Off 11.09.2025](#kick-off-11092025)
 
 ---
 
@@ -167,10 +164,10 @@ pip install numpy scipy pandas matplotlib tqdm optax haiku dm-haiku
 
 Two external libraries are vendored under `code/` and must be on the Python path:
 
-| Library   | Path                       | Purpose                           |
-| --------- | -------------------------- | --------------------------------- |
-| MarkovSBI | `code/markovsbi/`          | FNPE factorized score estimation  |
-| Simformer | `code/simformer-main/src/` | All-conditional score transformer |
+| Library   | Path                       | Purpose                           | Paper                                        | GitHub                                          |
+| --------- | -------------------------- | --------------------------------- | -------------------------------------------- | ----------------------------------------------- |
+| MarkovSBI | `code/markovsbi/`          | FNPE factorized score estimation  | [Gloeckler et al., 2024](https://arxiv.org/abs/2411.02728) | [mackelab/markovsbi](https://github.com/mackelab/markovsbi) |
+| Simformer | `code/simformer-main/src/` | All-conditional score transformer | [Gloeckler et al., 2024](https://arxiv.org/abs/2404.09636) | [mackelab/simformer](https://github.com/mackelab/simformer) |
 
 The `simformer_method.py` adds these to `sys.path` automatically at import time.
 
@@ -585,18 +582,20 @@ Datasets are cached by content hash (deterministic from config fields) under `co
 
 ---
 
-## Meeting Protocol
+## References
 
-### 01.12.2025
+This project builds on the following external libraries and their associated papers:
 
-- Looked at the repo for SLURM and chose to stick to the current workflow
-- Explicitly chosen GPUs for the SLURM scripts and fixed memory issues for Transformer embedding with NPE run
-- Fixing an error with LC2ST and CausalCNN
-- Added LC2ST-NF
-- Fixed PPC plots to use the same initial states to match the observed data
-- Added plots for LC2ST-NF
-- Adding functions from the FNPSE Github repo and fixing the errors (work in progress)
+**MarkovSBI (FNPE)**
+> Manuel Gloeckler, Shoji Toyota, Kenji Fukumizu, Jakob H. Macke.  
+> *Compositional simulation-based inference for time series.*  
+> arXiv:2411.02728, 2024.  
+> Paper: https://arxiv.org/abs/2411.02728  
+> Code: https://github.com/mackelab/markovsbi
 
-### Kick-Off 11.09.2025
-
-- Initial setup
+**Simformer**
+> Manuel Gloeckler, Michael Deistler, Christian Weilbach, Frank Wood, Jakob H. Macke.  
+> *All-in-one simulation-based inference.*  
+> arXiv:2404.09636, 2024.  
+> Paper: https://arxiv.org/abs/2404.09636  
+> Code: https://github.com/mackelab/simformer
