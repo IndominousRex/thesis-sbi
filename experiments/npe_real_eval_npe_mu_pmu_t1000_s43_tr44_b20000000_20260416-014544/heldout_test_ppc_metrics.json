@@ -1,0 +1,5741 @@
+{
+  "per_example": [
+    {
+      "example_idx": 0,
+      "theta_true": [
+        0.8451586961746216
+      ],
+      "metrics": {
+        "rmse_overall": 0.7135675549507141,
+        "rmse_per_dim": [
+          0.013778187334537506,
+          0.07961878180503845,
+          0.017585474997758865,
+          1.1220349073410034,
+          0.4370092749595642,
+          0.9334891438484192,
+          0.8983737230300903,
+          0.8599157333374023,
+          0.841367244720459
+        ],
+        "w2": 50.76302719116211,
+        "w2_mean_per_sample": 50.76302719116211
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8451586961746216
+        },
+        "posterior_mean": {
+          "mu": 0.8314151631295681
+        },
+        "posterior_std": {
+          "mu": 0.012167583434244473
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8133203983306885
+          },
+          "q50": {
+            "mu": 0.8306572437286377
+          },
+          "q95": {
+            "mu": 0.8513567060232162
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.013743533045053491
+        },
+        "posterior_mean_l2_error": 0.013743533045053491,
+        "posterior_w2_pointmass": 0.018345698732215254,
+        "posterior_spread_l2": 0.012167583434244473,
+        "posterior_entropy_diag_gaussian": -2.9900414259360346
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18649721145629883,
+        "ppc_simulation_time_s": 4.094362020492554,
+        "total_case_time_s": 4.2808592319488525
+      },
+      "figure_path": "experiments/npe_real_eval_npe_mu_pmu_t1000_s43_tr44_b20000000_20260416-014544/figures/ppc_timeseries_simulated_test_ex0.png"
+    },
+    {
+      "example_idx": 1,
+      "theta_true": [
+        0.8692656755447388
+      ],
+      "metrics": {
+        "rmse_overall": 0.7692064642906189,
+        "rmse_per_dim": [
+          0.0031835129484534264,
+          0.02993125095963478,
+          0.06311601400375366,
+          1.071850299835205,
+          0.41277509927749634,
+          0.9285300374031067,
+          1.0057963132858276,
+          0.9318144917488098,
+          1.1220067739486694
+        ],
+        "w2": 49.712318420410156,
+        "w2_mean_per_sample": 49.71232604980469
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8692656755447388
+        },
+        "posterior_mean": {
+          "mu": 0.8749247844517231
+        },
+        "posterior_std": {
+          "mu": 0.011992825782926719
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.853406336903572
+          },
+          "q50": {
+            "mu": 0.87525475025177
+          },
+          "q95": {
+            "mu": 0.8950699031352997
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.005659108906984289
+        },
+        "posterior_mean_l2_error": 0.005659108906984289,
+        "posterior_w2_pointmass": 0.013247407829650755,
+        "posterior_spread_l2": 0.011992825782926719,
+        "posterior_entropy_diag_gaussian": -3.0045081261966606
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1871635913848877,
+        "ppc_simulation_time_s": 3.75642728805542,
+        "total_case_time_s": 3.9435908794403076
+      },
+      "figure_path": "experiments/npe_real_eval_npe_mu_pmu_t1000_s43_tr44_b20000000_20260416-014544/figures/ppc_timeseries_simulated_test_ex1.png"
+    },
+    {
+      "example_idx": 2,
+      "theta_true": [
+        0.6989387273788452
+      ],
+      "metrics": {
+        "rmse_overall": 0.7169492840766907,
+        "rmse_per_dim": [
+          0.010460920631885529,
+          0.11829029023647308,
+          0.03293672204017639,
+          1.042969822883606,
+          0.49962007999420166,
+          0.9630405306816101,
+          0.8812804222106934,
+          0.8743200302124023,
+          0.8972271680831909
+        ],
+        "w2": 46.326255798339844,
+        "w2_mean_per_sample": 46.32624816894531
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6989387273788452
+        },
+        "posterior_mean": {
+          "mu": 0.6905897235870362
+        },
+        "posterior_std": {
+          "mu": 0.014925327589681169
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.665288919210434
+          },
+          "q50": {
+            "mu": 0.6906134486198425
+          },
+          "q95": {
+            "mu": 0.714057657122612
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.008349003791809029
+        },
+        "posterior_mean_l2_error": 0.008349003791809029,
+        "posterior_w2_pointmass": 0.017085501293956584,
+        "posterior_spread_l2": 0.014925327589681169,
+        "posterior_entropy_diag_gaussian": -2.7857571376823107
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18690180778503418,
+        "ppc_simulation_time_s": 3.7004129886627197,
+        "total_case_time_s": 3.887314796447754
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 3,
+      "theta_true": [
+        0.8175461292266846
+      ],
+      "metrics": {
+        "rmse_overall": 0.864112377166748,
+        "rmse_per_dim": [
+          0.019528783857822418,
+          0.12612920999526978,
+          0.028914783149957657,
+          1.043954610824585,
+          0.45074552297592163,
+          0.9442375302314758,
+          1.211497187614441,
+          1.5088504552841187,
+          0.8798484206199646
+        ],
+        "w2": 50.093563079833984,
+        "w2_mean_per_sample": 50.093563079833984
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8175461292266846
+        },
+        "posterior_mean": {
+          "mu": 0.8228073443472386
+        },
+        "posterior_std": {
+          "mu": 0.0095232523240686
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8075300604104996
+          },
+          "q50": {
+            "mu": 0.8235653042793274
+          },
+          "q95": {
+            "mu": 0.8376832097768784
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.005261215120553997
+        },
+        "posterior_mean_l2_error": 0.005261215120553997,
+        "posterior_w2_pointmass": 0.010869498081123802,
+        "posterior_spread_l2": 0.0095232523240686,
+        "posterior_entropy_diag_gaussian": -3.235080324637189
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13207197189331055,
+        "ppc_simulation_time_s": 3.689095973968506,
+        "total_case_time_s": 3.8211679458618164
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 4,
+      "theta_true": [
+        0.7322672605514526
+      ],
+      "metrics": {
+        "rmse_overall": 0.7861521244049072,
+        "rmse_per_dim": [
+          0.004903518594801426,
+          0.03764403238892555,
+          0.03614840283989906,
+          1.0468600988388062,
+          0.45967361330986023,
+          1.224579930305481,
+          0.8576834797859192,
+          0.8326023817062378,
+          1.150612235069275
+        ],
+        "w2": 48.85929870605469,
+        "w2_mean_per_sample": 48.85930252075195
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7322672605514526
+        },
+        "posterior_mean": {
+          "mu": 0.742581515610218
+        },
+        "posterior_std": {
+          "mu": 0.01210038211497339
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7231615453958511
+          },
+          "q50": {
+            "mu": 0.7426210343837738
+          },
+          "q95": {
+            "mu": 0.7624242424964904
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.010314255058765376
+        },
+        "posterior_mean_l2_error": 0.010314255058765376,
+        "posterior_w2_pointmass": 0.01588826789260915,
+        "posterior_spread_l2": 0.01210038211497339,
+        "posterior_entropy_diag_gaussian": -2.995579713923532
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13274526596069336,
+        "ppc_simulation_time_s": 3.690096855163574,
+        "total_case_time_s": 3.8228421211242676
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 5,
+      "theta_true": [
+        0.75248122215271
+      ],
+      "metrics": {
+        "rmse_overall": 0.7733111381530762,
+        "rmse_per_dim": [
+          0.007830701768398285,
+          0.08881131559610367,
+          0.017928587272763252,
+          1.0423306226730347,
+          0.41912931203842163,
+          1.07027268409729,
+          1.2257276773452759,
+          0.8689862489700317,
+          0.8418251872062683
+        ],
+        "w2": 49.022499084472656,
+        "w2_mean_per_sample": 49.022499084472656
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.75248122215271
+        },
+        "posterior_mean": {
+          "mu": 0.7330824594199657
+        },
+        "posterior_std": {
+          "mu": 0.013213865033384212
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7125305533409119
+          },
+          "q50": {
+            "mu": 0.7325527966022491
+          },
+          "q95": {
+            "mu": 0.7561091303825378
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.019398762732744212
+        },
+        "posterior_mean_l2_error": 0.019398762732744212,
+        "posterior_w2_pointmass": 0.023462346624091093,
+        "posterior_spread_l2": 0.013213865033384212,
+        "posterior_entropy_diag_gaussian": -2.9075500861326176
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13223695755004883,
+        "ppc_simulation_time_s": 3.6759791374206543,
+        "total_case_time_s": 3.808216094970703
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 6,
+      "theta_true": [
+        0.6027454137802124
+      ],
+      "metrics": {
+        "rmse_overall": 0.829128086566925,
+        "rmse_per_dim": [
+          0.009659476578235626,
+          0.032015521079301834,
+          0.039113596081733704,
+          1.1094598770141602,
+          0.43412065505981445,
+          0.9753122329711914,
+          1.2461004257202148,
+          0.9498257637023926,
+          1.1657260656356812
+        ],
+        "w2": 51.872825622558594,
+        "w2_mean_per_sample": 51.87282180786133
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6027454137802124
+        },
+        "posterior_mean": {
+          "mu": 0.5875038197636604
+        },
+        "posterior_std": {
+          "mu": 0.019346181756995873
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.5568056464195251
+          },
+          "q50": {
+            "mu": 0.5865178108215332
+          },
+          "q95": {
+            "mu": 0.6185928106307983
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.015241594016552007
+        },
+        "posterior_mean_l2_error": 0.015241594016552007,
+        "posterior_w2_pointmass": 0.024609860825869696,
+        "posterior_spread_l2": 0.019346181756995873,
+        "posterior_entropy_diag_gaussian": -2.526321670992708
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1336040496826172,
+        "ppc_simulation_time_s": 3.659451961517334,
+        "total_case_time_s": 3.793056011199951
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 7,
+      "theta_true": [
+        0.5860419273376465
+      ],
+      "metrics": {
+        "rmse_overall": 0.7045061588287354,
+        "rmse_per_dim": [
+          0.016265472397208214,
+          0.0800851434469223,
+          0.02306874841451645,
+          1.100297451019287,
+          0.43784695863723755,
+          0.9006870985031128,
+          0.8544877767562866,
+          0.8379469513893127,
+          0.9021345973014832
+        ],
+        "w2": 49.10668182373047,
+        "w2_mean_per_sample": 49.10667037963867
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.5860419273376465
+        },
+        "posterior_mean": {
+          "mu": 0.5816757157444954
+        },
+        "posterior_std": {
+          "mu": 0.022227098806414127
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.5465894341468811
+          },
+          "q50": {
+            "mu": 0.5816252529621124
+          },
+          "q95": {
+            "mu": 0.619258052110672
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0043662115931510925
+        },
+        "posterior_mean_l2_error": 0.0043662115931510925,
+        "posterior_w2_pointmass": 0.02262460199037517,
+        "posterior_spread_l2": 0.022227098806414127,
+        "posterior_entropy_diag_gaussian": -2.387504534351826
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13167691230773926,
+        "ppc_simulation_time_s": 3.6643080711364746,
+        "total_case_time_s": 3.795984983444214
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 8,
+      "theta_true": [
+        0.8631079792976379
+      ],
+      "metrics": {
+        "rmse_overall": 0.7925347089767456,
+        "rmse_per_dim": [
+          0.005628657061606646,
+          0.15395066142082214,
+          0.026037871837615967,
+          1.064288854598999,
+          0.4358477294445038,
+          0.9050609469413757,
+          1.056809663772583,
+          0.9287687540054321,
+          1.2277308702468872
+        ],
+        "w2": 47.86803436279297,
+        "w2_mean_per_sample": 47.868038177490234
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8631079792976379
+        },
+        "posterior_mean": {
+          "mu": 0.854194905757904
+        },
+        "posterior_std": {
+          "mu": 0.017805974615811276
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8258069574832916
+          },
+          "q50": {
+            "mu": 0.8545754551887512
+          },
+          "q95": {
+            "mu": 0.8822095125913619
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.008913073539733918
+        },
+        "posterior_mean_l2_error": 0.008913073539733918,
+        "posterior_w2_pointmass": 0.019892284436775293,
+        "posterior_spread_l2": 0.017805974615811276,
+        "posterior_entropy_diag_gaussian": -2.6092826922244807
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13182735443115234,
+        "ppc_simulation_time_s": 3.6688852310180664,
+        "total_case_time_s": 3.8007125854492188
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 9,
+      "theta_true": [
+        0.7747902870178223
+      ],
+      "metrics": {
+        "rmse_overall": 0.7850949168205261,
+        "rmse_per_dim": [
+          0.015317006967961788,
+          0.22455519437789917,
+          0.026437198743224144,
+          1.0746561288833618,
+          0.44446873664855957,
+          1.0895586013793945,
+          0.8922504186630249,
+          0.9322068095207214,
+          1.136358618736267
+        ],
+        "w2": 51.264259338378906,
+        "w2_mean_per_sample": 51.264259338378906
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7747902870178223
+        },
+        "posterior_mean": {
+          "mu": 0.7742566882073879
+        },
+        "posterior_std": {
+          "mu": 0.01136170900335176
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7562539994716644
+          },
+          "q50": {
+            "mu": 0.7740251421928406
+          },
+          "q95": {
+            "mu": 0.7941057205200195
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0005335988104343548
+        },
+        "posterior_mean_l2_error": 0.0005335988104343548,
+        "posterior_w2_pointmass": 0.011360036887644743,
+        "posterior_spread_l2": 0.01136170900335176,
+        "posterior_entropy_diag_gaussian": -3.0585679033635924
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1333634853363037,
+        "ppc_simulation_time_s": 3.694520950317383,
+        "total_case_time_s": 3.8278844356536865
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 10,
+      "theta_true": [
+        0.6465549468994141
+      ],
+      "metrics": {
+        "rmse_overall": 0.7618405222892761,
+        "rmse_per_dim": [
+          0.008908635936677456,
+          0.04452398419380188,
+          0.016893349587917328,
+          1.0432133674621582,
+          0.43572694063186646,
+          1.1085762977600098,
+          0.9063531756401062,
+          0.9762583374977112,
+          0.9693359732627869
+        ],
+        "w2": 48.235618591308594,
+        "w2_mean_per_sample": 48.23561477661133
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6465549468994141
+        },
+        "posterior_mean": {
+          "mu": 0.6445655387639999
+        },
+        "posterior_std": {
+          "mu": 0.017151132336726944
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.617306923866272
+          },
+          "q50": {
+            "mu": 0.6443004608154297
+          },
+          "q95": {
+            "mu": 0.6750711619853973
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.00198940813541415
+        },
+        "posterior_mean_l2_error": 0.00198940813541415,
+        "posterior_w2_pointmass": 0.017244816085133896,
+        "posterior_spread_l2": 0.017151132336726944,
+        "posterior_entropy_diag_gaussian": -2.646752548879973
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1324176788330078,
+        "ppc_simulation_time_s": 3.675835371017456,
+        "total_case_time_s": 3.808253049850464
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 11,
+      "theta_true": [
+        0.7346004247665405
+      ],
+      "metrics": {
+        "rmse_overall": 0.7258483171463013,
+        "rmse_per_dim": [
+          0.0068336487747728825,
+          0.05728474259376526,
+          0.047226160764694214,
+          1.1169672012329102,
+          0.4377555251121521,
+          0.9653613567352295,
+          0.8665063381195068,
+          0.8746249079704285,
+          0.9215063452720642
+        ],
+        "w2": 50.71840286254883,
+        "w2_mean_per_sample": 50.71839904785156
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7346004247665405
+        },
+        "posterior_mean": {
+          "mu": 0.7345782519876957
+        },
+        "posterior_std": {
+          "mu": 0.012940242675120762
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7126696318387985
+          },
+          "q50": {
+            "mu": 0.7347381711006165
+          },
+          "q95": {
+            "mu": 0.7572280198335648
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 2.217277884486446e-05
+        },
+        "posterior_mean_l2_error": 2.217277884486446e-05,
+        "posterior_w2_pointmass": 0.012924076269579607,
+        "posterior_spread_l2": 0.012940242675120762,
+        "posterior_entropy_diag_gaussian": -2.9284747030072413
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13315105438232422,
+        "ppc_simulation_time_s": 3.7556867599487305,
+        "total_case_time_s": 3.8888378143310547
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 12,
+      "theta_true": [
+        0.8152463436126709
+      ],
+      "metrics": {
+        "rmse_overall": 0.7561160922050476,
+        "rmse_per_dim": [
+          0.009872650727629662,
+          0.0752781480550766,
+          0.030005523934960365,
+          1.13998544216156,
+          0.43375444412231445,
+          0.8329514861106873,
+          1.0728669166564941,
+          0.892782986164093,
+          1.0045474767684937
+        ],
+        "w2": 51.29854965209961,
+        "w2_mean_per_sample": 51.298545837402344
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8152463436126709
+        },
+        "posterior_mean": {
+          "mu": 0.8292184406518937
+        },
+        "posterior_std": {
+          "mu": 0.011186562257857658
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8117880642414093
+          },
+          "q50": {
+            "mu": 0.828476220369339
+          },
+          "q95": {
+            "mu": 0.848996239900589
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.013972097039222753
+        },
+        "posterior_mean_l2_error": 0.013972097039222753,
+        "posterior_w2_pointmass": 0.017889824562709086,
+        "posterior_spread_l2": 0.011186562257857658,
+        "posterior_entropy_diag_gaussian": -3.074103486216317
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18940496444702148,
+        "ppc_simulation_time_s": 3.759730815887451,
+        "total_case_time_s": 3.9491357803344727
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 13,
+      "theta_true": [
+        0.8520209789276123
+      ],
+      "metrics": {
+        "rmse_overall": 0.7545245885848999,
+        "rmse_per_dim": [
+          0.0071865106001496315,
+          0.1144513338804245,
+          0.026057584211230278,
+          1.1824439764022827,
+          0.44830459356307983,
+          0.8923727869987488,
+          1.0716090202331543,
+          0.8342032432556152,
+          0.9328539371490479
+        ],
+        "w2": 52.671485900878906,
+        "w2_mean_per_sample": 52.671485900878906
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8520209789276123
+        },
+        "posterior_mean": {
+          "mu": 0.8569128322601318
+        },
+        "posterior_std": {
+          "mu": 0.010957297515670084
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8371867418289185
+          },
+          "q50": {
+            "mu": 0.8570972383022308
+          },
+          "q95": {
+            "mu": 0.8753100901842117
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0048918533325195135
+        },
+        "posterior_mean_l2_error": 0.0048918533325195135,
+        "posterior_w2_pointmass": 0.011987178231413554,
+        "posterior_spread_l2": 0.010957297515670084,
+        "posterior_entropy_diag_gaussian": -3.094811071700112
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13355517387390137,
+        "ppc_simulation_time_s": 3.705451011657715,
+        "total_case_time_s": 3.839006185531616
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 14,
+      "theta_true": [
+        0.7263771891593933
+      ],
+      "metrics": {
+        "rmse_overall": 0.7326801419258118,
+        "rmse_per_dim": [
+          0.005626131314784288,
+          0.11860115081071854,
+          0.030669765546917915,
+          1.1047353744506836,
+          0.45676541328430176,
+          0.8210976123809814,
+          0.9331980347633362,
+          0.8514701128005981,
+          1.0569807291030884
+        ],
+        "w2": 49.42564010620117,
+        "w2_mean_per_sample": 49.42564010620117
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7263771891593933
+        },
+        "posterior_mean": {
+          "mu": 0.7151664128899574
+        },
+        "posterior_std": {
+          "mu": 0.014894203391349826
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.692221713066101
+          },
+          "q50": {
+            "mu": 0.7153500914573669
+          },
+          "q95": {
+            "mu": 0.740421649813652
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.011210776269435896
+        },
+        "posterior_mean_l2_error": 0.011210776269435896,
+        "posterior_w2_pointmass": 0.01862697522384099,
+        "posterior_spread_l2": 0.014894203391349826,
+        "posterior_entropy_diag_gaussian": -2.787844642657059
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13265156745910645,
+        "ppc_simulation_time_s": 3.683605432510376,
+        "total_case_time_s": 3.8162569999694824
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 15,
+      "theta_true": [
+        0.8761031627655029
+      ],
+      "metrics": {
+        "rmse_overall": 0.7098473906517029,
+        "rmse_per_dim": [
+          0.003653624327853322,
+          0.041024237871170044,
+          0.09692761301994324,
+          1.1503314971923828,
+          0.425191730260849,
+          0.8593366146087646,
+          0.8544020652770996,
+          0.8642315864562988,
+          0.8969104290008545
+        ],
+        "w2": 50.88029861450195,
+        "w2_mean_per_sample": 50.88029861450195
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8761031627655029
+        },
+        "posterior_mean": {
+          "mu": 0.8736776977777481
+        },
+        "posterior_std": {
+          "mu": 0.010101962125315674
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8578593254089355
+          },
+          "q50": {
+            "mu": 0.8737329542636871
+          },
+          "q95": {
+            "mu": 0.8895856976509094
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.002425464987754866
+        },
+        "posterior_mean_l2_error": 0.002425464987754866,
+        "posterior_w2_pointmass": 0.01037677190127949,
+        "posterior_spread_l2": 0.010101962125315674,
+        "posterior_entropy_diag_gaussian": -3.176087070964956
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13406968116760254,
+        "ppc_simulation_time_s": 3.6509926319122314,
+        "total_case_time_s": 3.785062313079834
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 16,
+      "theta_true": [
+        0.7541109323501587
+      ],
+      "metrics": {
+        "rmse_overall": 0.7314077615737915,
+        "rmse_per_dim": [
+          0.0066621010191738605,
+          0.1503944844007492,
+          0.07494747638702393,
+          1.0460880994796753,
+          0.42386603355407715,
+          0.865395724773407,
+          0.9430887699127197,
+          0.9901913404464722,
+          0.9452874064445496
+        ],
+        "w2": 44.828590393066406,
+        "w2_mean_per_sample": 44.828590393066406
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7541109323501587
+        },
+        "posterior_mean": {
+          "mu": 0.7475714583694935
+        },
+        "posterior_std": {
+          "mu": 0.012581970450352482
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7282923460006714
+          },
+          "q50": {
+            "mu": 0.7474178075790405
+          },
+          "q95": {
+            "mu": 0.7674154669046402
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0065394739806652336
+        },
+        "posterior_mean_l2_error": 0.0065394739806652336,
+        "posterior_w2_pointmass": 0.01416597809564544,
+        "posterior_spread_l2": 0.012581970450352482,
+        "posterior_entropy_diag_gaussian": -2.956551873197598
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1330564022064209,
+        "ppc_simulation_time_s": 3.731905937194824,
+        "total_case_time_s": 3.864962339401245
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 17,
+      "theta_true": [
+        0.8641507625579834
+      ],
+      "metrics": {
+        "rmse_overall": 0.7708396315574646,
+        "rmse_per_dim": [
+          0.015669098123908043,
+          0.14888715744018555,
+          0.12161499261856079,
+          1.1059685945510864,
+          0.44841551780700684,
+          1.0167999267578125,
+          1.0242252349853516,
+          1.0000241994857788,
+          0.8962869048118591
+        ],
+        "w2": 49.46360397338867,
+        "w2_mean_per_sample": 49.46360397338867
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8641507625579834
+        },
+        "posterior_mean": {
+          "mu": 0.8919092354178428
+        },
+        "posterior_std": {
+          "mu": 0.013289078177472166
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8704370766878128
+          },
+          "q50": {
+            "mu": 0.891957014799118
+          },
+          "q95": {
+            "mu": 0.9142812103033066
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.02775847285985944
+        },
+        "posterior_mean_l2_error": 0.02775847285985944,
+        "posterior_w2_pointmass": 0.03076834274577531,
+        "posterior_spread_l2": 0.013289078177472166,
+        "posterior_entropy_diag_gaussian": -2.9018742375744395
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13359308242797852,
+        "ppc_simulation_time_s": 3.7027761936187744,
+        "total_case_time_s": 3.836369276046753
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 18,
+      "theta_true": [
+        0.7082356810569763
+      ],
+      "metrics": {
+        "rmse_overall": 0.7072227001190186,
+        "rmse_per_dim": [
+          0.008547822013497353,
+          0.04758353903889656,
+          0.0690230205655098,
+          1.1191681623458862,
+          0.4517875611782074,
+          0.9123486280441284,
+          0.8384804725646973,
+          0.8588035702705383,
+          0.8745004534721375
+        ],
+        "w2": 50.73906707763672,
+        "w2_mean_per_sample": 50.73905944824219
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7082356810569763
+        },
+        "posterior_mean": {
+          "mu": 0.6820026789605618
+        },
+        "posterior_std": {
+          "mu": 0.015882584507757987
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6557206213474274
+          },
+          "q50": {
+            "mu": 0.6822553277015686
+          },
+          "q95": {
+            "mu": 0.7086294740438461
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.02623300209641455
+        },
+        "posterior_mean_l2_error": 0.02623300209641455,
+        "posterior_w2_pointmass": 0.03065609643137805,
+        "posterior_spread_l2": 0.015882584507757987,
+        "posterior_entropy_diag_gaussian": -2.723593550823499
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13382482528686523,
+        "ppc_simulation_time_s": 3.709639549255371,
+        "total_case_time_s": 3.8434643745422363
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 19,
+      "theta_true": [
+        0.6923061609268188
+      ],
+      "metrics": {
+        "rmse_overall": 0.7292185425758362,
+        "rmse_per_dim": [
+          0.009935673326253891,
+          0.11623377352952957,
+          0.19577661156654358,
+          1.0711559057235718,
+          0.4352889060974121,
+          0.8597404956817627,
+          0.8607501983642578,
+          0.9255499243736267,
+          1.0303750038146973
+        ],
+        "w2": 49.57908630371094,
+        "w2_mean_per_sample": 49.57123947143555
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6923061609268188
+        },
+        "posterior_mean": {
+          "mu": 0.6888370361924171
+        },
+        "posterior_std": {
+          "mu": 0.014072747650183395
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6661125808954239
+          },
+          "q50": {
+            "mu": 0.6894609332084656
+          },
+          "q95": {
+            "mu": 0.7115779608488083
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0034691247344017517
+        },
+        "posterior_mean_l2_error": 0.0034691247344017517,
+        "posterior_w2_pointmass": 0.01447694537126239,
+        "posterior_spread_l2": 0.014072747650183395,
+        "posterior_entropy_diag_gaussian": -2.8445766094108085
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1329035758972168,
+        "ppc_simulation_time_s": 3.691385269165039,
+        "total_case_time_s": 3.824288845062256
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 20,
+      "theta_true": [
+        0.8496453762054443
+      ],
+      "metrics": {
+        "rmse_overall": 0.7201377749443054,
+        "rmse_per_dim": [
+          0.010496706701815128,
+          0.052366163581609726,
+          0.055348701775074005,
+          1.0828220844268799,
+          0.4572735130786896,
+          0.8686930537223816,
+          0.8481089472770691,
+          0.8927854299545288,
+          1.0044327974319458
+        ],
+        "w2": 48.35590744018555,
+        "w2_mean_per_sample": 48.35590744018555
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8496453762054443
+        },
+        "posterior_mean": {
+          "mu": 0.8526755453646183
+        },
+        "posterior_std": {
+          "mu": 0.01059206794553789
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.834989920258522
+          },
+          "q50": {
+            "mu": 0.8534220457077026
+          },
+          "q95": {
+            "mu": 0.8697903633117676
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0030301691591739788
+        },
+        "posterior_mean_l2_error": 0.0030301691591739788,
+        "posterior_w2_pointmass": 0.011004242306387708,
+        "posterior_spread_l2": 0.01059206794553789,
+        "posterior_entropy_diag_gaussian": -3.128711331805625
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1333308219909668,
+        "ppc_simulation_time_s": 3.700015068054199,
+        "total_case_time_s": 3.833345890045166
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 21,
+      "theta_true": [
+        0.8465492129325867
+      ],
+      "metrics": {
+        "rmse_overall": 0.7339532971382141,
+        "rmse_per_dim": [
+          0.008525778539478779,
+          0.13735368847846985,
+          0.02359265461564064,
+          1.0823943614959717,
+          0.4552474021911621,
+          0.860384464263916,
+          1.0046013593673706,
+          0.9329637289047241,
+          0.9110201001167297
+        ],
+        "w2": 49.5048713684082,
+        "w2_mean_per_sample": 49.50486755371094
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8465492129325867
+        },
+        "posterior_mean": {
+          "mu": 0.8524548025429248
+        },
+        "posterior_std": {
+          "mu": 0.013322736261158274
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8305647552013398
+          },
+          "q50": {
+            "mu": 0.852326512336731
+          },
+          "q95": {
+            "mu": 0.8724575102329254
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.005905589610338158
+        },
+        "posterior_mean_l2_error": 0.005905589610338158,
+        "posterior_w2_pointmass": 0.014557731687196505,
+        "posterior_spread_l2": 0.013322736261158274,
+        "posterior_entropy_diag_gaussian": -2.8993446767501676
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13459467887878418,
+        "ppc_simulation_time_s": 3.685529947280884,
+        "total_case_time_s": 3.820124626159668
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 22,
+      "theta_true": [
+        0.7959504127502441
+      ],
+      "metrics": {
+        "rmse_overall": 0.7709612846374512,
+        "rmse_per_dim": [
+          0.01998310349881649,
+          0.09081489592790604,
+          0.024965085089206696,
+          1.0846129655838013,
+          0.4850821793079376,
+          0.8875340223312378,
+          1.0823410749435425,
+          1.1225426197052002,
+          0.8421347141265869
+        ],
+        "w2": 50.346500396728516,
+        "w2_mean_per_sample": 50.34650421142578
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7959504127502441
+        },
+        "posterior_mean": {
+          "mu": 0.7654233276844025
+        },
+        "posterior_std": {
+          "mu": 0.01564811379114164
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7392914116382598
+          },
+          "q50": {
+            "mu": 0.765666276216507
+          },
+          "q95": {
+            "mu": 0.7915111154317855
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.030527085065841675
+        },
+        "posterior_mean_l2_error": 0.030527085065841675,
+        "posterior_w2_pointmass": 0.034295105032272455,
+        "posterior_spread_l2": 0.01564811379114164,
+        "posterior_entropy_diag_gaussian": -2.7384663605826574
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13429975509643555,
+        "ppc_simulation_time_s": 3.7760863304138184,
+        "total_case_time_s": 3.910386085510254
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 23,
+      "theta_true": [
+        0.6030530333518982
+      ],
+      "metrics": {
+        "rmse_overall": 27.368209838867188,
+        "rmse_per_dim": [
+          0.7647631168365479,
+          8.016288757324219,
+          3.5909276008605957,
+          6.554069519042969,
+          6.879240989685059,
+          39.251976013183594,
+          36.49242401123047,
+          44.321598052978516,
+          41.669307708740234
+        ],
+        "w2": 780.0784301757812,
+        "w2_mean_per_sample": 780.0784301757812
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6030530333518982
+        },
+        "posterior_mean": {
+          "mu": 0.8208288131654262
+        },
+        "posterior_std": {
+          "mu": 0.021402751002702693
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7847774147987365
+          },
+          "q50": {
+            "mu": 0.8219342529773712
+          },
+          "q95": {
+            "mu": 0.856855520606041
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.21777577981352803
+        },
+        "posterior_mean_l2_error": 0.21777577981352803,
+        "posterior_w2_pointmass": 0.2188223545013117,
+        "posterior_spread_l2": 0.021402751002702693,
+        "posterior_entropy_diag_gaussian": -2.425297280483535
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1893320083618164,
+        "ppc_simulation_time_s": 3.69362735748291,
+        "total_case_time_s": 3.8829593658447266
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 24,
+      "theta_true": [
+        0.7877652049064636
+      ],
+      "metrics": {
+        "rmse_overall": 0.709454357624054,
+        "rmse_per_dim": [
+          0.0055551291443407536,
+          0.09119521081447601,
+          0.025593390688300133,
+          1.110115885734558,
+          0.4241088330745697,
+          0.8606513142585754,
+          0.9115800857543945,
+          0.851517379283905,
+          0.901066243648529
+        ],
+        "w2": 49.461429595947266,
+        "w2_mean_per_sample": 49.461429595947266
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7877652049064636
+        },
+        "posterior_mean": {
+          "mu": 0.7908689869940281
+        },
+        "posterior_std": {
+          "mu": 0.011429425858487904
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7711575418710709
+          },
+          "q50": {
+            "mu": 0.7914407849311829
+          },
+          "q95": {
+            "mu": 0.8091940879821777
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.003103782087564455
+        },
+        "posterior_mean_l2_error": 0.003103782087564455,
+        "posterior_w2_pointmass": 0.011829567162965909,
+        "posterior_spread_l2": 0.011429425858487904,
+        "posterior_entropy_diag_gaussian": -3.0526255003357896
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1332533359527588,
+        "ppc_simulation_time_s": 3.6926915645599365,
+        "total_case_time_s": 3.8259449005126953
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 25,
+      "theta_true": [
+        0.7829315662384033
+      ],
+      "metrics": {
+        "rmse_overall": 0.736530601978302,
+        "rmse_per_dim": [
+          0.003696736413985491,
+          0.07085147500038147,
+          0.06863407045602798,
+          1.0683499574661255,
+          0.4389057159423828,
+          0.8960859179496765,
+          0.965644896030426,
+          1.0159236192703247,
+          0.8780662417411804
+        ],
+        "w2": 48.146949768066406,
+        "w2_mean_per_sample": 48.14695358276367
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7829315662384033
+        },
+        "posterior_mean": {
+          "mu": 0.7923276887834072
+        },
+        "posterior_std": {
+          "mu": 0.014742176388372021
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.769246244430542
+          },
+          "q50": {
+            "mu": 0.792240709066391
+          },
+          "q95": {
+            "mu": 0.817541691660881
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.009396122545003882
+        },
+        "posterior_mean_l2_error": 0.009396122545003882,
+        "posterior_w2_pointmass": 0.017466412171219917,
+        "posterior_spread_l2": 0.014742176388372021,
+        "posterior_entropy_diag_gaussian": -2.798104218058747
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13280630111694336,
+        "ppc_simulation_time_s": 3.6800925731658936,
+        "total_case_time_s": 3.812898874282837
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 26,
+      "theta_true": [
+        0.8704046010971069
+      ],
+      "metrics": {
+        "rmse_overall": 0.6992402672767639,
+        "rmse_per_dim": [
+          0.00806154403835535,
+          0.21257631480693817,
+          0.0532209612429142,
+          1.045140266418457,
+          0.4468507766723633,
+          0.8605744242668152,
+          0.8714594841003418,
+          0.8758949637413025,
+          0.8905795812606812
+        ],
+        "w2": 48.124961853027344,
+        "w2_mean_per_sample": 48.12495422363281
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8704046010971069
+        },
+        "posterior_mean": {
+          "mu": 0.8768936148285866
+        },
+        "posterior_std": {
+          "mu": 0.014351884311104785
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8527572751045227
+          },
+          "q50": {
+            "mu": 0.877543568611145
+          },
+          "q95": {
+            "mu": 0.9000403344631194
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.006489013731479698
+        },
+        "posterior_mean_l2_error": 0.006489013731479698,
+        "posterior_w2_pointmass": 0.015734323659708692,
+        "posterior_spread_l2": 0.014351884311104785,
+        "posterior_entropy_diag_gaussian": -2.8249355013139708
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13431191444396973,
+        "ppc_simulation_time_s": 3.662936210632324,
+        "total_case_time_s": 3.797248125076294
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 27,
+      "theta_true": [
+        0.8070743083953857
+      ],
+      "metrics": {
+        "rmse_overall": 0.7875145673751831,
+        "rmse_per_dim": [
+          0.009035053662955761,
+          0.1186242401599884,
+          0.02612116001546383,
+          1.0575052499771118,
+          0.4269639849662781,
+          0.8979557752609253,
+          0.8860644102096558,
+          1.3232728242874146,
+          0.9610811471939087
+        ],
+        "w2": 49.57143783569336,
+        "w2_mean_per_sample": 49.571441650390625
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8070743083953857
+        },
+        "posterior_mean": {
+          "mu": 0.808875953257084
+        },
+        "posterior_std": {
+          "mu": 0.011290984426439988
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7899815946817398
+          },
+          "q50": {
+            "mu": 0.8097037076950073
+          },
+          "q95": {
+            "mu": 0.8272627860307693
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.001801644861698204
+        },
+        "posterior_mean_l2_error": 0.001801644861698204,
+        "posterior_w2_pointmass": 0.011419874679807061,
+        "posterior_spread_l2": 0.011290984426439988,
+        "posterior_entropy_diag_gaussian": -3.064812176869731
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13230609893798828,
+        "ppc_simulation_time_s": 3.7064921855926514,
+        "total_case_time_s": 3.8387982845306396
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 28,
+      "theta_true": [
+        0.8672326803207397
+      ],
+      "metrics": {
+        "rmse_overall": 0.7090803384780884,
+        "rmse_per_dim": [
+          0.010232440195977688,
+          0.059328097850084305,
+          0.06664878129959106,
+          1.0744128227233887,
+          0.4731794595718384,
+          0.9446642398834229,
+          0.8673823475837708,
+          0.8580700159072876,
+          0.8705161809921265
+        ],
+        "w2": 48.47542953491211,
+        "w2_mean_per_sample": 48.47542953491211
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8672326803207397
+        },
+        "posterior_mean": {
+          "mu": 0.864005176872015
+        },
+        "posterior_std": {
+          "mu": 0.012257316176772372
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8441366314888
+          },
+          "q50": {
+            "mu": 0.8640002906322479
+          },
+          "q95": {
+            "mu": 0.8823994815349578
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0032275034487248
+        },
+        "posterior_mean_l2_error": 0.0032275034487248,
+        "posterior_w2_pointmass": 0.012660291223714105,
+        "posterior_spread_l2": 0.012257316176772372,
+        "posterior_entropy_diag_gaussian": -2.98269374814272
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1328747272491455,
+        "ppc_simulation_time_s": 3.7045438289642334,
+        "total_case_time_s": 3.837418556213379
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 29,
+      "theta_true": [
+        0.8843629360198975
+      ],
+      "metrics": {
+        "rmse_overall": 0.7898620367050171,
+        "rmse_per_dim": [
+          0.007586746476590633,
+          0.15690670907497406,
+          0.033169735223054886,
+          1.0865237712860107,
+          0.4364226460456848,
+          1.3457896709442139,
+          0.8983551263809204,
+          0.9322110414505005,
+          0.8549585938453674
+        ],
+        "w2": 50.19743728637695,
+        "w2_mean_per_sample": 50.19744110107422
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8843629360198975
+        },
+        "posterior_mean": {
+          "mu": 0.8911981792747974
+        },
+        "posterior_std": {
+          "mu": 0.017177409802260547
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8629922926425934
+          },
+          "q50": {
+            "mu": 0.8918189108371735
+          },
+          "q95": {
+            "mu": 0.9182886898517608
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.006835243254899925
+        },
+        "posterior_mean_l2_error": 0.006835243254899925,
+        "posterior_w2_pointmass": 0.01846743889524656,
+        "posterior_spread_l2": 0.017177409802260547,
+        "posterior_entropy_diag_gaussian": -2.6452216087917164
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13366913795471191,
+        "ppc_simulation_time_s": 3.6695873737335205,
+        "total_case_time_s": 3.8032565116882324
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 30,
+      "theta_true": [
+        0.7249118089675903
+      ],
+      "metrics": {
+        "rmse_overall": 0.730216920375824,
+        "rmse_per_dim": [
+          0.009047900326550007,
+          0.13508911430835724,
+          0.06718617677688599,
+          1.0846892595291138,
+          0.4235434830188751,
+          0.8780117034912109,
+          0.8204293251037598,
+          0.8940426111221313,
+          1.0848251581192017
+        ],
+        "w2": 49.477500915527344,
+        "w2_mean_per_sample": 49.47749328613281
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7249118089675903
+        },
+        "posterior_mean": {
+          "mu": 0.7217262744903564
+        },
+        "posterior_std": {
+          "mu": 0.014357819186315936
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6990865707397461
+          },
+          "q50": {
+            "mu": 0.7210812270641327
+          },
+          "q95": {
+            "mu": 0.7442134559154511
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.003185534477233909
+        },
+        "posterior_mean_l2_error": 0.003185534477233909,
+        "posterior_w2_pointmass": 0.014689425933749774,
+        "posterior_spread_l2": 0.014357819186315936,
+        "posterior_entropy_diag_gaussian": -2.824522060938578
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13294386863708496,
+        "ppc_simulation_time_s": 3.7746686935424805,
+        "total_case_time_s": 3.9076125621795654
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 31,
+      "theta_true": [
+        0.8735863566398621
+      ],
+      "metrics": {
+        "rmse_overall": 0.7495485544204712,
+        "rmse_per_dim": [
+          0.006186829414218664,
+          0.12131322175264359,
+          0.018560398370027542,
+          1.050213098526001,
+          0.44626787304878235,
+          1.1642500162124634,
+          0.889004647731781,
+          0.9137480854988098,
+          0.8708975315093994
+        ],
+        "w2": 48.58964920043945,
+        "w2_mean_per_sample": 48.58964538574219
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8735863566398621
+        },
+        "posterior_mean": {
+          "mu": 0.8832614378631115
+        },
+        "posterior_std": {
+          "mu": 0.011878422042180335
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8635417014360428
+          },
+          "q50": {
+            "mu": 0.8830195963382721
+          },
+          "q95": {
+            "mu": 0.9033056974411011
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.009675081223249449
+        },
+        "posterior_mean_l2_error": 0.009675081223249449,
+        "posterior_w2_pointmass": 0.015308538944428988,
+        "posterior_spread_l2": 0.011878422042180335,
+        "posterior_entropy_diag_gaussian": -3.0140932653972463
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.19054698944091797,
+        "ppc_simulation_time_s": 3.683340549468994,
+        "total_case_time_s": 3.873887538909912
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 32,
+      "theta_true": [
+        0.7778153419494629
+      ],
+      "metrics": {
+        "rmse_overall": 0.7459169626235962,
+        "rmse_per_dim": [
+          0.017355019226670265,
+          0.15084509551525116,
+          0.049706075340509415,
+          1.0512793064117432,
+          0.44768381118774414,
+          0.8757811784744263,
+          0.8677801489830017,
+          1.0523028373718262,
+          1.024215579032898
+        ],
+        "w2": 46.46620559692383,
+        "w2_mean_per_sample": 46.46620178222656
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7778153419494629
+        },
+        "posterior_mean": {
+          "mu": 0.7615299524366855
+        },
+        "posterior_std": {
+          "mu": 0.01294836143714083
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7394196957349777
+          },
+          "q50": {
+            "mu": 0.7613360583782196
+          },
+          "q95": {
+            "mu": 0.7833153814077377
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.01628538951277736
+        },
+        "posterior_mean_l2_error": 0.01628538951277736,
+        "posterior_w2_pointmass": 0.02079554820941123,
+        "posterior_spread_l2": 0.01294836143714083,
+        "posterior_entropy_diag_gaussian": -2.927847495588022
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13337278366088867,
+        "ppc_simulation_time_s": 3.700066328048706,
+        "total_case_time_s": 3.8334391117095947
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 33,
+      "theta_true": [
+        0.803322970867157
+      ],
+      "metrics": {
+        "rmse_overall": 0.7182502150535583,
+        "rmse_per_dim": [
+          0.0035169613547623158,
+          0.08654826134443283,
+          0.06988525390625,
+          1.0733362436294556,
+          0.4350888729095459,
+          0.9844727516174316,
+          0.9339696168899536,
+          0.8481653332710266,
+          0.8534287214279175
+        ],
+        "w2": 47.23306655883789,
+        "w2_mean_per_sample": 47.23306655883789
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.803322970867157
+        },
+        "posterior_mean": {
+          "mu": 0.804326878786087
+        },
+        "posterior_std": {
+          "mu": 0.010728362314338212
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7867129772901535
+          },
+          "q50": {
+            "mu": 0.8043547570705414
+          },
+          "q95": {
+            "mu": 0.8220881342887878
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0010039079189300137
+        },
+        "posterior_mean_l2_error": 0.0010039079189300137,
+        "posterior_w2_pointmass": 0.01076186994265093,
+        "posterior_spread_l2": 0.010728362314338212,
+        "posterior_entropy_diag_gaussian": -3.1159258275926276
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13345861434936523,
+        "ppc_simulation_time_s": 3.6933724880218506,
+        "total_case_time_s": 3.826831102371216
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 34,
+      "theta_true": [
+        0.8266306519508362
+      ],
+      "metrics": {
+        "rmse_overall": 0.7687527537345886,
+        "rmse_per_dim": [
+          0.007421948481351137,
+          0.036223504692316055,
+          0.028748461976647377,
+          1.0496513843536377,
+          0.530791699886322,
+          0.8653526306152344,
+          1.2878021001815796,
+          0.8966032862663269,
+          0.8496812582015991
+        ],
+        "w2": 49.42092514038086,
+        "w2_mean_per_sample": 49.420928955078125
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8266306519508362
+        },
+        "posterior_mean": {
+          "mu": 0.824136580824852
+        },
+        "posterior_std": {
+          "mu": 0.011034930727990432
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.806899031996727
+          },
+          "q50": {
+            "mu": 0.8237320780754089
+          },
+          "q95": {
+            "mu": 0.8420136541128158
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0024940711259842097
+        },
+        "posterior_mean_l2_error": 0.0024940711259842097,
+        "posterior_w2_pointmass": 0.011299808082997987,
+        "posterior_spread_l2": 0.011034930727990432,
+        "posterior_entropy_diag_gaussian": -3.0877509835700785
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13314390182495117,
+        "ppc_simulation_time_s": 3.6593427658081055,
+        "total_case_time_s": 3.7924866676330566
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 35,
+      "theta_true": [
+        0.8694524765014648
+      ],
+      "metrics": {
+        "rmse_overall": 0.7568601965904236,
+        "rmse_per_dim": [
+          0.004421782214194536,
+          0.06358889490365982,
+          0.05431734025478363,
+          1.0617196559906006,
+          0.42015722393989563,
+          0.8828648328781128,
+          1.1245160102844238,
+          1.0499780178070068,
+          0.8356448411941528
+        ],
+        "w2": 47.55839920043945,
+        "w2_mean_per_sample": 47.55839920043945
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8694524765014648
+        },
+        "posterior_mean": {
+          "mu": 0.8935718947649002
+        },
+        "posterior_std": {
+          "mu": 0.020770680274363955
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8611327648162842
+          },
+          "q50": {
+            "mu": 0.8934435844421387
+          },
+          "q95": {
+            "mu": 0.9269695490598678
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.024119418263435333
+        },
+        "posterior_mean_l2_error": 0.024119418263435333,
+        "posterior_w2_pointmass": 0.031813345368394405,
+        "posterior_spread_l2": 0.020770680274363955,
+        "posterior_entropy_diag_gaussian": -2.45527435568801
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13488316535949707,
+        "ppc_simulation_time_s": 3.692030191421509,
+        "total_case_time_s": 3.826913356781006
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 36,
+      "theta_true": [
+        0.8380469083786011
+      ],
+      "metrics": {
+        "rmse_overall": 0.7010391354560852,
+        "rmse_per_dim": [
+          0.02485639788210392,
+          0.06541526317596436,
+          0.08791159838438034,
+          1.082851767539978,
+          0.43954232335090637,
+          0.8548576831817627,
+          0.878172755241394,
+          0.8388214111328125,
+          0.9160358309745789
+        ],
+        "w2": 48.98584747314453,
+        "w2_mean_per_sample": 48.9858512878418
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8380469083786011
+        },
+        "posterior_mean": {
+          "mu": 0.8592174403369427
+        },
+        "posterior_std": {
+          "mu": 0.011224884529245385
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8406893610954285
+          },
+          "q50": {
+            "mu": 0.8589687943458557
+          },
+          "q95": {
+            "mu": 0.8776314079761505
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.02117053195834162
+        },
+        "posterior_mean_l2_error": 0.02117053195834162,
+        "posterior_w2_pointmass": 0.02395567701010176,
+        "posterior_spread_l2": 0.011224884529245385,
+        "posterior_entropy_diag_gaussian": -3.0706835991289716
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13397455215454102,
+        "ppc_simulation_time_s": 3.7234597206115723,
+        "total_case_time_s": 3.8574342727661133
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 37,
+      "theta_true": [
+        0.7324637174606323
+      ],
+      "metrics": {
+        "rmse_overall": 0.8010327816009521,
+        "rmse_per_dim": [
+          0.005825517233461142,
+          0.12144969403743744,
+          0.03031131438910961,
+          1.0548666715621948,
+          0.45156195759773254,
+          0.8950230479240417,
+          0.9705268740653992,
+          1.33209228515625,
+          0.9618053436279297
+        ],
+        "w2": 49.407466888427734,
+        "w2_mean_per_sample": 49.407466888427734
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7324637174606323
+        },
+        "posterior_mean": {
+          "mu": 0.7322803416848183
+        },
+        "posterior_std": {
+          "mu": 0.013745816700348495
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7111069083213806
+          },
+          "q50": {
+            "mu": 0.7318423092365265
+          },
+          "q95": {
+            "mu": 0.7541542172431945
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.00018337577581406528
+        },
+        "posterior_mean_l2_error": 0.00018337577581406528,
+        "posterior_w2_pointmass": 0.013729848314633197,
+        "posterior_spread_l2": 0.013745816700348495,
+        "posterior_entropy_diag_gaussian": -2.868082207929909
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1346595287322998,
+        "ppc_simulation_time_s": 3.710353374481201,
+        "total_case_time_s": 3.845012903213501
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 38,
+      "theta_true": [
+        0.81624436378479
+      ],
+      "metrics": {
+        "rmse_overall": 0.7449281215667725,
+        "rmse_per_dim": [
+          0.009318544529378414,
+          0.05157456174492836,
+          0.031552791595458984,
+          1.0890320539474487,
+          0.4488459825515747,
+          0.8370561599731445,
+          0.8503811955451965,
+          1.2387185096740723,
+          0.8030132055282593
+        ],
+        "w2": 49.553977966308594,
+        "w2_mean_per_sample": 49.553985595703125
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.81624436378479
+        },
+        "posterior_mean": {
+          "mu": 0.8292739619314671
+        },
+        "posterior_std": {
+          "mu": 0.010755266182931399
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8106165647506713
+          },
+          "q50": {
+            "mu": 0.8294300734996796
+          },
+          "q95": {
+            "mu": 0.8464536964893341
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.013029598146677035
+        },
+        "posterior_mean_l2_error": 0.013029598146677035,
+        "posterior_w2_pointmass": 0.016886591993440614,
+        "posterior_spread_l2": 0.010755266182931399,
+        "posterior_entropy_diag_gaussian": -3.1134212336726033
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13339900970458984,
+        "ppc_simulation_time_s": 3.7275238037109375,
+        "total_case_time_s": 3.8609228134155273
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 39,
+      "theta_true": [
+        0.6699736714363098
+      ],
+      "metrics": {
+        "rmse_overall": 0.7247872948646545,
+        "rmse_per_dim": [
+          0.020763279870152473,
+          0.17476864159107208,
+          0.02831854298710823,
+          1.0978361368179321,
+          0.43750011920928955,
+          0.925711989402771,
+          1.019350290298462,
+          0.8475168943405151,
+          0.8277190923690796
+        ],
+        "w2": 50.08146286010742,
+        "w2_mean_per_sample": 50.081459045410156
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6699736714363098
+        },
+        "posterior_mean": {
+          "mu": 0.6692647056281567
+        },
+        "posterior_std": {
+          "mu": 0.014223795071351108
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6441328585147857
+          },
+          "q50": {
+            "mu": 0.6694031953811646
+          },
+          "q95": {
+            "mu": 0.690331780910492
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0007089658081531613
+        },
+        "posterior_mean_l2_error": 0.0007089658081531613,
+        "posterior_w2_pointmass": 0.014223684047508327,
+        "posterior_spread_l2": 0.014223795071351108,
+        "posterior_entropy_diag_gaussian": -2.8339004743544205
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13337063789367676,
+        "ppc_simulation_time_s": 3.7037932872772217,
+        "total_case_time_s": 3.8371639251708984
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 40,
+      "theta_true": [
+        0.7617753744125366
+      ],
+      "metrics": {
+        "rmse_overall": 0.7072758674621582,
+        "rmse_per_dim": [
+          0.010568360798060894,
+          0.08988919109106064,
+          0.05653486028313637,
+          1.0532431602478027,
+          0.4530842900276184,
+          0.8471011519432068,
+          0.8468695878982544,
+          0.9554662108421326,
+          0.9102054834365845
+        ],
+        "w2": 48.127685546875,
+        "w2_mean_per_sample": 48.127681732177734
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7617753744125366
+        },
+        "posterior_mean": {
+          "mu": 0.7590145209431648
+        },
+        "posterior_std": {
+          "mu": 0.01218220730636481
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7402236312627792
+          },
+          "q50": {
+            "mu": 0.7595103681087494
+          },
+          "q95": {
+            "mu": 0.7783937901258469
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0027608534693718267
+        },
+        "posterior_mean_l2_error": 0.0027608534693718267,
+        "posterior_w2_pointmass": 0.012476276339415232,
+        "posterior_spread_l2": 0.01218220730636481,
+        "posterior_entropy_diag_gaussian": -2.9888402760752943
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18891358375549316,
+        "ppc_simulation_time_s": 3.7108778953552246,
+        "total_case_time_s": 3.8997914791107178
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 41,
+      "theta_true": [
+        0.865086019039154
+      ],
+      "metrics": {
+        "rmse_overall": 0.7244104743003845,
+        "rmse_per_dim": [
+          0.009639570489525795,
+          0.05214003846049309,
+          0.08706014603376389,
+          1.074204444885254,
+          0.45567187666893005,
+          0.9867556095123291,
+          0.9128739833831787,
+          0.9090687036514282,
+          0.8470897674560547
+        ],
+        "w2": 49.07782745361328,
+        "w2_mean_per_sample": 49.07782745361328
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.865086019039154
+        },
+        "posterior_mean": {
+          "mu": 0.8822038273513317
+        },
+        "posterior_std": {
+          "mu": 0.014950726323941895
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8571336597204209
+          },
+          "q50": {
+            "mu": 0.8821792304515839
+          },
+          "q95": {
+            "mu": 0.9058287620544433
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.017117808312177685
+        },
+        "posterior_mean_l2_error": 0.017117808312177685,
+        "posterior_w2_pointmass": 0.022715298115627586,
+        "posterior_spread_l2": 0.014950726323941895,
+        "posterior_entropy_diag_gaussian": -2.784056863579647
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1333456039428711,
+        "ppc_simulation_time_s": 3.711021900177002,
+        "total_case_time_s": 3.844367504119873
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 42,
+      "theta_true": [
+        0.8707237839698792
+      ],
+      "metrics": {
+        "rmse_overall": 0.7438923716545105,
+        "rmse_per_dim": [
+          0.008285128511488438,
+          0.06734045594930649,
+          0.028202194720506668,
+          1.0693422555923462,
+          0.4434458315372467,
+          1.0420198440551758,
+          0.9713367223739624,
+          0.8734303712844849,
+          0.9179679155349731
+        ],
+        "w2": 48.89346694946289,
+        "w2_mean_per_sample": 48.89346694946289
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8707237839698792
+        },
+        "posterior_mean": {
+          "mu": 0.9006394045054913
+        },
+        "posterior_std": {
+          "mu": 0.016933862035309638
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8728771895170212
+          },
+          "q50": {
+            "mu": 0.9009662866592407
+          },
+          "q95": {
+            "mu": 0.9299093425273895
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.029915620535612142
+        },
+        "posterior_mean_l2_error": 0.029915620535612142,
+        "posterior_w2_pointmass": 0.03436543534211462,
+        "posterior_spread_l2": 0.016933862035309638,
+        "posterior_entropy_diag_gaussian": -2.659501457790896
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13294124603271484,
+        "ppc_simulation_time_s": 3.675337314605713,
+        "total_case_time_s": 3.8082785606384277
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 43,
+      "theta_true": [
+        0.7232348918914795
+      ],
+      "metrics": {
+        "rmse_overall": 0.7414594888687134,
+        "rmse_per_dim": [
+          0.00655007641762495,
+          0.20554359257221222,
+          0.052494168281555176,
+          1.0729042291641235,
+          0.44410064816474915,
+          1.0976182222366333,
+          0.8582853674888611,
+          0.8551290035247803,
+          0.9390409588813782
+        ],
+        "w2": 48.916717529296875,
+        "w2_mean_per_sample": 48.916717529296875
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7232348918914795
+        },
+        "posterior_mean": {
+          "mu": 0.7213426704704762
+        },
+        "posterior_std": {
+          "mu": 0.012579595545704932
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7006952106952667
+          },
+          "q50": {
+            "mu": 0.7212716937065125
+          },
+          "q95": {
+            "mu": 0.7429981261491775
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.001892221421003315
+        },
+        "posterior_mean_l2_error": 0.001892221421003315,
+        "posterior_w2_pointmass": 0.012705554314526758,
+        "posterior_spread_l2": 0.012579595545704932,
+        "posterior_entropy_diag_gaussian": -2.956740645601905
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13341999053955078,
+        "ppc_simulation_time_s": 3.7159571647644043,
+        "total_case_time_s": 3.849377155303955
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 44,
+      "theta_true": [
+        0.6446402072906494
+      ],
+      "metrics": {
+        "rmse_overall": 0.7197554111480713,
+        "rmse_per_dim": [
+          0.013485935516655445,
+          0.06068791076540947,
+          0.026543335989117622,
+          1.0357342958450317,
+          0.47162774205207825,
+          0.9667304754257202,
+          0.9195718169212341,
+          0.9057788848876953,
+          0.8729647994041443
+        ],
+        "w2": 47.52984619140625,
+        "w2_mean_per_sample": 47.529842376708984
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6446402072906494
+        },
+        "posterior_mean": {
+          "mu": 0.6426798692345619
+        },
+        "posterior_std": {
+          "mu": 0.016798657503043705
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6148184537887573
+          },
+          "q50": {
+            "mu": 0.6432101428508759
+          },
+          "q95": {
+            "mu": 0.6707271933555603
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0019603380560875294
+        },
+        "posterior_mean_l2_error": 0.0019603380560875294,
+        "posterior_w2_pointmass": 0.016891782971727706,
+        "posterior_spread_l2": 0.016798657503043705,
+        "posterior_entropy_diag_gaussian": -2.6675177730943807
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13408470153808594,
+        "ppc_simulation_time_s": 3.7836062908172607,
+        "total_case_time_s": 3.9176909923553467
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 45,
+      "theta_true": [
+        0.8724979162216187
+      ],
+      "metrics": {
+        "rmse_overall": 0.6837565898895264,
+        "rmse_per_dim": [
+          0.007303636521100998,
+          0.049634892493486404,
+          0.01505601592361927,
+          1.0592795610427856,
+          0.44846799969673157,
+          0.8447716236114502,
+          0.9061173796653748,
+          0.8030368685722351,
+          0.8379808664321899
+        ],
+        "w2": 48.07893371582031,
+        "w2_mean_per_sample": 48.07892990112305
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8724979162216187
+        },
+        "posterior_mean": {
+          "mu": 0.8598775959014893
+        },
+        "posterior_std": {
+          "mu": 0.01487064724084059
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.835278108716011
+          },
+          "q50": {
+            "mu": 0.8599166870117188
+          },
+          "q95": {
+            "mu": 0.8844102084636688
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.012620320320129386
+        },
+        "posterior_mean_l2_error": 0.012620320320129386,
+        "posterior_w2_pointmass": 0.019489889532031394,
+        "posterior_spread_l2": 0.01487064724084059,
+        "posterior_entropy_diag_gaussian": -2.7894274596325763
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18862223625183105,
+        "ppc_simulation_time_s": 3.6921470165252686,
+        "total_case_time_s": 3.8807692527770996
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 46,
+      "theta_true": [
+        0.8270758390426636
+      ],
+      "metrics": {
+        "rmse_overall": 0.7691876888275146,
+        "rmse_per_dim": [
+          0.0034008172806352377,
+          0.06333085149526596,
+          0.017177315428853035,
+          1.1473170518875122,
+          0.4600438177585602,
+          0.8196552991867065,
+          0.8674106001853943,
+          0.8088909983634949,
+          1.3092031478881836
+        ],
+        "w2": 52.039337158203125,
+        "w2_mean_per_sample": 52.039337158203125
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8270758390426636
+        },
+        "posterior_mean": {
+          "mu": 0.8091244499385357
+        },
+        "posterior_std": {
+          "mu": 0.011657022500893692
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7912505090236663
+          },
+          "q50": {
+            "mu": 0.8093215525150299
+          },
+          "q95": {
+            "mu": 0.8293866664171219
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.017951389104127857
+        },
+        "posterior_mean_l2_error": 0.017951389104127857,
+        "posterior_w2_pointmass": 0.021396233989190185,
+        "posterior_spread_l2": 0.011657022500893692,
+        "posterior_entropy_diag_gaussian": -3.0329079575942535
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13351750373840332,
+        "ppc_simulation_time_s": 3.684478521347046,
+        "total_case_time_s": 3.817996025085449
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 47,
+      "theta_true": [
+        0.8172570466995239
+      ],
+      "metrics": {
+        "rmse_overall": 0.7270715236663818,
+        "rmse_per_dim": [
+          0.0060311127454042435,
+          0.07671492546796799,
+          0.07649126648902893,
+          1.0706911087036133,
+          0.45582300424575806,
+          0.8633666038513184,
+          1.0551886558532715,
+          0.9120964407920837,
+          0.8372729420661926
+        ],
+        "w2": 47.81789016723633,
+        "w2_mean_per_sample": 47.81788635253906
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8172570466995239
+        },
+        "posterior_mean": {
+          "mu": 0.8174892182648182
+        },
+        "posterior_std": {
+          "mu": 0.01557203514646701
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7918250977993011
+          },
+          "q50": {
+            "mu": 0.8168497681617737
+          },
+          "q95": {
+            "mu": 0.8423342049121857
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0002321715652943146
+        },
+        "posterior_mean_l2_error": 0.0002321715652943146,
+        "posterior_w2_pointmass": 0.01555429077592508,
+        "posterior_spread_l2": 0.01557203514646701,
+        "posterior_entropy_diag_gaussian": -2.7433400590020685
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1338791847229004,
+        "ppc_simulation_time_s": 3.6623375415802,
+        "total_case_time_s": 3.7962167263031006
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 48,
+      "theta_true": [
+        0.7791449427604675
+      ],
+      "metrics": {
+        "rmse_overall": 0.7807101607322693,
+        "rmse_per_dim": [
+          0.00659958878532052,
+          0.122350312769413,
+          0.03315331041812897,
+          1.227364182472229,
+          0.4522990584373474,
+          1.116133451461792,
+          0.8286746740341187,
+          0.8678898215293884,
+          1.035749912261963
+        ],
+        "w2": 53.25363540649414,
+        "w2_mean_per_sample": 53.253631591796875
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7791449427604675
+        },
+        "posterior_mean": {
+          "mu": 0.7844716089963913
+        },
+        "posterior_std": {
+          "mu": 0.011613729678207861
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7649323105812073
+          },
+          "q50": {
+            "mu": 0.7846977412700653
+          },
+          "q95": {
+            "mu": 0.8033205568790436
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.005326666235923816
+        },
+        "posterior_mean_l2_error": 0.005326666235923816,
+        "posterior_w2_pointmass": 0.012763811869297516,
+        "posterior_spread_l2": 0.011613729678207861,
+        "posterior_entropy_diag_gaussian": -3.036628754610121
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13332343101501465,
+        "ppc_simulation_time_s": 3.6524720191955566,
+        "total_case_time_s": 3.7857954502105713
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 49,
+      "theta_true": [
+        0.8675776720046997
+      ],
+      "metrics": {
+        "rmse_overall": 0.7394264936447144,
+        "rmse_per_dim": [
+          0.011245165020227432,
+          0.07709239423274994,
+          0.03264305740594864,
+          1.06192147731781,
+          0.445614755153656,
+          0.8720431327819824,
+          0.8685030937194824,
+          0.8511031866073608,
+          1.1611394882202148
+        ],
+        "w2": 48.49169921875,
+        "w2_mean_per_sample": 48.49169921875
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8675776720046997
+        },
+        "posterior_mean": {
+          "mu": 0.8872518321871757
+        },
+        "posterior_std": {
+          "mu": 0.02047631317867207
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8561619400978089
+          },
+          "q50": {
+            "mu": 0.8880762755870819
+          },
+          "q95": {
+            "mu": 0.9195646613836288
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.01967416018247603
+        },
+        "posterior_mean_l2_error": 0.01967416018247603,
+        "posterior_w2_pointmass": 0.028377874863585322,
+        "posterior_spread_l2": 0.02047631317867207,
+        "posterior_entropy_diag_gaussian": -2.4695479823844586
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13196659088134766,
+        "ppc_simulation_time_s": 3.6613969802856445,
+        "total_case_time_s": 3.793363571166992
+      },
+      "figure_path": null
+    }
+  ],
+  "per_case": [
+    {
+      "example_idx": 0,
+      "theta_true": [
+        0.8451586961746216
+      ],
+      "metrics": {
+        "rmse_overall": 0.7135675549507141,
+        "rmse_per_dim": [
+          0.013778187334537506,
+          0.07961878180503845,
+          0.017585474997758865,
+          1.1220349073410034,
+          0.4370092749595642,
+          0.9334891438484192,
+          0.8983737230300903,
+          0.8599157333374023,
+          0.841367244720459
+        ],
+        "w2": 50.76302719116211,
+        "w2_mean_per_sample": 50.76302719116211
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8451586961746216
+        },
+        "posterior_mean": {
+          "mu": 0.8314151631295681
+        },
+        "posterior_std": {
+          "mu": 0.012167583434244473
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8133203983306885
+          },
+          "q50": {
+            "mu": 0.8306572437286377
+          },
+          "q95": {
+            "mu": 0.8513567060232162
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.013743533045053491
+        },
+        "posterior_mean_l2_error": 0.013743533045053491,
+        "posterior_w2_pointmass": 0.018345698732215254,
+        "posterior_spread_l2": 0.012167583434244473,
+        "posterior_entropy_diag_gaussian": -2.9900414259360346
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18649721145629883,
+        "ppc_simulation_time_s": 4.094362020492554,
+        "total_case_time_s": 4.2808592319488525
+      },
+      "figure_path": "experiments/npe_real_eval_npe_mu_pmu_t1000_s43_tr44_b20000000_20260416-014544/figures/ppc_timeseries_simulated_test_ex0.png"
+    },
+    {
+      "example_idx": 1,
+      "theta_true": [
+        0.8692656755447388
+      ],
+      "metrics": {
+        "rmse_overall": 0.7692064642906189,
+        "rmse_per_dim": [
+          0.0031835129484534264,
+          0.02993125095963478,
+          0.06311601400375366,
+          1.071850299835205,
+          0.41277509927749634,
+          0.9285300374031067,
+          1.0057963132858276,
+          0.9318144917488098,
+          1.1220067739486694
+        ],
+        "w2": 49.712318420410156,
+        "w2_mean_per_sample": 49.71232604980469
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8692656755447388
+        },
+        "posterior_mean": {
+          "mu": 0.8749247844517231
+        },
+        "posterior_std": {
+          "mu": 0.011992825782926719
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.853406336903572
+          },
+          "q50": {
+            "mu": 0.87525475025177
+          },
+          "q95": {
+            "mu": 0.8950699031352997
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.005659108906984289
+        },
+        "posterior_mean_l2_error": 0.005659108906984289,
+        "posterior_w2_pointmass": 0.013247407829650755,
+        "posterior_spread_l2": 0.011992825782926719,
+        "posterior_entropy_diag_gaussian": -3.0045081261966606
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1871635913848877,
+        "ppc_simulation_time_s": 3.75642728805542,
+        "total_case_time_s": 3.9435908794403076
+      },
+      "figure_path": "experiments/npe_real_eval_npe_mu_pmu_t1000_s43_tr44_b20000000_20260416-014544/figures/ppc_timeseries_simulated_test_ex1.png"
+    },
+    {
+      "example_idx": 2,
+      "theta_true": [
+        0.6989387273788452
+      ],
+      "metrics": {
+        "rmse_overall": 0.7169492840766907,
+        "rmse_per_dim": [
+          0.010460920631885529,
+          0.11829029023647308,
+          0.03293672204017639,
+          1.042969822883606,
+          0.49962007999420166,
+          0.9630405306816101,
+          0.8812804222106934,
+          0.8743200302124023,
+          0.8972271680831909
+        ],
+        "w2": 46.326255798339844,
+        "w2_mean_per_sample": 46.32624816894531
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6989387273788452
+        },
+        "posterior_mean": {
+          "mu": 0.6905897235870362
+        },
+        "posterior_std": {
+          "mu": 0.014925327589681169
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.665288919210434
+          },
+          "q50": {
+            "mu": 0.6906134486198425
+          },
+          "q95": {
+            "mu": 0.714057657122612
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.008349003791809029
+        },
+        "posterior_mean_l2_error": 0.008349003791809029,
+        "posterior_w2_pointmass": 0.017085501293956584,
+        "posterior_spread_l2": 0.014925327589681169,
+        "posterior_entropy_diag_gaussian": -2.7857571376823107
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18690180778503418,
+        "ppc_simulation_time_s": 3.7004129886627197,
+        "total_case_time_s": 3.887314796447754
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 3,
+      "theta_true": [
+        0.8175461292266846
+      ],
+      "metrics": {
+        "rmse_overall": 0.864112377166748,
+        "rmse_per_dim": [
+          0.019528783857822418,
+          0.12612920999526978,
+          0.028914783149957657,
+          1.043954610824585,
+          0.45074552297592163,
+          0.9442375302314758,
+          1.211497187614441,
+          1.5088504552841187,
+          0.8798484206199646
+        ],
+        "w2": 50.093563079833984,
+        "w2_mean_per_sample": 50.093563079833984
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8175461292266846
+        },
+        "posterior_mean": {
+          "mu": 0.8228073443472386
+        },
+        "posterior_std": {
+          "mu": 0.0095232523240686
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8075300604104996
+          },
+          "q50": {
+            "mu": 0.8235653042793274
+          },
+          "q95": {
+            "mu": 0.8376832097768784
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.005261215120553997
+        },
+        "posterior_mean_l2_error": 0.005261215120553997,
+        "posterior_w2_pointmass": 0.010869498081123802,
+        "posterior_spread_l2": 0.0095232523240686,
+        "posterior_entropy_diag_gaussian": -3.235080324637189
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13207197189331055,
+        "ppc_simulation_time_s": 3.689095973968506,
+        "total_case_time_s": 3.8211679458618164
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 4,
+      "theta_true": [
+        0.7322672605514526
+      ],
+      "metrics": {
+        "rmse_overall": 0.7861521244049072,
+        "rmse_per_dim": [
+          0.004903518594801426,
+          0.03764403238892555,
+          0.03614840283989906,
+          1.0468600988388062,
+          0.45967361330986023,
+          1.224579930305481,
+          0.8576834797859192,
+          0.8326023817062378,
+          1.150612235069275
+        ],
+        "w2": 48.85929870605469,
+        "w2_mean_per_sample": 48.85930252075195
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7322672605514526
+        },
+        "posterior_mean": {
+          "mu": 0.742581515610218
+        },
+        "posterior_std": {
+          "mu": 0.01210038211497339
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7231615453958511
+          },
+          "q50": {
+            "mu": 0.7426210343837738
+          },
+          "q95": {
+            "mu": 0.7624242424964904
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.010314255058765376
+        },
+        "posterior_mean_l2_error": 0.010314255058765376,
+        "posterior_w2_pointmass": 0.01588826789260915,
+        "posterior_spread_l2": 0.01210038211497339,
+        "posterior_entropy_diag_gaussian": -2.995579713923532
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13274526596069336,
+        "ppc_simulation_time_s": 3.690096855163574,
+        "total_case_time_s": 3.8228421211242676
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 5,
+      "theta_true": [
+        0.75248122215271
+      ],
+      "metrics": {
+        "rmse_overall": 0.7733111381530762,
+        "rmse_per_dim": [
+          0.007830701768398285,
+          0.08881131559610367,
+          0.017928587272763252,
+          1.0423306226730347,
+          0.41912931203842163,
+          1.07027268409729,
+          1.2257276773452759,
+          0.8689862489700317,
+          0.8418251872062683
+        ],
+        "w2": 49.022499084472656,
+        "w2_mean_per_sample": 49.022499084472656
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.75248122215271
+        },
+        "posterior_mean": {
+          "mu": 0.7330824594199657
+        },
+        "posterior_std": {
+          "mu": 0.013213865033384212
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7125305533409119
+          },
+          "q50": {
+            "mu": 0.7325527966022491
+          },
+          "q95": {
+            "mu": 0.7561091303825378
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.019398762732744212
+        },
+        "posterior_mean_l2_error": 0.019398762732744212,
+        "posterior_w2_pointmass": 0.023462346624091093,
+        "posterior_spread_l2": 0.013213865033384212,
+        "posterior_entropy_diag_gaussian": -2.9075500861326176
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13223695755004883,
+        "ppc_simulation_time_s": 3.6759791374206543,
+        "total_case_time_s": 3.808216094970703
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 6,
+      "theta_true": [
+        0.6027454137802124
+      ],
+      "metrics": {
+        "rmse_overall": 0.829128086566925,
+        "rmse_per_dim": [
+          0.009659476578235626,
+          0.032015521079301834,
+          0.039113596081733704,
+          1.1094598770141602,
+          0.43412065505981445,
+          0.9753122329711914,
+          1.2461004257202148,
+          0.9498257637023926,
+          1.1657260656356812
+        ],
+        "w2": 51.872825622558594,
+        "w2_mean_per_sample": 51.87282180786133
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6027454137802124
+        },
+        "posterior_mean": {
+          "mu": 0.5875038197636604
+        },
+        "posterior_std": {
+          "mu": 0.019346181756995873
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.5568056464195251
+          },
+          "q50": {
+            "mu": 0.5865178108215332
+          },
+          "q95": {
+            "mu": 0.6185928106307983
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.015241594016552007
+        },
+        "posterior_mean_l2_error": 0.015241594016552007,
+        "posterior_w2_pointmass": 0.024609860825869696,
+        "posterior_spread_l2": 0.019346181756995873,
+        "posterior_entropy_diag_gaussian": -2.526321670992708
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1336040496826172,
+        "ppc_simulation_time_s": 3.659451961517334,
+        "total_case_time_s": 3.793056011199951
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 7,
+      "theta_true": [
+        0.5860419273376465
+      ],
+      "metrics": {
+        "rmse_overall": 0.7045061588287354,
+        "rmse_per_dim": [
+          0.016265472397208214,
+          0.0800851434469223,
+          0.02306874841451645,
+          1.100297451019287,
+          0.43784695863723755,
+          0.9006870985031128,
+          0.8544877767562866,
+          0.8379469513893127,
+          0.9021345973014832
+        ],
+        "w2": 49.10668182373047,
+        "w2_mean_per_sample": 49.10667037963867
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.5860419273376465
+        },
+        "posterior_mean": {
+          "mu": 0.5816757157444954
+        },
+        "posterior_std": {
+          "mu": 0.022227098806414127
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.5465894341468811
+          },
+          "q50": {
+            "mu": 0.5816252529621124
+          },
+          "q95": {
+            "mu": 0.619258052110672
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0043662115931510925
+        },
+        "posterior_mean_l2_error": 0.0043662115931510925,
+        "posterior_w2_pointmass": 0.02262460199037517,
+        "posterior_spread_l2": 0.022227098806414127,
+        "posterior_entropy_diag_gaussian": -2.387504534351826
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13167691230773926,
+        "ppc_simulation_time_s": 3.6643080711364746,
+        "total_case_time_s": 3.795984983444214
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 8,
+      "theta_true": [
+        0.8631079792976379
+      ],
+      "metrics": {
+        "rmse_overall": 0.7925347089767456,
+        "rmse_per_dim": [
+          0.005628657061606646,
+          0.15395066142082214,
+          0.026037871837615967,
+          1.064288854598999,
+          0.4358477294445038,
+          0.9050609469413757,
+          1.056809663772583,
+          0.9287687540054321,
+          1.2277308702468872
+        ],
+        "w2": 47.86803436279297,
+        "w2_mean_per_sample": 47.868038177490234
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8631079792976379
+        },
+        "posterior_mean": {
+          "mu": 0.854194905757904
+        },
+        "posterior_std": {
+          "mu": 0.017805974615811276
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8258069574832916
+          },
+          "q50": {
+            "mu": 0.8545754551887512
+          },
+          "q95": {
+            "mu": 0.8822095125913619
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.008913073539733918
+        },
+        "posterior_mean_l2_error": 0.008913073539733918,
+        "posterior_w2_pointmass": 0.019892284436775293,
+        "posterior_spread_l2": 0.017805974615811276,
+        "posterior_entropy_diag_gaussian": -2.6092826922244807
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13182735443115234,
+        "ppc_simulation_time_s": 3.6688852310180664,
+        "total_case_time_s": 3.8007125854492188
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 9,
+      "theta_true": [
+        0.7747902870178223
+      ],
+      "metrics": {
+        "rmse_overall": 0.7850949168205261,
+        "rmse_per_dim": [
+          0.015317006967961788,
+          0.22455519437789917,
+          0.026437198743224144,
+          1.0746561288833618,
+          0.44446873664855957,
+          1.0895586013793945,
+          0.8922504186630249,
+          0.9322068095207214,
+          1.136358618736267
+        ],
+        "w2": 51.264259338378906,
+        "w2_mean_per_sample": 51.264259338378906
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7747902870178223
+        },
+        "posterior_mean": {
+          "mu": 0.7742566882073879
+        },
+        "posterior_std": {
+          "mu": 0.01136170900335176
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7562539994716644
+          },
+          "q50": {
+            "mu": 0.7740251421928406
+          },
+          "q95": {
+            "mu": 0.7941057205200195
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0005335988104343548
+        },
+        "posterior_mean_l2_error": 0.0005335988104343548,
+        "posterior_w2_pointmass": 0.011360036887644743,
+        "posterior_spread_l2": 0.01136170900335176,
+        "posterior_entropy_diag_gaussian": -3.0585679033635924
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1333634853363037,
+        "ppc_simulation_time_s": 3.694520950317383,
+        "total_case_time_s": 3.8278844356536865
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 10,
+      "theta_true": [
+        0.6465549468994141
+      ],
+      "metrics": {
+        "rmse_overall": 0.7618405222892761,
+        "rmse_per_dim": [
+          0.008908635936677456,
+          0.04452398419380188,
+          0.016893349587917328,
+          1.0432133674621582,
+          0.43572694063186646,
+          1.1085762977600098,
+          0.9063531756401062,
+          0.9762583374977112,
+          0.9693359732627869
+        ],
+        "w2": 48.235618591308594,
+        "w2_mean_per_sample": 48.23561477661133
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6465549468994141
+        },
+        "posterior_mean": {
+          "mu": 0.6445655387639999
+        },
+        "posterior_std": {
+          "mu": 0.017151132336726944
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.617306923866272
+          },
+          "q50": {
+            "mu": 0.6443004608154297
+          },
+          "q95": {
+            "mu": 0.6750711619853973
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.00198940813541415
+        },
+        "posterior_mean_l2_error": 0.00198940813541415,
+        "posterior_w2_pointmass": 0.017244816085133896,
+        "posterior_spread_l2": 0.017151132336726944,
+        "posterior_entropy_diag_gaussian": -2.646752548879973
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1324176788330078,
+        "ppc_simulation_time_s": 3.675835371017456,
+        "total_case_time_s": 3.808253049850464
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 11,
+      "theta_true": [
+        0.7346004247665405
+      ],
+      "metrics": {
+        "rmse_overall": 0.7258483171463013,
+        "rmse_per_dim": [
+          0.0068336487747728825,
+          0.05728474259376526,
+          0.047226160764694214,
+          1.1169672012329102,
+          0.4377555251121521,
+          0.9653613567352295,
+          0.8665063381195068,
+          0.8746249079704285,
+          0.9215063452720642
+        ],
+        "w2": 50.71840286254883,
+        "w2_mean_per_sample": 50.71839904785156
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7346004247665405
+        },
+        "posterior_mean": {
+          "mu": 0.7345782519876957
+        },
+        "posterior_std": {
+          "mu": 0.012940242675120762
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7126696318387985
+          },
+          "q50": {
+            "mu": 0.7347381711006165
+          },
+          "q95": {
+            "mu": 0.7572280198335648
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 2.217277884486446e-05
+        },
+        "posterior_mean_l2_error": 2.217277884486446e-05,
+        "posterior_w2_pointmass": 0.012924076269579607,
+        "posterior_spread_l2": 0.012940242675120762,
+        "posterior_entropy_diag_gaussian": -2.9284747030072413
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13315105438232422,
+        "ppc_simulation_time_s": 3.7556867599487305,
+        "total_case_time_s": 3.8888378143310547
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 12,
+      "theta_true": [
+        0.8152463436126709
+      ],
+      "metrics": {
+        "rmse_overall": 0.7561160922050476,
+        "rmse_per_dim": [
+          0.009872650727629662,
+          0.0752781480550766,
+          0.030005523934960365,
+          1.13998544216156,
+          0.43375444412231445,
+          0.8329514861106873,
+          1.0728669166564941,
+          0.892782986164093,
+          1.0045474767684937
+        ],
+        "w2": 51.29854965209961,
+        "w2_mean_per_sample": 51.298545837402344
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8152463436126709
+        },
+        "posterior_mean": {
+          "mu": 0.8292184406518937
+        },
+        "posterior_std": {
+          "mu": 0.011186562257857658
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8117880642414093
+          },
+          "q50": {
+            "mu": 0.828476220369339
+          },
+          "q95": {
+            "mu": 0.848996239900589
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.013972097039222753
+        },
+        "posterior_mean_l2_error": 0.013972097039222753,
+        "posterior_w2_pointmass": 0.017889824562709086,
+        "posterior_spread_l2": 0.011186562257857658,
+        "posterior_entropy_diag_gaussian": -3.074103486216317
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18940496444702148,
+        "ppc_simulation_time_s": 3.759730815887451,
+        "total_case_time_s": 3.9491357803344727
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 13,
+      "theta_true": [
+        0.8520209789276123
+      ],
+      "metrics": {
+        "rmse_overall": 0.7545245885848999,
+        "rmse_per_dim": [
+          0.0071865106001496315,
+          0.1144513338804245,
+          0.026057584211230278,
+          1.1824439764022827,
+          0.44830459356307983,
+          0.8923727869987488,
+          1.0716090202331543,
+          0.8342032432556152,
+          0.9328539371490479
+        ],
+        "w2": 52.671485900878906,
+        "w2_mean_per_sample": 52.671485900878906
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8520209789276123
+        },
+        "posterior_mean": {
+          "mu": 0.8569128322601318
+        },
+        "posterior_std": {
+          "mu": 0.010957297515670084
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8371867418289185
+          },
+          "q50": {
+            "mu": 0.8570972383022308
+          },
+          "q95": {
+            "mu": 0.8753100901842117
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0048918533325195135
+        },
+        "posterior_mean_l2_error": 0.0048918533325195135,
+        "posterior_w2_pointmass": 0.011987178231413554,
+        "posterior_spread_l2": 0.010957297515670084,
+        "posterior_entropy_diag_gaussian": -3.094811071700112
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13355517387390137,
+        "ppc_simulation_time_s": 3.705451011657715,
+        "total_case_time_s": 3.839006185531616
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 14,
+      "theta_true": [
+        0.7263771891593933
+      ],
+      "metrics": {
+        "rmse_overall": 0.7326801419258118,
+        "rmse_per_dim": [
+          0.005626131314784288,
+          0.11860115081071854,
+          0.030669765546917915,
+          1.1047353744506836,
+          0.45676541328430176,
+          0.8210976123809814,
+          0.9331980347633362,
+          0.8514701128005981,
+          1.0569807291030884
+        ],
+        "w2": 49.42564010620117,
+        "w2_mean_per_sample": 49.42564010620117
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7263771891593933
+        },
+        "posterior_mean": {
+          "mu": 0.7151664128899574
+        },
+        "posterior_std": {
+          "mu": 0.014894203391349826
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.692221713066101
+          },
+          "q50": {
+            "mu": 0.7153500914573669
+          },
+          "q95": {
+            "mu": 0.740421649813652
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.011210776269435896
+        },
+        "posterior_mean_l2_error": 0.011210776269435896,
+        "posterior_w2_pointmass": 0.01862697522384099,
+        "posterior_spread_l2": 0.014894203391349826,
+        "posterior_entropy_diag_gaussian": -2.787844642657059
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13265156745910645,
+        "ppc_simulation_time_s": 3.683605432510376,
+        "total_case_time_s": 3.8162569999694824
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 15,
+      "theta_true": [
+        0.8761031627655029
+      ],
+      "metrics": {
+        "rmse_overall": 0.7098473906517029,
+        "rmse_per_dim": [
+          0.003653624327853322,
+          0.041024237871170044,
+          0.09692761301994324,
+          1.1503314971923828,
+          0.425191730260849,
+          0.8593366146087646,
+          0.8544020652770996,
+          0.8642315864562988,
+          0.8969104290008545
+        ],
+        "w2": 50.88029861450195,
+        "w2_mean_per_sample": 50.88029861450195
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8761031627655029
+        },
+        "posterior_mean": {
+          "mu": 0.8736776977777481
+        },
+        "posterior_std": {
+          "mu": 0.010101962125315674
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8578593254089355
+          },
+          "q50": {
+            "mu": 0.8737329542636871
+          },
+          "q95": {
+            "mu": 0.8895856976509094
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.002425464987754866
+        },
+        "posterior_mean_l2_error": 0.002425464987754866,
+        "posterior_w2_pointmass": 0.01037677190127949,
+        "posterior_spread_l2": 0.010101962125315674,
+        "posterior_entropy_diag_gaussian": -3.176087070964956
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13406968116760254,
+        "ppc_simulation_time_s": 3.6509926319122314,
+        "total_case_time_s": 3.785062313079834
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 16,
+      "theta_true": [
+        0.7541109323501587
+      ],
+      "metrics": {
+        "rmse_overall": 0.7314077615737915,
+        "rmse_per_dim": [
+          0.0066621010191738605,
+          0.1503944844007492,
+          0.07494747638702393,
+          1.0460880994796753,
+          0.42386603355407715,
+          0.865395724773407,
+          0.9430887699127197,
+          0.9901913404464722,
+          0.9452874064445496
+        ],
+        "w2": 44.828590393066406,
+        "w2_mean_per_sample": 44.828590393066406
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7541109323501587
+        },
+        "posterior_mean": {
+          "mu": 0.7475714583694935
+        },
+        "posterior_std": {
+          "mu": 0.012581970450352482
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7282923460006714
+          },
+          "q50": {
+            "mu": 0.7474178075790405
+          },
+          "q95": {
+            "mu": 0.7674154669046402
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0065394739806652336
+        },
+        "posterior_mean_l2_error": 0.0065394739806652336,
+        "posterior_w2_pointmass": 0.01416597809564544,
+        "posterior_spread_l2": 0.012581970450352482,
+        "posterior_entropy_diag_gaussian": -2.956551873197598
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1330564022064209,
+        "ppc_simulation_time_s": 3.731905937194824,
+        "total_case_time_s": 3.864962339401245
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 17,
+      "theta_true": [
+        0.8641507625579834
+      ],
+      "metrics": {
+        "rmse_overall": 0.7708396315574646,
+        "rmse_per_dim": [
+          0.015669098123908043,
+          0.14888715744018555,
+          0.12161499261856079,
+          1.1059685945510864,
+          0.44841551780700684,
+          1.0167999267578125,
+          1.0242252349853516,
+          1.0000241994857788,
+          0.8962869048118591
+        ],
+        "w2": 49.46360397338867,
+        "w2_mean_per_sample": 49.46360397338867
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8641507625579834
+        },
+        "posterior_mean": {
+          "mu": 0.8919092354178428
+        },
+        "posterior_std": {
+          "mu": 0.013289078177472166
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8704370766878128
+          },
+          "q50": {
+            "mu": 0.891957014799118
+          },
+          "q95": {
+            "mu": 0.9142812103033066
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.02775847285985944
+        },
+        "posterior_mean_l2_error": 0.02775847285985944,
+        "posterior_w2_pointmass": 0.03076834274577531,
+        "posterior_spread_l2": 0.013289078177472166,
+        "posterior_entropy_diag_gaussian": -2.9018742375744395
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13359308242797852,
+        "ppc_simulation_time_s": 3.7027761936187744,
+        "total_case_time_s": 3.836369276046753
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 18,
+      "theta_true": [
+        0.7082356810569763
+      ],
+      "metrics": {
+        "rmse_overall": 0.7072227001190186,
+        "rmse_per_dim": [
+          0.008547822013497353,
+          0.04758353903889656,
+          0.0690230205655098,
+          1.1191681623458862,
+          0.4517875611782074,
+          0.9123486280441284,
+          0.8384804725646973,
+          0.8588035702705383,
+          0.8745004534721375
+        ],
+        "w2": 50.73906707763672,
+        "w2_mean_per_sample": 50.73905944824219
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7082356810569763
+        },
+        "posterior_mean": {
+          "mu": 0.6820026789605618
+        },
+        "posterior_std": {
+          "mu": 0.015882584507757987
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6557206213474274
+          },
+          "q50": {
+            "mu": 0.6822553277015686
+          },
+          "q95": {
+            "mu": 0.7086294740438461
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.02623300209641455
+        },
+        "posterior_mean_l2_error": 0.02623300209641455,
+        "posterior_w2_pointmass": 0.03065609643137805,
+        "posterior_spread_l2": 0.015882584507757987,
+        "posterior_entropy_diag_gaussian": -2.723593550823499
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13382482528686523,
+        "ppc_simulation_time_s": 3.709639549255371,
+        "total_case_time_s": 3.8434643745422363
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 19,
+      "theta_true": [
+        0.6923061609268188
+      ],
+      "metrics": {
+        "rmse_overall": 0.7292185425758362,
+        "rmse_per_dim": [
+          0.009935673326253891,
+          0.11623377352952957,
+          0.19577661156654358,
+          1.0711559057235718,
+          0.4352889060974121,
+          0.8597404956817627,
+          0.8607501983642578,
+          0.9255499243736267,
+          1.0303750038146973
+        ],
+        "w2": 49.57908630371094,
+        "w2_mean_per_sample": 49.57123947143555
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6923061609268188
+        },
+        "posterior_mean": {
+          "mu": 0.6888370361924171
+        },
+        "posterior_std": {
+          "mu": 0.014072747650183395
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6661125808954239
+          },
+          "q50": {
+            "mu": 0.6894609332084656
+          },
+          "q95": {
+            "mu": 0.7115779608488083
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0034691247344017517
+        },
+        "posterior_mean_l2_error": 0.0034691247344017517,
+        "posterior_w2_pointmass": 0.01447694537126239,
+        "posterior_spread_l2": 0.014072747650183395,
+        "posterior_entropy_diag_gaussian": -2.8445766094108085
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1329035758972168,
+        "ppc_simulation_time_s": 3.691385269165039,
+        "total_case_time_s": 3.824288845062256
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 20,
+      "theta_true": [
+        0.8496453762054443
+      ],
+      "metrics": {
+        "rmse_overall": 0.7201377749443054,
+        "rmse_per_dim": [
+          0.010496706701815128,
+          0.052366163581609726,
+          0.055348701775074005,
+          1.0828220844268799,
+          0.4572735130786896,
+          0.8686930537223816,
+          0.8481089472770691,
+          0.8927854299545288,
+          1.0044327974319458
+        ],
+        "w2": 48.35590744018555,
+        "w2_mean_per_sample": 48.35590744018555
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8496453762054443
+        },
+        "posterior_mean": {
+          "mu": 0.8526755453646183
+        },
+        "posterior_std": {
+          "mu": 0.01059206794553789
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.834989920258522
+          },
+          "q50": {
+            "mu": 0.8534220457077026
+          },
+          "q95": {
+            "mu": 0.8697903633117676
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0030301691591739788
+        },
+        "posterior_mean_l2_error": 0.0030301691591739788,
+        "posterior_w2_pointmass": 0.011004242306387708,
+        "posterior_spread_l2": 0.01059206794553789,
+        "posterior_entropy_diag_gaussian": -3.128711331805625
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1333308219909668,
+        "ppc_simulation_time_s": 3.700015068054199,
+        "total_case_time_s": 3.833345890045166
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 21,
+      "theta_true": [
+        0.8465492129325867
+      ],
+      "metrics": {
+        "rmse_overall": 0.7339532971382141,
+        "rmse_per_dim": [
+          0.008525778539478779,
+          0.13735368847846985,
+          0.02359265461564064,
+          1.0823943614959717,
+          0.4552474021911621,
+          0.860384464263916,
+          1.0046013593673706,
+          0.9329637289047241,
+          0.9110201001167297
+        ],
+        "w2": 49.5048713684082,
+        "w2_mean_per_sample": 49.50486755371094
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8465492129325867
+        },
+        "posterior_mean": {
+          "mu": 0.8524548025429248
+        },
+        "posterior_std": {
+          "mu": 0.013322736261158274
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8305647552013398
+          },
+          "q50": {
+            "mu": 0.852326512336731
+          },
+          "q95": {
+            "mu": 0.8724575102329254
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.005905589610338158
+        },
+        "posterior_mean_l2_error": 0.005905589610338158,
+        "posterior_w2_pointmass": 0.014557731687196505,
+        "posterior_spread_l2": 0.013322736261158274,
+        "posterior_entropy_diag_gaussian": -2.8993446767501676
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13459467887878418,
+        "ppc_simulation_time_s": 3.685529947280884,
+        "total_case_time_s": 3.820124626159668
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 22,
+      "theta_true": [
+        0.7959504127502441
+      ],
+      "metrics": {
+        "rmse_overall": 0.7709612846374512,
+        "rmse_per_dim": [
+          0.01998310349881649,
+          0.09081489592790604,
+          0.024965085089206696,
+          1.0846129655838013,
+          0.4850821793079376,
+          0.8875340223312378,
+          1.0823410749435425,
+          1.1225426197052002,
+          0.8421347141265869
+        ],
+        "w2": 50.346500396728516,
+        "w2_mean_per_sample": 50.34650421142578
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7959504127502441
+        },
+        "posterior_mean": {
+          "mu": 0.7654233276844025
+        },
+        "posterior_std": {
+          "mu": 0.01564811379114164
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7392914116382598
+          },
+          "q50": {
+            "mu": 0.765666276216507
+          },
+          "q95": {
+            "mu": 0.7915111154317855
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.030527085065841675
+        },
+        "posterior_mean_l2_error": 0.030527085065841675,
+        "posterior_w2_pointmass": 0.034295105032272455,
+        "posterior_spread_l2": 0.01564811379114164,
+        "posterior_entropy_diag_gaussian": -2.7384663605826574
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13429975509643555,
+        "ppc_simulation_time_s": 3.7760863304138184,
+        "total_case_time_s": 3.910386085510254
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 23,
+      "theta_true": [
+        0.6030530333518982
+      ],
+      "metrics": {
+        "rmse_overall": 27.368209838867188,
+        "rmse_per_dim": [
+          0.7647631168365479,
+          8.016288757324219,
+          3.5909276008605957,
+          6.554069519042969,
+          6.879240989685059,
+          39.251976013183594,
+          36.49242401123047,
+          44.321598052978516,
+          41.669307708740234
+        ],
+        "w2": 780.0784301757812,
+        "w2_mean_per_sample": 780.0784301757812
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6030530333518982
+        },
+        "posterior_mean": {
+          "mu": 0.8208288131654262
+        },
+        "posterior_std": {
+          "mu": 0.021402751002702693
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7847774147987365
+          },
+          "q50": {
+            "mu": 0.8219342529773712
+          },
+          "q95": {
+            "mu": 0.856855520606041
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.21777577981352803
+        },
+        "posterior_mean_l2_error": 0.21777577981352803,
+        "posterior_w2_pointmass": 0.2188223545013117,
+        "posterior_spread_l2": 0.021402751002702693,
+        "posterior_entropy_diag_gaussian": -2.425297280483535
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1893320083618164,
+        "ppc_simulation_time_s": 3.69362735748291,
+        "total_case_time_s": 3.8829593658447266
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 24,
+      "theta_true": [
+        0.7877652049064636
+      ],
+      "metrics": {
+        "rmse_overall": 0.709454357624054,
+        "rmse_per_dim": [
+          0.0055551291443407536,
+          0.09119521081447601,
+          0.025593390688300133,
+          1.110115885734558,
+          0.4241088330745697,
+          0.8606513142585754,
+          0.9115800857543945,
+          0.851517379283905,
+          0.901066243648529
+        ],
+        "w2": 49.461429595947266,
+        "w2_mean_per_sample": 49.461429595947266
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7877652049064636
+        },
+        "posterior_mean": {
+          "mu": 0.7908689869940281
+        },
+        "posterior_std": {
+          "mu": 0.011429425858487904
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7711575418710709
+          },
+          "q50": {
+            "mu": 0.7914407849311829
+          },
+          "q95": {
+            "mu": 0.8091940879821777
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.003103782087564455
+        },
+        "posterior_mean_l2_error": 0.003103782087564455,
+        "posterior_w2_pointmass": 0.011829567162965909,
+        "posterior_spread_l2": 0.011429425858487904,
+        "posterior_entropy_diag_gaussian": -3.0526255003357896
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1332533359527588,
+        "ppc_simulation_time_s": 3.6926915645599365,
+        "total_case_time_s": 3.8259449005126953
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 25,
+      "theta_true": [
+        0.7829315662384033
+      ],
+      "metrics": {
+        "rmse_overall": 0.736530601978302,
+        "rmse_per_dim": [
+          0.003696736413985491,
+          0.07085147500038147,
+          0.06863407045602798,
+          1.0683499574661255,
+          0.4389057159423828,
+          0.8960859179496765,
+          0.965644896030426,
+          1.0159236192703247,
+          0.8780662417411804
+        ],
+        "w2": 48.146949768066406,
+        "w2_mean_per_sample": 48.14695358276367
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7829315662384033
+        },
+        "posterior_mean": {
+          "mu": 0.7923276887834072
+        },
+        "posterior_std": {
+          "mu": 0.014742176388372021
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.769246244430542
+          },
+          "q50": {
+            "mu": 0.792240709066391
+          },
+          "q95": {
+            "mu": 0.817541691660881
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.009396122545003882
+        },
+        "posterior_mean_l2_error": 0.009396122545003882,
+        "posterior_w2_pointmass": 0.017466412171219917,
+        "posterior_spread_l2": 0.014742176388372021,
+        "posterior_entropy_diag_gaussian": -2.798104218058747
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13280630111694336,
+        "ppc_simulation_time_s": 3.6800925731658936,
+        "total_case_time_s": 3.812898874282837
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 26,
+      "theta_true": [
+        0.8704046010971069
+      ],
+      "metrics": {
+        "rmse_overall": 0.6992402672767639,
+        "rmse_per_dim": [
+          0.00806154403835535,
+          0.21257631480693817,
+          0.0532209612429142,
+          1.045140266418457,
+          0.4468507766723633,
+          0.8605744242668152,
+          0.8714594841003418,
+          0.8758949637413025,
+          0.8905795812606812
+        ],
+        "w2": 48.124961853027344,
+        "w2_mean_per_sample": 48.12495422363281
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8704046010971069
+        },
+        "posterior_mean": {
+          "mu": 0.8768936148285866
+        },
+        "posterior_std": {
+          "mu": 0.014351884311104785
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8527572751045227
+          },
+          "q50": {
+            "mu": 0.877543568611145
+          },
+          "q95": {
+            "mu": 0.9000403344631194
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.006489013731479698
+        },
+        "posterior_mean_l2_error": 0.006489013731479698,
+        "posterior_w2_pointmass": 0.015734323659708692,
+        "posterior_spread_l2": 0.014351884311104785,
+        "posterior_entropy_diag_gaussian": -2.8249355013139708
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13431191444396973,
+        "ppc_simulation_time_s": 3.662936210632324,
+        "total_case_time_s": 3.797248125076294
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 27,
+      "theta_true": [
+        0.8070743083953857
+      ],
+      "metrics": {
+        "rmse_overall": 0.7875145673751831,
+        "rmse_per_dim": [
+          0.009035053662955761,
+          0.1186242401599884,
+          0.02612116001546383,
+          1.0575052499771118,
+          0.4269639849662781,
+          0.8979557752609253,
+          0.8860644102096558,
+          1.3232728242874146,
+          0.9610811471939087
+        ],
+        "w2": 49.57143783569336,
+        "w2_mean_per_sample": 49.571441650390625
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8070743083953857
+        },
+        "posterior_mean": {
+          "mu": 0.808875953257084
+        },
+        "posterior_std": {
+          "mu": 0.011290984426439988
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7899815946817398
+          },
+          "q50": {
+            "mu": 0.8097037076950073
+          },
+          "q95": {
+            "mu": 0.8272627860307693
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.001801644861698204
+        },
+        "posterior_mean_l2_error": 0.001801644861698204,
+        "posterior_w2_pointmass": 0.011419874679807061,
+        "posterior_spread_l2": 0.011290984426439988,
+        "posterior_entropy_diag_gaussian": -3.064812176869731
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13230609893798828,
+        "ppc_simulation_time_s": 3.7064921855926514,
+        "total_case_time_s": 3.8387982845306396
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 28,
+      "theta_true": [
+        0.8672326803207397
+      ],
+      "metrics": {
+        "rmse_overall": 0.7090803384780884,
+        "rmse_per_dim": [
+          0.010232440195977688,
+          0.059328097850084305,
+          0.06664878129959106,
+          1.0744128227233887,
+          0.4731794595718384,
+          0.9446642398834229,
+          0.8673823475837708,
+          0.8580700159072876,
+          0.8705161809921265
+        ],
+        "w2": 48.47542953491211,
+        "w2_mean_per_sample": 48.47542953491211
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8672326803207397
+        },
+        "posterior_mean": {
+          "mu": 0.864005176872015
+        },
+        "posterior_std": {
+          "mu": 0.012257316176772372
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8441366314888
+          },
+          "q50": {
+            "mu": 0.8640002906322479
+          },
+          "q95": {
+            "mu": 0.8823994815349578
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0032275034487248
+        },
+        "posterior_mean_l2_error": 0.0032275034487248,
+        "posterior_w2_pointmass": 0.012660291223714105,
+        "posterior_spread_l2": 0.012257316176772372,
+        "posterior_entropy_diag_gaussian": -2.98269374814272
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1328747272491455,
+        "ppc_simulation_time_s": 3.7045438289642334,
+        "total_case_time_s": 3.837418556213379
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 29,
+      "theta_true": [
+        0.8843629360198975
+      ],
+      "metrics": {
+        "rmse_overall": 0.7898620367050171,
+        "rmse_per_dim": [
+          0.007586746476590633,
+          0.15690670907497406,
+          0.033169735223054886,
+          1.0865237712860107,
+          0.4364226460456848,
+          1.3457896709442139,
+          0.8983551263809204,
+          0.9322110414505005,
+          0.8549585938453674
+        ],
+        "w2": 50.19743728637695,
+        "w2_mean_per_sample": 50.19744110107422
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8843629360198975
+        },
+        "posterior_mean": {
+          "mu": 0.8911981792747974
+        },
+        "posterior_std": {
+          "mu": 0.017177409802260547
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8629922926425934
+          },
+          "q50": {
+            "mu": 0.8918189108371735
+          },
+          "q95": {
+            "mu": 0.9182886898517608
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.006835243254899925
+        },
+        "posterior_mean_l2_error": 0.006835243254899925,
+        "posterior_w2_pointmass": 0.01846743889524656,
+        "posterior_spread_l2": 0.017177409802260547,
+        "posterior_entropy_diag_gaussian": -2.6452216087917164
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13366913795471191,
+        "ppc_simulation_time_s": 3.6695873737335205,
+        "total_case_time_s": 3.8032565116882324
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 30,
+      "theta_true": [
+        0.7249118089675903
+      ],
+      "metrics": {
+        "rmse_overall": 0.730216920375824,
+        "rmse_per_dim": [
+          0.009047900326550007,
+          0.13508911430835724,
+          0.06718617677688599,
+          1.0846892595291138,
+          0.4235434830188751,
+          0.8780117034912109,
+          0.8204293251037598,
+          0.8940426111221313,
+          1.0848251581192017
+        ],
+        "w2": 49.477500915527344,
+        "w2_mean_per_sample": 49.47749328613281
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7249118089675903
+        },
+        "posterior_mean": {
+          "mu": 0.7217262744903564
+        },
+        "posterior_std": {
+          "mu": 0.014357819186315936
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6990865707397461
+          },
+          "q50": {
+            "mu": 0.7210812270641327
+          },
+          "q95": {
+            "mu": 0.7442134559154511
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.003185534477233909
+        },
+        "posterior_mean_l2_error": 0.003185534477233909,
+        "posterior_w2_pointmass": 0.014689425933749774,
+        "posterior_spread_l2": 0.014357819186315936,
+        "posterior_entropy_diag_gaussian": -2.824522060938578
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13294386863708496,
+        "ppc_simulation_time_s": 3.7746686935424805,
+        "total_case_time_s": 3.9076125621795654
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 31,
+      "theta_true": [
+        0.8735863566398621
+      ],
+      "metrics": {
+        "rmse_overall": 0.7495485544204712,
+        "rmse_per_dim": [
+          0.006186829414218664,
+          0.12131322175264359,
+          0.018560398370027542,
+          1.050213098526001,
+          0.44626787304878235,
+          1.1642500162124634,
+          0.889004647731781,
+          0.9137480854988098,
+          0.8708975315093994
+        ],
+        "w2": 48.58964920043945,
+        "w2_mean_per_sample": 48.58964538574219
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8735863566398621
+        },
+        "posterior_mean": {
+          "mu": 0.8832614378631115
+        },
+        "posterior_std": {
+          "mu": 0.011878422042180335
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8635417014360428
+          },
+          "q50": {
+            "mu": 0.8830195963382721
+          },
+          "q95": {
+            "mu": 0.9033056974411011
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.009675081223249449
+        },
+        "posterior_mean_l2_error": 0.009675081223249449,
+        "posterior_w2_pointmass": 0.015308538944428988,
+        "posterior_spread_l2": 0.011878422042180335,
+        "posterior_entropy_diag_gaussian": -3.0140932653972463
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.19054698944091797,
+        "ppc_simulation_time_s": 3.683340549468994,
+        "total_case_time_s": 3.873887538909912
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 32,
+      "theta_true": [
+        0.7778153419494629
+      ],
+      "metrics": {
+        "rmse_overall": 0.7459169626235962,
+        "rmse_per_dim": [
+          0.017355019226670265,
+          0.15084509551525116,
+          0.049706075340509415,
+          1.0512793064117432,
+          0.44768381118774414,
+          0.8757811784744263,
+          0.8677801489830017,
+          1.0523028373718262,
+          1.024215579032898
+        ],
+        "w2": 46.46620559692383,
+        "w2_mean_per_sample": 46.46620178222656
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7778153419494629
+        },
+        "posterior_mean": {
+          "mu": 0.7615299524366855
+        },
+        "posterior_std": {
+          "mu": 0.01294836143714083
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7394196957349777
+          },
+          "q50": {
+            "mu": 0.7613360583782196
+          },
+          "q95": {
+            "mu": 0.7833153814077377
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.01628538951277736
+        },
+        "posterior_mean_l2_error": 0.01628538951277736,
+        "posterior_w2_pointmass": 0.02079554820941123,
+        "posterior_spread_l2": 0.01294836143714083,
+        "posterior_entropy_diag_gaussian": -2.927847495588022
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13337278366088867,
+        "ppc_simulation_time_s": 3.700066328048706,
+        "total_case_time_s": 3.8334391117095947
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 33,
+      "theta_true": [
+        0.803322970867157
+      ],
+      "metrics": {
+        "rmse_overall": 0.7182502150535583,
+        "rmse_per_dim": [
+          0.0035169613547623158,
+          0.08654826134443283,
+          0.06988525390625,
+          1.0733362436294556,
+          0.4350888729095459,
+          0.9844727516174316,
+          0.9339696168899536,
+          0.8481653332710266,
+          0.8534287214279175
+        ],
+        "w2": 47.23306655883789,
+        "w2_mean_per_sample": 47.23306655883789
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.803322970867157
+        },
+        "posterior_mean": {
+          "mu": 0.804326878786087
+        },
+        "posterior_std": {
+          "mu": 0.010728362314338212
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7867129772901535
+          },
+          "q50": {
+            "mu": 0.8043547570705414
+          },
+          "q95": {
+            "mu": 0.8220881342887878
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0010039079189300137
+        },
+        "posterior_mean_l2_error": 0.0010039079189300137,
+        "posterior_w2_pointmass": 0.01076186994265093,
+        "posterior_spread_l2": 0.010728362314338212,
+        "posterior_entropy_diag_gaussian": -3.1159258275926276
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13345861434936523,
+        "ppc_simulation_time_s": 3.6933724880218506,
+        "total_case_time_s": 3.826831102371216
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 34,
+      "theta_true": [
+        0.8266306519508362
+      ],
+      "metrics": {
+        "rmse_overall": 0.7687527537345886,
+        "rmse_per_dim": [
+          0.007421948481351137,
+          0.036223504692316055,
+          0.028748461976647377,
+          1.0496513843536377,
+          0.530791699886322,
+          0.8653526306152344,
+          1.2878021001815796,
+          0.8966032862663269,
+          0.8496812582015991
+        ],
+        "w2": 49.42092514038086,
+        "w2_mean_per_sample": 49.420928955078125
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8266306519508362
+        },
+        "posterior_mean": {
+          "mu": 0.824136580824852
+        },
+        "posterior_std": {
+          "mu": 0.011034930727990432
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.806899031996727
+          },
+          "q50": {
+            "mu": 0.8237320780754089
+          },
+          "q95": {
+            "mu": 0.8420136541128158
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0024940711259842097
+        },
+        "posterior_mean_l2_error": 0.0024940711259842097,
+        "posterior_w2_pointmass": 0.011299808082997987,
+        "posterior_spread_l2": 0.011034930727990432,
+        "posterior_entropy_diag_gaussian": -3.0877509835700785
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13314390182495117,
+        "ppc_simulation_time_s": 3.6593427658081055,
+        "total_case_time_s": 3.7924866676330566
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 35,
+      "theta_true": [
+        0.8694524765014648
+      ],
+      "metrics": {
+        "rmse_overall": 0.7568601965904236,
+        "rmse_per_dim": [
+          0.004421782214194536,
+          0.06358889490365982,
+          0.05431734025478363,
+          1.0617196559906006,
+          0.42015722393989563,
+          0.8828648328781128,
+          1.1245160102844238,
+          1.0499780178070068,
+          0.8356448411941528
+        ],
+        "w2": 47.55839920043945,
+        "w2_mean_per_sample": 47.55839920043945
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8694524765014648
+        },
+        "posterior_mean": {
+          "mu": 0.8935718947649002
+        },
+        "posterior_std": {
+          "mu": 0.020770680274363955
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8611327648162842
+          },
+          "q50": {
+            "mu": 0.8934435844421387
+          },
+          "q95": {
+            "mu": 0.9269695490598678
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.024119418263435333
+        },
+        "posterior_mean_l2_error": 0.024119418263435333,
+        "posterior_w2_pointmass": 0.031813345368394405,
+        "posterior_spread_l2": 0.020770680274363955,
+        "posterior_entropy_diag_gaussian": -2.45527435568801
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13488316535949707,
+        "ppc_simulation_time_s": 3.692030191421509,
+        "total_case_time_s": 3.826913356781006
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 36,
+      "theta_true": [
+        0.8380469083786011
+      ],
+      "metrics": {
+        "rmse_overall": 0.7010391354560852,
+        "rmse_per_dim": [
+          0.02485639788210392,
+          0.06541526317596436,
+          0.08791159838438034,
+          1.082851767539978,
+          0.43954232335090637,
+          0.8548576831817627,
+          0.878172755241394,
+          0.8388214111328125,
+          0.9160358309745789
+        ],
+        "w2": 48.98584747314453,
+        "w2_mean_per_sample": 48.9858512878418
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8380469083786011
+        },
+        "posterior_mean": {
+          "mu": 0.8592174403369427
+        },
+        "posterior_std": {
+          "mu": 0.011224884529245385
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8406893610954285
+          },
+          "q50": {
+            "mu": 0.8589687943458557
+          },
+          "q95": {
+            "mu": 0.8776314079761505
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.02117053195834162
+        },
+        "posterior_mean_l2_error": 0.02117053195834162,
+        "posterior_w2_pointmass": 0.02395567701010176,
+        "posterior_spread_l2": 0.011224884529245385,
+        "posterior_entropy_diag_gaussian": -3.0706835991289716
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13397455215454102,
+        "ppc_simulation_time_s": 3.7234597206115723,
+        "total_case_time_s": 3.8574342727661133
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 37,
+      "theta_true": [
+        0.7324637174606323
+      ],
+      "metrics": {
+        "rmse_overall": 0.8010327816009521,
+        "rmse_per_dim": [
+          0.005825517233461142,
+          0.12144969403743744,
+          0.03031131438910961,
+          1.0548666715621948,
+          0.45156195759773254,
+          0.8950230479240417,
+          0.9705268740653992,
+          1.33209228515625,
+          0.9618053436279297
+        ],
+        "w2": 49.407466888427734,
+        "w2_mean_per_sample": 49.407466888427734
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7324637174606323
+        },
+        "posterior_mean": {
+          "mu": 0.7322803416848183
+        },
+        "posterior_std": {
+          "mu": 0.013745816700348495
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7111069083213806
+          },
+          "q50": {
+            "mu": 0.7318423092365265
+          },
+          "q95": {
+            "mu": 0.7541542172431945
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.00018337577581406528
+        },
+        "posterior_mean_l2_error": 0.00018337577581406528,
+        "posterior_w2_pointmass": 0.013729848314633197,
+        "posterior_spread_l2": 0.013745816700348495,
+        "posterior_entropy_diag_gaussian": -2.868082207929909
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1346595287322998,
+        "ppc_simulation_time_s": 3.710353374481201,
+        "total_case_time_s": 3.845012903213501
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 38,
+      "theta_true": [
+        0.81624436378479
+      ],
+      "metrics": {
+        "rmse_overall": 0.7449281215667725,
+        "rmse_per_dim": [
+          0.009318544529378414,
+          0.05157456174492836,
+          0.031552791595458984,
+          1.0890320539474487,
+          0.4488459825515747,
+          0.8370561599731445,
+          0.8503811955451965,
+          1.2387185096740723,
+          0.8030132055282593
+        ],
+        "w2": 49.553977966308594,
+        "w2_mean_per_sample": 49.553985595703125
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.81624436378479
+        },
+        "posterior_mean": {
+          "mu": 0.8292739619314671
+        },
+        "posterior_std": {
+          "mu": 0.010755266182931399
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8106165647506713
+          },
+          "q50": {
+            "mu": 0.8294300734996796
+          },
+          "q95": {
+            "mu": 0.8464536964893341
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.013029598146677035
+        },
+        "posterior_mean_l2_error": 0.013029598146677035,
+        "posterior_w2_pointmass": 0.016886591993440614,
+        "posterior_spread_l2": 0.010755266182931399,
+        "posterior_entropy_diag_gaussian": -3.1134212336726033
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13339900970458984,
+        "ppc_simulation_time_s": 3.7275238037109375,
+        "total_case_time_s": 3.8609228134155273
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 39,
+      "theta_true": [
+        0.6699736714363098
+      ],
+      "metrics": {
+        "rmse_overall": 0.7247872948646545,
+        "rmse_per_dim": [
+          0.020763279870152473,
+          0.17476864159107208,
+          0.02831854298710823,
+          1.0978361368179321,
+          0.43750011920928955,
+          0.925711989402771,
+          1.019350290298462,
+          0.8475168943405151,
+          0.8277190923690796
+        ],
+        "w2": 50.08146286010742,
+        "w2_mean_per_sample": 50.081459045410156
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6699736714363098
+        },
+        "posterior_mean": {
+          "mu": 0.6692647056281567
+        },
+        "posterior_std": {
+          "mu": 0.014223795071351108
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6441328585147857
+          },
+          "q50": {
+            "mu": 0.6694031953811646
+          },
+          "q95": {
+            "mu": 0.690331780910492
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0007089658081531613
+        },
+        "posterior_mean_l2_error": 0.0007089658081531613,
+        "posterior_w2_pointmass": 0.014223684047508327,
+        "posterior_spread_l2": 0.014223795071351108,
+        "posterior_entropy_diag_gaussian": -2.8339004743544205
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13337063789367676,
+        "ppc_simulation_time_s": 3.7037932872772217,
+        "total_case_time_s": 3.8371639251708984
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 40,
+      "theta_true": [
+        0.7617753744125366
+      ],
+      "metrics": {
+        "rmse_overall": 0.7072758674621582,
+        "rmse_per_dim": [
+          0.010568360798060894,
+          0.08988919109106064,
+          0.05653486028313637,
+          1.0532431602478027,
+          0.4530842900276184,
+          0.8471011519432068,
+          0.8468695878982544,
+          0.9554662108421326,
+          0.9102054834365845
+        ],
+        "w2": 48.127685546875,
+        "w2_mean_per_sample": 48.127681732177734
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7617753744125366
+        },
+        "posterior_mean": {
+          "mu": 0.7590145209431648
+        },
+        "posterior_std": {
+          "mu": 0.01218220730636481
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7402236312627792
+          },
+          "q50": {
+            "mu": 0.7595103681087494
+          },
+          "q95": {
+            "mu": 0.7783937901258469
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0027608534693718267
+        },
+        "posterior_mean_l2_error": 0.0027608534693718267,
+        "posterior_w2_pointmass": 0.012476276339415232,
+        "posterior_spread_l2": 0.01218220730636481,
+        "posterior_entropy_diag_gaussian": -2.9888402760752943
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18891358375549316,
+        "ppc_simulation_time_s": 3.7108778953552246,
+        "total_case_time_s": 3.8997914791107178
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 41,
+      "theta_true": [
+        0.865086019039154
+      ],
+      "metrics": {
+        "rmse_overall": 0.7244104743003845,
+        "rmse_per_dim": [
+          0.009639570489525795,
+          0.05214003846049309,
+          0.08706014603376389,
+          1.074204444885254,
+          0.45567187666893005,
+          0.9867556095123291,
+          0.9128739833831787,
+          0.9090687036514282,
+          0.8470897674560547
+        ],
+        "w2": 49.07782745361328,
+        "w2_mean_per_sample": 49.07782745361328
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.865086019039154
+        },
+        "posterior_mean": {
+          "mu": 0.8822038273513317
+        },
+        "posterior_std": {
+          "mu": 0.014950726323941895
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8571336597204209
+          },
+          "q50": {
+            "mu": 0.8821792304515839
+          },
+          "q95": {
+            "mu": 0.9058287620544433
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.017117808312177685
+        },
+        "posterior_mean_l2_error": 0.017117808312177685,
+        "posterior_w2_pointmass": 0.022715298115627586,
+        "posterior_spread_l2": 0.014950726323941895,
+        "posterior_entropy_diag_gaussian": -2.784056863579647
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1333456039428711,
+        "ppc_simulation_time_s": 3.711021900177002,
+        "total_case_time_s": 3.844367504119873
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 42,
+      "theta_true": [
+        0.8707237839698792
+      ],
+      "metrics": {
+        "rmse_overall": 0.7438923716545105,
+        "rmse_per_dim": [
+          0.008285128511488438,
+          0.06734045594930649,
+          0.028202194720506668,
+          1.0693422555923462,
+          0.4434458315372467,
+          1.0420198440551758,
+          0.9713367223739624,
+          0.8734303712844849,
+          0.9179679155349731
+        ],
+        "w2": 48.89346694946289,
+        "w2_mean_per_sample": 48.89346694946289
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8707237839698792
+        },
+        "posterior_mean": {
+          "mu": 0.9006394045054913
+        },
+        "posterior_std": {
+          "mu": 0.016933862035309638
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8728771895170212
+          },
+          "q50": {
+            "mu": 0.9009662866592407
+          },
+          "q95": {
+            "mu": 0.9299093425273895
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.029915620535612142
+        },
+        "posterior_mean_l2_error": 0.029915620535612142,
+        "posterior_w2_pointmass": 0.03436543534211462,
+        "posterior_spread_l2": 0.016933862035309638,
+        "posterior_entropy_diag_gaussian": -2.659501457790896
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13294124603271484,
+        "ppc_simulation_time_s": 3.675337314605713,
+        "total_case_time_s": 3.8082785606384277
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 43,
+      "theta_true": [
+        0.7232348918914795
+      ],
+      "metrics": {
+        "rmse_overall": 0.7414594888687134,
+        "rmse_per_dim": [
+          0.00655007641762495,
+          0.20554359257221222,
+          0.052494168281555176,
+          1.0729042291641235,
+          0.44410064816474915,
+          1.0976182222366333,
+          0.8582853674888611,
+          0.8551290035247803,
+          0.9390409588813782
+        ],
+        "w2": 48.916717529296875,
+        "w2_mean_per_sample": 48.916717529296875
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7232348918914795
+        },
+        "posterior_mean": {
+          "mu": 0.7213426704704762
+        },
+        "posterior_std": {
+          "mu": 0.012579595545704932
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7006952106952667
+          },
+          "q50": {
+            "mu": 0.7212716937065125
+          },
+          "q95": {
+            "mu": 0.7429981261491775
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.001892221421003315
+        },
+        "posterior_mean_l2_error": 0.001892221421003315,
+        "posterior_w2_pointmass": 0.012705554314526758,
+        "posterior_spread_l2": 0.012579595545704932,
+        "posterior_entropy_diag_gaussian": -2.956740645601905
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13341999053955078,
+        "ppc_simulation_time_s": 3.7159571647644043,
+        "total_case_time_s": 3.849377155303955
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 44,
+      "theta_true": [
+        0.6446402072906494
+      ],
+      "metrics": {
+        "rmse_overall": 0.7197554111480713,
+        "rmse_per_dim": [
+          0.013485935516655445,
+          0.06068791076540947,
+          0.026543335989117622,
+          1.0357342958450317,
+          0.47162774205207825,
+          0.9667304754257202,
+          0.9195718169212341,
+          0.9057788848876953,
+          0.8729647994041443
+        ],
+        "w2": 47.52984619140625,
+        "w2_mean_per_sample": 47.529842376708984
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.6446402072906494
+        },
+        "posterior_mean": {
+          "mu": 0.6426798692345619
+        },
+        "posterior_std": {
+          "mu": 0.016798657503043705
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.6148184537887573
+          },
+          "q50": {
+            "mu": 0.6432101428508759
+          },
+          "q95": {
+            "mu": 0.6707271933555603
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0019603380560875294
+        },
+        "posterior_mean_l2_error": 0.0019603380560875294,
+        "posterior_w2_pointmass": 0.016891782971727706,
+        "posterior_spread_l2": 0.016798657503043705,
+        "posterior_entropy_diag_gaussian": -2.6675177730943807
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13408470153808594,
+        "ppc_simulation_time_s": 3.7836062908172607,
+        "total_case_time_s": 3.9176909923553467
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 45,
+      "theta_true": [
+        0.8724979162216187
+      ],
+      "metrics": {
+        "rmse_overall": 0.6837565898895264,
+        "rmse_per_dim": [
+          0.007303636521100998,
+          0.049634892493486404,
+          0.01505601592361927,
+          1.0592795610427856,
+          0.44846799969673157,
+          0.8447716236114502,
+          0.9061173796653748,
+          0.8030368685722351,
+          0.8379808664321899
+        ],
+        "w2": 48.07893371582031,
+        "w2_mean_per_sample": 48.07892990112305
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8724979162216187
+        },
+        "posterior_mean": {
+          "mu": 0.8598775959014893
+        },
+        "posterior_std": {
+          "mu": 0.01487064724084059
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.835278108716011
+          },
+          "q50": {
+            "mu": 0.8599166870117188
+          },
+          "q95": {
+            "mu": 0.8844102084636688
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.012620320320129386
+        },
+        "posterior_mean_l2_error": 0.012620320320129386,
+        "posterior_w2_pointmass": 0.019489889532031394,
+        "posterior_spread_l2": 0.01487064724084059,
+        "posterior_entropy_diag_gaussian": -2.7894274596325763
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.18862223625183105,
+        "ppc_simulation_time_s": 3.6921470165252686,
+        "total_case_time_s": 3.8807692527770996
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 46,
+      "theta_true": [
+        0.8270758390426636
+      ],
+      "metrics": {
+        "rmse_overall": 0.7691876888275146,
+        "rmse_per_dim": [
+          0.0034008172806352377,
+          0.06333085149526596,
+          0.017177315428853035,
+          1.1473170518875122,
+          0.4600438177585602,
+          0.8196552991867065,
+          0.8674106001853943,
+          0.8088909983634949,
+          1.3092031478881836
+        ],
+        "w2": 52.039337158203125,
+        "w2_mean_per_sample": 52.039337158203125
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8270758390426636
+        },
+        "posterior_mean": {
+          "mu": 0.8091244499385357
+        },
+        "posterior_std": {
+          "mu": 0.011657022500893692
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7912505090236663
+          },
+          "q50": {
+            "mu": 0.8093215525150299
+          },
+          "q95": {
+            "mu": 0.8293866664171219
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.017951389104127857
+        },
+        "posterior_mean_l2_error": 0.017951389104127857,
+        "posterior_w2_pointmass": 0.021396233989190185,
+        "posterior_spread_l2": 0.011657022500893692,
+        "posterior_entropy_diag_gaussian": -3.0329079575942535
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13351750373840332,
+        "ppc_simulation_time_s": 3.684478521347046,
+        "total_case_time_s": 3.817996025085449
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 47,
+      "theta_true": [
+        0.8172570466995239
+      ],
+      "metrics": {
+        "rmse_overall": 0.7270715236663818,
+        "rmse_per_dim": [
+          0.0060311127454042435,
+          0.07671492546796799,
+          0.07649126648902893,
+          1.0706911087036133,
+          0.45582300424575806,
+          0.8633666038513184,
+          1.0551886558532715,
+          0.9120964407920837,
+          0.8372729420661926
+        ],
+        "w2": 47.81789016723633,
+        "w2_mean_per_sample": 47.81788635253906
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8172570466995239
+        },
+        "posterior_mean": {
+          "mu": 0.8174892182648182
+        },
+        "posterior_std": {
+          "mu": 0.01557203514646701
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7918250977993011
+          },
+          "q50": {
+            "mu": 0.8168497681617737
+          },
+          "q95": {
+            "mu": 0.8423342049121857
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.0002321715652943146
+        },
+        "posterior_mean_l2_error": 0.0002321715652943146,
+        "posterior_w2_pointmass": 0.01555429077592508,
+        "posterior_spread_l2": 0.01557203514646701,
+        "posterior_entropy_diag_gaussian": -2.7433400590020685
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.1338791847229004,
+        "ppc_simulation_time_s": 3.6623375415802,
+        "total_case_time_s": 3.7962167263031006
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 48,
+      "theta_true": [
+        0.7791449427604675
+      ],
+      "metrics": {
+        "rmse_overall": 0.7807101607322693,
+        "rmse_per_dim": [
+          0.00659958878532052,
+          0.122350312769413,
+          0.03315331041812897,
+          1.227364182472229,
+          0.4522990584373474,
+          1.116133451461792,
+          0.8286746740341187,
+          0.8678898215293884,
+          1.035749912261963
+        ],
+        "w2": 53.25363540649414,
+        "w2_mean_per_sample": 53.253631591796875
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.7791449427604675
+        },
+        "posterior_mean": {
+          "mu": 0.7844716089963913
+        },
+        "posterior_std": {
+          "mu": 0.011613729678207861
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.7649323105812073
+          },
+          "q50": {
+            "mu": 0.7846977412700653
+          },
+          "q95": {
+            "mu": 0.8033205568790436
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.005326666235923816
+        },
+        "posterior_mean_l2_error": 0.005326666235923816,
+        "posterior_w2_pointmass": 0.012763811869297516,
+        "posterior_spread_l2": 0.011613729678207861,
+        "posterior_entropy_diag_gaussian": -3.036628754610121
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13332343101501465,
+        "ppc_simulation_time_s": 3.6524720191955566,
+        "total_case_time_s": 3.7857954502105713
+      },
+      "figure_path": null
+    },
+    {
+      "example_idx": 49,
+      "theta_true": [
+        0.8675776720046997
+      ],
+      "metrics": {
+        "rmse_overall": 0.7394264936447144,
+        "rmse_per_dim": [
+          0.011245165020227432,
+          0.07709239423274994,
+          0.03264305740594864,
+          1.06192147731781,
+          0.445614755153656,
+          0.8720431327819824,
+          0.8685030937194824,
+          0.8511031866073608,
+          1.1611394882202148
+        ],
+        "w2": 48.49169921875,
+        "w2_mean_per_sample": 48.49169921875
+      },
+      "posterior_summary": {
+        "theta_true": {
+          "mu": 0.8675776720046997
+        },
+        "posterior_mean": {
+          "mu": 0.8872518321871757
+        },
+        "posterior_std": {
+          "mu": 0.02047631317867207
+        },
+        "posterior_quantiles": {
+          "q05": {
+            "mu": 0.8561619400978089
+          },
+          "q50": {
+            "mu": 0.8880762755870819
+          },
+          "q95": {
+            "mu": 0.9195646613836288
+          }
+        },
+        "mean_abs_error_per_parameter": {
+          "mu": 0.01967416018247603
+        },
+        "posterior_mean_l2_error": 0.01967416018247603,
+        "posterior_w2_pointmass": 0.028377874863585322,
+        "posterior_spread_l2": 0.02047631317867207,
+        "posterior_entropy_diag_gaussian": -2.4695479823844586
+      },
+      "timing_s": {
+        "posterior_sampling_time_s": 0.13196659088134766,
+        "ppc_simulation_time_s": 3.6613969802856445,
+        "total_case_time_s": 3.793363571166992
+      },
+      "figure_path": null
+    }
+  ],
+  "aggregate": {
+    "num_examples": 50,
+    "num_plot_examples": 2,
+    "num_posterior_samples": 400,
+    "rmse_mean": 1.2783466374874115,
+    "rmse_std": 3.7272894591767916,
+    "w2_mean": 63.879880065917966,
+    "w2_std": 102.32610794536474,
+    "ppc_time_mean_s": 3.84909996509552,
+    "ppc_time_total_s": 192.454998254776
+  },
+  "figure_metadata": [
+    {
+      "figure_type": "heldout_simulated_ppc",
+      "file_path": "experiments/npe_real_eval_npe_mu_pmu_t1000_s43_tr44_b20000000_20260416-014544/figures/ppc_timeseries_simulated_test_ex0.png",
+      "example_idx": 0,
+      "theta_true": [
+        0.8451586961746216
+      ],
+      "ppc_rmse": 0.7135675549507141,
+      "ppc_w2": 50.76302719116211,
+      "difficulty_score": 0.7135675549507141
+    },
+    {
+      "figure_type": "heldout_simulated_ppc",
+      "file_path": "experiments/npe_real_eval_npe_mu_pmu_t1000_s43_tr44_b20000000_20260416-014544/figures/ppc_timeseries_simulated_test_ex1.png",
+      "example_idx": 1,
+      "theta_true": [
+        0.8692656755447388
+      ],
+      "ppc_rmse": 0.7692064642906189,
+      "ppc_w2": 49.712318420410156,
+      "difficulty_score": 0.7692064642906189
+    }
+  ]
+}

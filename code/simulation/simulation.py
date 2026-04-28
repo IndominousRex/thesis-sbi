@@ -1,4 +1,9 @@
-# sbi_vehicle/simulation.py
+"""Vehicle simulation pipeline for SBI data generation.
+
+Provides JAX-accelerated rollout functions, control signal generators
+(flat, step, sine, random blocks), and the high-level make_simulator()
+factory used by the unified experiment runner.
+"""
 
 from typing import Tuple, Dict, Any
 
@@ -484,7 +489,9 @@ def make_simulator(cfg: ExperimentConfig, device: torch.device):
         theta_np = theta.detach().cpu().numpy().astype(np.float32)
         B = theta_np.shape[0]
         seed_base = int(
-            cfg.sim_seed if getattr(cfg, "sim_seed", None) is not None else cfg.random_seed
+            cfg.sim_seed
+            if getattr(cfg, "sim_seed", None) is not None
+            else cfg.random_seed
         )
 
         rng = np.random.default_rng(getattr(simulator, "_batch_idx", 0) + seed_base)

@@ -1,10 +1,36 @@
+"""
+Standalone plausibility check for the vehicle simulation model.
+
+Compares Euler (vehicle_Ex) vs RK4 (vehicle_RK4x) integration over a
+100-second synthetic drive cycle with sinusoidal steering, engine torque
+burst, and alternating steer inputs.
+
+Run from the repo root:
+    python code/simulation/Model_plausibility.py
+
+Note: This is a development/verification utility, not part of the main
+experiment pipeline.
+"""
+
+import sys
+from pathlib import Path
+
+# Allow running directly from the repo root or as a module.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import jax
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
-from VehicleModel import default_params, vehicle_Ex, vehicle_RK4x, vehicle_dx, vehicle_measurement_equation
+from simulation.VehicleModel import (
+    default_params,
+    vehicle_Ex,
+    vehicle_RK4x,
+    vehicle_dx,
+    vehicle_measurement_equation,
+)
 
 plt.rcParams.update({"text.usetex": True})
 matplotlib.rcParams["mathtext.fontset"] = "stix"
@@ -77,8 +103,7 @@ for i in tqdm(range(1, time.size)):
     # evaluate vehicle model with Runge-Kutta-4
     state_RK4 = RK4_model(state_RK4, aux_input, p_inf, **default_params)
 
-    measurement = measurement_model(state_RK4,aux_input,p_inf,**default_params)
-
+    measurement = measurement_model(state_RK4, aux_input, p_inf, **default_params)
 
     # update control input
     aux_input["steer_ang"] = steer_angle[i]
@@ -102,8 +127,6 @@ for i in tqdm(range(1, time.size)):
     yaw[i] = measurement[0]
     ax[i] = measurement[1]
     ay[i] = measurement[2]
-    
-
 
 
 fig_vel, ax_vel = plt.subplots(2, 1)

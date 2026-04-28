@@ -1,4 +1,9 @@
-# sbi_vehicle/plots.py
+"""Plotting utilities for SBI experiment diagnostics.
+
+Provides training curves, posterior/prior 1-D and grid plots, SBC rank
+histograms, expected coverage curves, PPC trajectory plots, pairplots,
+C2ST comparison plots, and diffusion trace visualisations.
+"""
 
 from pathlib import Path
 from typing import Sequence, Dict, Optional, List, Union
@@ -63,6 +68,7 @@ def plot_training_curves(
         out_path: where to save the PNG (e.g. exp_dir/'figures/train_loss.png').
         title: plot title.
     """
+
     def _extract_curve(
         values: Sequence[float], default_axis: str
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -74,7 +80,10 @@ def plot_training_curves(
             axis_key = default_axis if default_axis in first else "step"
             if axis_key not in first:
                 axis_key = "epoch" if "epoch" in first else "step"
-            x = np.asarray([item.get(axis_key, idx + 1) for idx, item in enumerate(values)], dtype=float)
+            x = np.asarray(
+                [item.get(axis_key, idx + 1) for idx, item in enumerate(values)],
+                dtype=float,
+            )
             y = np.asarray([item.get("loss", np.nan) for item in values], dtype=float)
             mask = np.isfinite(y)
             return x[mask], y[mask]

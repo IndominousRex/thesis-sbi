@@ -1,9 +1,16 @@
+"""Neural network architectures and building utilities for SBI methods.
+
+Provides:
+- BiGRUAttnEncoder: bidirectional GRU + attention for time-series embedding
+- ProjectedCausalCNN: CausalCNN wrapper for multivariate inputs
+- ProjectedTransformer: Transformer wrapper for multivariate inputs
+- build_prior(): Gaussian prior over active inference parameters
+- build_embedding(): encoder factory (bigru | causalcnn | transformer)
+"""
+
 import torch
 import torch.nn as nn
-from sbi.neural_nets import posterior_nn
 from sbi.neural_nets import embedding_nets
-from sbi import utils as sbi_utils
-from sbi import inference as sbi_inference
 
 from configs.config import ExperimentConfig
 
@@ -114,7 +121,7 @@ class ProjectedTransformer(nn.Module):
 def build_prior(cfg: ExperimentConfig, device: torch.device):
     """
     Build the Gaussian/Normal prior over active parameters.
-    
+
     Uses mean = (low + high) / 2 and std = (high - low) / 6
     so that ±3σ approximately covers the original uniform bounds.
     """
@@ -124,14 +131,13 @@ def build_prior(cfg: ExperimentConfig, device: torch.device):
 
     low = torch.tensor(low_list, dtype=torch.float32, device=device)
     high = torch.tensor(high_list, dtype=torch.float32, device=device)
-    
+
     # Gaussian prior centered in the bounds
     mean = (low + high) / 2.0
     std = (high - low) / 6.0  # 3-sigma covers the range
-    
+
     return torch.distributions.MultivariateNormal(
-        loc=mean,
-        covariance_matrix=torch.diag(std ** 2)
+        loc=mean, covariance_matrix=torch.diag(std**2)
     )
 
 
@@ -199,46 +205,3 @@ def build_embedding(cfg: ExperimentConfig, input_dim: int, seq_len: int, device)
 
     else:
         raise NotImplementedError(f"Unknown encoder_type: {cfg.encoder_type}")
-
-
-# -----------------------------------------------------------------------------
-# Build density estimator + inference object
-# -----------------------------------------------------------------------------
-def build_density_estimator(
-    cfg: ExperimentConfig,
-    input_dim: int,
-    prior,
-    device: torch.device,
-):
-    """
-    Builds:
-      - embedding network (GRU / CNN / Transformer)
-      - MAF flow with embedding_net
-      - NPE inference object
-    """
-
-    # We need seq_len for CNN/Transformer embeddings
-    seq_len = cfg.T_seg
-
-    # Build embedding network
-    embedding_net = build_embedding(cfg, input_dim, seq_len, device)
-
-    # Build MAF density estimator
-    density_estimator = posterior_nn(
-        model="maf",
-        embedding_net=embedding_net,
-        hidden_features=cfg.maf_hidden_features,
-        num_transforms=cfg.maf_num_transforms,
-        # Manual normalization is handled outside; disable sbi's built-in z-scoring.
-        z_score_x="none",
-        z_score_theta="none",
-    )
-
-    # NPE inference object
-    inference = sbi_inference.NPE(
-        prior=prior,
-        density_estimator=density_estimator,
-        device=device,
-    )
-
-    return embedding_net, density_estimator, inference

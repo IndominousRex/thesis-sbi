@@ -36,7 +36,7 @@ unset JAX_PLATFORM_NAME || true
 REAL_DATA_CSV="../data/measurements/Jeversen_2022_10_12_110132.csv"
 
 # Common parameters for fair comparison
-COMMON_ARGS="--num-sim 100 --T-seg 300 --num-epochs 2 --stop-after-epochs 2 --num-sbc-samples 10 --no-swd --no-one-step --device cuda --real-data-csv $REAL_DATA_CSV"
+COMMON_ARGS="--num-sim 100 --T-seg 300 --num-epochs 2 --num-sbc-samples 10 --no-one-step --device cuda --real-data-csv $REAL_DATA_CSV"
 
 echo ""
 echo ">>> [1/3] Testing NPE..."
@@ -51,7 +51,7 @@ srun python run.py --method npse --exp-name test_npse --sde-type ve $COMMON_ARGS
 echo ""
 echo ">>> [3/3] Testing FNPE (with proposal-based training)..."
 echo ""
-srun python run.py --method fnpe --exp-name test_fnpe --fnpe-proposal-type pred --fnpe-steps-per-epoch 100 $COMMON_ARGS
+srun python run.py --method fnpe --exp-name test_fnpe --fnpe-proposal-type pred $COMMON_ARGS
 
 echo ""
 echo "=================================================="

@@ -1,4 +1,8 @@
-# sbi_vehicle/metrics.py
+"""Evaluation metrics for SBI experiments.
+
+Provides posterior quality metrics (RMSE, W2, SWD, coverage),
+one-step-ahead RMSE in observation space, and real-data trajectory metrics.
+"""
 
 import torch
 import jax

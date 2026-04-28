@@ -1,0 +1,30 @@
+{
+  "state": "complete",
+  "stage": "complete",
+  "exp_dir": "experiments/fnpe_real_eval_fnpe_mu_cd_pmu_cd_t1000_s42_tr43_b20000000_20260416-014538",
+  "updated_at": "2026-04-16T02:03:17.774518",
+  "completed_stages": [
+    "heldout_dataset_ready",
+    "method_built",
+    "trained",
+    "posterior_ready",
+    "posterior_eval_complete",
+    "ppc_complete",
+    "evaluation_complete",
+    "complete"
+  ],
+  "metrics_path": "experiments/fnpe_real_eval_fnpe_mu_cd_pmu_cd_t1000_s42_tr43_b20000000_20260416-014538/metrics.json",
+  "stage_failures": {},
+  "available_artifacts": [
+    "config.json",
+    "figures",
+    "heldout_test_ppc_metrics.json",
+    "heldout_test_stats.json",
+    "metrics.json",
+    "multi_traj_ppc_metrics.json",
+    "one_step_rmse.json",
+    "real_metrics.json",
+    "run_status.json",
+    "w2_posterior_metrics.json"
+  ]
+}
