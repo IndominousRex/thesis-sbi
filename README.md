@@ -6,7 +6,7 @@
 
 ---
 
-This repository contains the full implementation, experiments, thesis text, and notes for the master's thesis *"Simulation-based Inference for Parameter Density Estimation in Dynamical Systems"*.
+This repository contains the full implementation, experiments, and thesis text for the master's thesis *"Simulation-based Inference for Parameter Density Estimation in Dynamical Systems"*.
 
 The core research question: **Can amortized simulation-based inference (SBI) efficiently and accurately estimate physical vehicle parameters — friction coefficient (µ), air resistance (cd), and mass (m) — from time-series driving data?**
 
@@ -124,10 +124,8 @@ thesis-sbi-aritra/
 │   ├── Figures/                 # Figures used in the thesis
 │   └── Templates/               # Bibliography, preamble, nomenclature
 │
-├── notes/                       # Obsidian/Markdown research notes
 ├── presentations/               # Seminar and progress slides
-├── admin/                       # Task description PDF and reference thesis
-└── literature/                  # Downloaded papers
+└── admin/                       # Task description PDF and reference thesis
 ```
 
 ---
