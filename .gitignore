@@ -32,6 +32,8 @@ main.pdf
 *.toc
 *.idx
 *.pdfsync
+*.fdb_latexmk
+*.fls
 *~
 Backup_of_*
 Sicherungskopie_von_*
