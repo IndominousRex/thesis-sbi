@@ -154,7 +154,7 @@ def _comparison_delta(
 
 def _comparison_delta_footer(plot_spec: dict[str, Any], baseline_method: str) -> str:
     direction = _metric_direction(plot_spec)
-    baseline_label = baseline__method_display(method)
+    baseline_label = _method_display(baseline_method)
     metric_label = plot_spec["metric_label"]
     if direction == "higher":
         return f"Delta = method - {baseline_label}. Positive values are better for this higher-is-better metric."
@@ -253,7 +253,7 @@ _METHOD_DISPLAY_NAMES: dict[str, str] = {
 
 def _method_display(method: str) -> str:
     """Return the display name for a method (uppercase, with FNPE→FNPSE)."""
-    return _METHOD_DISPLAY_NAMES.get(method.lower(), _method_display(method))
+    return _METHOD_DISPLAY_NAMES.get(method.lower(), method.upper())
 
 
 # Thesis layout constants (KOMA-Script scrbook, A4, DIV=13, BCOR=5mm, 12pt)
