@@ -154,7 +154,7 @@ def _comparison_delta(
 
 def _comparison_delta_footer(plot_spec: dict[str, Any], baseline_method: str) -> str:
     direction = _metric_direction(plot_spec)
-    baseline_label = baseline_method.upper()
+    baseline_label = baseline__method_display(method)
     metric_label = plot_spec["metric_label"]
     if direction == "higher":
         return f"Delta = method - {baseline_label}. Positive values are better for this higher-is-better metric."
@@ -236,13 +236,25 @@ def _compute_seed_offsets(
 _THESIS_PALETTE = [
     "#0077BB",  # strong blue  (NPE)
     "#EE7733",  # orange       (NPSE)
-    "#009988",  # teal         (FNPE)
+    "#009988",  # teal         (FNPSE)
     "#CC3311",  # red          (Simformer)
     "#AA3377",  # magenta
     "#33BBEE",  # cyan
     "#BBBBBB",  # grey
     "#EE3377",  # pink
 ]
+
+# Canonical display names for method labels in plots.
+# Internal key "fnpe" maps to thesis name "FNPSE".
+_METHOD_DISPLAY_NAMES: dict[str, str] = {
+    "fnpe": "FNPSE",
+}
+
+
+def _method_display(method: str) -> str:
+    """Return the display name for a method (uppercase, with FNPE→FNPSE)."""
+    return _METHOD_DISPLAY_NAMES.get(method.lower(), _method_display(method))
+
 
 # Thesis layout constants (KOMA-Script scrbook, A4, DIV=13, BCOR=5mm, 12pt)
 # Text width ≈ 150 mm ≈ 5.91 in.  All plots should fit within this width.
@@ -317,7 +329,7 @@ def _plot_seed_traces(
                 color=method_colors[method],
                 alpha=0.9,
                 s=45,
-                label=method.upper() if not label_used else None,
+                label=_method_display(method) if not label_used else None,
                 zorder=2,
             )
             label_used = True
@@ -626,7 +638,7 @@ def _plot_metric_vs_budget(
                 color=method_colors[method],
                 linewidth=1.6,
                 markersize=4,
-                label=method.upper(),
+                label=_method_display(method),
                 zorder=3,
             )
             ax.fill_between(
@@ -852,7 +864,7 @@ def _plot_pareto_aggregate_scatter(
             markerfacecolor=method_colors[m],
             markeredgecolor="none",
             markersize=7,
-            label=m.upper(),
+            label=_method_display(m),
         )
         for m in methods
     ]
@@ -976,7 +988,7 @@ def _plot_metric_rank_heatmap(
         heat, aspect="auto", cmap="viridis_r", vmin=1, vmax=max(len(methods), 1)
     )
     ax.set_yticks(range(len(methods)))
-    ax.set_yticklabels([method.upper() for method in methods])
+    ax.set_yticklabels([_method_display(method) for method in methods])
     ax.set_xticks(range(len(combos)))
     ax.set_xticklabels(
         [f"b={_budget_to_label(budget)}\nT={tseg}" for budget, tseg in combos],
@@ -1073,7 +1085,7 @@ def _plot_method_overview_dashboard(
                 budgets,
                 means,
                 marker="o",
-                label=method.upper(),
+                label=_method_display(method),
                 color=method_colors[method],
                 linewidth=1.8,
                 markersize=5,
@@ -1240,7 +1252,7 @@ def _plot_radar_chart(
                 angles,
                 values,
                 linewidth=1.6,
-                label=method.upper(),
+                label=_method_display(method),
                 color=method_colors[method],
             )
             plotted_any = True
@@ -1354,7 +1366,7 @@ def _plot_calibration_panel(
             means,
             bar_width,
             yerr=stds,
-            label=method.upper(),
+            label=_method_display(method),
             color=method_colors[method],
             alpha=0.85,
             capsize=2,
@@ -1403,7 +1415,7 @@ def _plot_calibration_panel(
             color=method_colors[method],
             linewidth=1.6,
             markersize=5,
-            label=method.upper(),
+            label=_method_display(method),
         )
         ax.fill_between(
             budgets_m,
@@ -1444,7 +1456,7 @@ def _plot_calibration_panel(
             color=method_colors[method],
             linewidth=1.6,
             markersize=5,
-            label=method.upper(),
+            label=_method_display(method),
         )
         ax.fill_between(
             budgets_m,
@@ -1597,7 +1609,7 @@ def _plot_per_parameter_bars(
                 vals,
                 bar_width,
                 yerr=errs,
-                label=method.upper() if panel_idx == 0 else None,
+                label=_method_display(method) if panel_idx == 0 else None,
                 color=method_colors[method],
                 alpha=0.85,
                 capsize=2,
@@ -1633,7 +1645,7 @@ def _plot_per_parameter_bars(
         plotted_any = True
     ax.set_xticks(np.arange(n_methods) * bar_width)
     ax.set_xticklabels(
-        [m.upper() for m in methods], fontsize=7, rotation=30, ha="right"
+        [_method_display(m) for m in methods], fontsize=7, rotation=30, ha="right"
     )
     ax.set_ylabel("W2 (joint, physical)", fontsize=9)
     ax.set_title("W2\n(joint, physical)", fontsize=10, fontweight="semibold")
@@ -1724,9 +1736,9 @@ def _plot_pairwise_win_matrix(
     display = np.where(np.eye(n, dtype=bool), np.nan, frac_matrix)
     im = ax.imshow(display, cmap="RdYlGn", vmin=0, vmax=1, aspect="equal")
     ax.set_xticks(range(n))
-    ax.set_xticklabels([m.upper() for m in methods], fontsize=10)
+    ax.set_xticklabels([_method_display(m) for m in methods], fontsize=10)
     ax.set_yticks(range(n))
-    ax.set_yticklabels([m.upper() for m in methods], fontsize=10)
+    ax.set_yticklabels([_method_display(m) for m in methods], fontsize=10)
     ax.set_xlabel("Opponent", fontsize=10)
     ax.set_ylabel("Method", fontsize=10)
 
@@ -1826,7 +1838,7 @@ def _plot_convergence_profile(
                 color=method_colors[method],
                 linewidth=1.8,
                 markersize=5,
-                label=method.upper(),
+                label=_method_display(method),
             )
             plotted_any = True
 
@@ -1912,7 +1924,7 @@ def _plot_training_time_scaling(
             color=method_colors[method],
             linewidth=2.0,
             markersize=6,
-            label=method.upper(),
+            label=_method_display(method),
             zorder=3,
         )
         ax.fill_between(
@@ -2039,7 +2051,7 @@ def _plot_training_time_per_tseg(
             ls = tseg_linestyles[tidx % len(tseg_linestyles)]
             mk = tseg_markers[tidx % len(tseg_markers)]
             label = (
-                f"{method.upper()} $T_{{seg}}$={tseg}"
+                f"{_method_display(method)} $T_{{seg}}$={tseg}"
                 if tidx == 0
                 else f"$T_{{seg}}$={tseg}"
             )
@@ -2051,7 +2063,7 @@ def _plot_training_time_per_tseg(
                 color=method_colors[method],
                 linewidth=1.6,
                 markersize=5,
-                label=f"{method.upper()} / $T_{{seg}}$={tseg}",
+                label=f"{_method_display(method)} / $T_{{seg}}$={tseg}",
                 zorder=3,
             )
             ax.fill_between(
@@ -2250,7 +2262,9 @@ def _plot_metric_value_heatmap(
         ha="right",
     )
     ax.set_yticks(range(n_methods))
-    ax.set_yticklabels([m.upper() for m in methods], fontsize=10, fontweight="semibold")
+    ax.set_yticklabels(
+        [_method_display(m) for m in methods], fontsize=10, fontweight="semibold"
+    )
 
     for midx in range(n_methods):
         for cidx in range(n_metrics):
@@ -2391,7 +2405,7 @@ def _plot_metric_vs_tseg(
                 color=method_colors[method],
                 linewidth=1.6,
                 markersize=4,
-                label=method.upper(),
+                label=_method_display(method),
                 zorder=3,
             )
             ax.fill_between(

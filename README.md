@@ -52,6 +52,7 @@ Four neural posterior estimation methods are implemented and benchmarked on a JA
     - [Prior](#prior)
     - [Dataset Caching](#dataset-caching)
     - [FNPE Score Compositions](#fnpe-score-compositions)
+  - [References](#references)
 
 ---
 
@@ -164,8 +165,8 @@ pip install numpy scipy pandas matplotlib tqdm optax haiku dm-haiku
 
 Two external libraries are vendored under `code/` and must be on the Python path:
 
-| Library   | Path                       | Purpose                           | Paper                                        | GitHub                                          |
-| --------- | -------------------------- | --------------------------------- | -------------------------------------------- | ----------------------------------------------- |
+| Library   | Path                       | Purpose                           | Paper                                                      | GitHub                                                      |
+| --------- | -------------------------- | --------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------- |
 | MarkovSBI | `code/markovsbi/`          | FNPE factorized score estimation  | [Gloeckler et al., 2024](https://arxiv.org/abs/2411.02728) | [mackelab/markovsbi](https://github.com/mackelab/markovsbi) |
 | Simformer | `code/simformer-main/src/` | All-conditional score transformer | [Gloeckler et al., 2024](https://arxiv.org/abs/2404.09636) | [mackelab/simformer](https://github.com/mackelab/simformer) |
 
