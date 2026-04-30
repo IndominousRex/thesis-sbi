@@ -2187,15 +2187,15 @@ def _plot_metric_value_heatmap(
     _have_w2 = any(not np.isnan(v) for v in w2_by_method.values())
     summary_metrics: list[tuple[str, str, str]] = []
     if _have_norm_rmse:
-        summary_metrics.append(("_avg_norm_rmse", "RMSE\n(norm)", "lower"))
+        summary_metrics.append(("_avg_norm_rmse", "RMSE\n(norm.)", "lower"))
     if _have_w2:
-        summary_metrics.append(("_w2_joint", "W2\n(joint)", "lower"))
+        summary_metrics.append(("_w2_joint", "$W_2$", "lower"))
     if not summary_metrics:
-        summary_metrics.append(("w2_mean", "W2", "lower"))
+        summary_metrics.append(("w2_mean", "$W_2$", "lower"))
     summary_metrics += [
-        ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
-        ("c2st_mean", "C2ST-prior", "higher"),
-        ("one_step_rmse", "1-Step", "lower"),
+        ("heldout_ppc_rmse_mean", "PPC\nRMSE", "lower"),
+        ("c2st_mean", "C2ST\nprior", "higher"),
+        ("one_step_rmse", "1-step", "lower"),
         ("train_time_s", "Train (s)", "lower"),
     ]
     n_metrics = len(summary_metrics)
@@ -2258,7 +2258,7 @@ def _plot_metric_value_heatmap(
         [label for _, label, _ in summary_metrics],
         fontsize=9,
         fontweight="semibold",
-        rotation=15,
+        rotation=45,
         ha="right",
     )
     ax.set_yticks(range(n_methods))
