@@ -2194,7 +2194,7 @@ def _plot_metric_value_heatmap(
         summary_metrics.append(("w2_mean", "W2", "lower"))
     summary_metrics += [
         ("heldout_ppc_rmse_mean", "PPC RMSE", "lower"),
-        ("c2st_mean", "C2ST", "target_0.5"),
+        ("c2st_mean", "C2ST-prior", "higher"),
         ("one_step_rmse", "1-Step", "lower"),
         ("train_time_s", "Train (s)", "lower"),
     ]
@@ -2231,14 +2231,11 @@ def _plot_metric_value_heatmap(
                 continue
             v = float(np.mean(vals))
             raw_values[midx, cidx] = v
-            if direction == "target_0.5":
-                heat[midx, cidx] = abs(v - 0.5)
-            else:
-                heat[midx, cidx] = v
+            heat[midx, cidx] = v
 
     # Column-normalize: 0 = best, 1 = worst
     norm_heat = np.full_like(heat, np.nan)
-    for cidx in range(n_metrics):
+    for cidx, (_, _, direction) in enumerate(summary_metrics):
         col = heat[:, cidx]
         valid = ~np.isnan(col)
         if valid.sum() < 2:
@@ -2248,6 +2245,9 @@ def _plot_metric_value_heatmap(
         span = vmax - vmin
         if span < 1e-12:
             norm_heat[valid, cidx] = 0.5
+        elif direction == "higher":
+            # higher raw value = better = 0 in norm_heat (green)
+            norm_heat[:, cidx] = (vmax - col) / span
         else:
             norm_heat[:, cidx] = (col - vmin) / span
 
