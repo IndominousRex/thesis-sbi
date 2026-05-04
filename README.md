@@ -105,6 +105,8 @@ thesis-sbi-aritra/
 │   │   ├── plot_pso_convergence.py          # PSO convergence figure (thesis)
 │   │   ├── plot_pso_trajectory_comparison.py # Default vs PSO trajectory figure
 │   │   ├── plot_training_data_example.py    # Training data example figure (thesis)
+│   │   ├── plot_cover_image.py              # Thesis cover image (prior-to-posterior flow)
+│   │   ├── run_simulation_benchmark_manifest_cell.py # Single SLURM array cell executor
 │   │   └── *.sh                             # SLURM batch scripts
 │   │
 │   ├── notebooks/               # Jupyter notebooks for exploration
@@ -471,8 +473,11 @@ python code/scripts/plot_pso_convergence.py
 # Default vs. PSO-calibrated simulator trajectory comparison
 python code/scripts/plot_pso_trajectory_comparison.py
 
-# Training data example (µ ∈ {0.4, 0.8, 1.4})
+# Training data example (µ ∈ {0.6, 0.9, 1.4})
 python code/scripts/plot_training_data_example.py
+
+# Thesis cover image (prior-to-posterior density flow)
+python code/scripts/plot_cover_image.py
 ```
 
 ---
@@ -517,6 +522,8 @@ All Slurm scripts are in `code/scripts/`. They are written for the **Leibniz Uni
 | `run_simformer_smoke.sh`            | 30-min Simformer smoke test                  |
 | `test_all_methods.sh`               | Quick test of all 4 methods (1 GPU, ~1h)     |
 | `run_fnpe_pso.sh`                   | FNPE with PSO-calibrated parameters          |
+| `run_pso_global.sh`                 | PSO global vehicle parameter optimisation    |
+| `recover_saved_eval.sh`             | GPU array job to recover eval from saved checkpoints |
 
 ### Typical Benchmark Workflow
 

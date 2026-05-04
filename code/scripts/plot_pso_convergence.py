@@ -41,7 +41,7 @@ milestones = {
 topology_switch = int(len(history) * results.get("topology_switch_frac", 0.70))
 
 # ---------------------------------------------------------------------------
-# Plot
+# Style
 # ---------------------------------------------------------------------------
 matplotlib.rcParams.update({
     "font.family": "serif",
@@ -53,56 +53,87 @@ matplotlib.rcParams.update({
     "ytick.labelsize": 9,
 })
 
-fig, (ax_main, ax_inset_host) = plt.subplots(
+ANNOT_KW = dict(fontsize=9, color="#111111", fontweight="bold")
+ARROW_KW = dict(arrowstyle="->", color="#555555", lw=0.9)
+SCATTER_KW = dict(s=50, color="#f4a582", zorder=5, edgecolors="#c0502a", linewidths=0.6)
+
+fig, (ax_main, ax_right) = plt.subplots(
     1, 2,
-    figsize=(10, 3.5),
+    figsize=(10, 3.8),
     gridspec_kw={"width_ratios": [2, 1]},
 )
 
 # ---- Main plot: full convergence on log-y --------------------------------
 ax_main.semilogy(iterations, history, color="#2166ac", linewidth=0.9, alpha=0.85)
 
-# Topology switch
+# Topology switch line
 ax_main.axvline(topology_switch, color="#d6604d", linestyle="--", linewidth=1.0,
                 label=f"Topology switch (iter {topology_switch})")
 
-# Milestone annotations
+# Set y-limits with headroom so iter-1 annotation stays inside
+ax_main.set_ylim(history[-1] * 0.997, history[0] * 1.025)
+
+# Milestone scatter + annotations
+annot_positions = {
+    1:    (80,   history[0]    * 1.016),   # slightly right & above
+    750:  (810,  history[749]  * 1.016),
+    1500: (1560, history[1499] * 1.016),
+    3000: (2770, history[2999] * 1.016),   # left of the topology switch line
+}
 for it, val in milestones.items():
-    ax_main.scatter(it, val, s=40, color="#f4a582", zorder=5)
-    offset_x = -120 if it == 3000 else 30
-    offset_y = 1.04
+    ax_main.scatter(it, val, **SCATTER_KW)
+    xt, yt = annot_positions[it]
     ax_main.annotate(
-        f"  {val:.3f}",
+        f"{val:.3f}",
         xy=(it, val),
-        xytext=(it + offset_x, val * offset_y),
-        fontsize=8,
-        color="#555555",
+        xytext=(xt, yt),
+        arrowprops=ARROW_KW,
+        **ANNOT_KW,
     )
 
 ax_main.set_xlabel("PSO iteration")
 ax_main.set_ylabel("NRMSE (log scale)")
 ax_main.set_title("PSO convergence history")
 ax_main.set_xlim(0, len(history))
-ax_main.legend(loc="upper right", framealpha=0.7)
+ax_main.legend(loc="upper right", framealpha=0.8)
 ax_main.yaxis.set_minor_formatter(ticker.NullFormatter())
+ax_main.grid(True, which="both", linestyle="--", linewidth=0.4, alpha=0.45, color="gray")
 
-# ---- Inset: early iterations 0–300 (linear-y) ---------------------------
+# ---- Right panel: early iterations 0–300 (linear-y) ---------------------
 n_early = 300
-ax_inset_host.plot(iterations[:n_early], history[:n_early], color="#2166ac", linewidth=1.0)
-ax_inset_host.set_xlabel("Iteration (first 300)")
-ax_inset_host.set_ylabel("NRMSE")
-ax_inset_host.set_title("Early-phase detail")
-ax_inset_host.set_xlim(0, n_early)
+early_iter = iterations[:n_early]
+early_hist = history[:n_early]
 
-# Annotate iteration-1 start and the approx value at iter 300
-ax_inset_host.scatter([1, n_early], [history[0], history[n_early - 1]], s=40,
-                      color="#f4a582", zorder=5)
-ax_inset_host.annotate(f"iter 1\n{history[0]:.3f}", xy=(1, history[0]),
-                       xytext=(20, history[0] * 0.97), fontsize=8, color="#555555")
-ax_inset_host.annotate(f"iter {n_early}\n{history[n_early-1]:.3f}",
-                       xy=(n_early, history[n_early - 1]),
-                       xytext=(n_early - 120, history[n_early - 1] * 0.96),
-                       fontsize=8, color="#555555")
+ax_right.plot(early_iter, early_hist, color="#2166ac", linewidth=1.0)
+ax_right.set_xlabel("Iteration (first 300)")
+ax_right.set_ylabel("NRMSE")
+ax_right.set_title("Early-phase detail")
+ax_right.set_xlim(0, n_early)
+ax_right.grid(True, which="major", linestyle="--", linewidth=0.4, alpha=0.45, color="gray")
+
+# y-limits with padding so bottom point is not flush with the axis
+y_range = early_hist[0] - early_hist[-1]
+ax_right.set_ylim(early_hist[-1] - y_range * 0.08, early_hist[0] + y_range * 0.08)
+
+# Annotate iter 1 (top-left area, no arrow needed as it's at the start)
+ax_right.scatter([1], [early_hist[0]], **SCATTER_KW)
+ax_right.annotate(
+    f"iter 1\n{early_hist[0]:.3f}",
+    xy=(1, early_hist[0]),
+    xytext=(25, early_hist[0] - y_range * 0.22),
+    arrowprops=ARROW_KW,
+    **ANNOT_KW,
+)
+
+# Annotate iter 300 - place well inside the plot above the point
+ax_right.scatter([n_early], [early_hist[-1]], **SCATTER_KW)
+ax_right.annotate(
+    f"iter {n_early}\n{early_hist[-1]:.3f}",
+    xy=(n_early, early_hist[-1]),
+    xytext=(n_early - 155, early_hist[-1] + y_range * 0.48),
+    arrowprops=ARROW_KW,
+    **ANNOT_KW,
+)
 
 # ---------------------------------------------------------------------------
 fig.tight_layout(pad=1.5)
