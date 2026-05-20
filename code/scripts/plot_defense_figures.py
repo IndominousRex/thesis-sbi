@@ -319,7 +319,7 @@ def plot_defense_w2(
     agg_rows: list[dict[str, Any]],
     params: str,
     output_path: Path,
-    show_tsegs: tuple[int, ...] = (1000, 3000),
+    show_tsegs: tuple[int, ...] = (1000, 2000, 3000),
 ) -> None:
     """W₂ vs budget — one column per T_seg, all 4 methods, mean ± std band."""
     import matplotlib
@@ -538,8 +538,13 @@ def plot_defense_metric_heatmap(
         vals = [v for v in vals if v is not None]
         avg_norm_rmse[method] = float(np.mean(vals)) if vals else None
 
+    # Only include the avg-norm-RMSE column if at least one method has data for it.
+    # When per_parameter_metrics is absent from metrics.json the column is entirely
+    # NaN, which renders as a useless blank strip in the heatmap.
+    has_norm_rmse = any(v is not None for v in avg_norm_rmse.values())
+
     metrics_cfg = [
-        ("_avg_norm_rmse",        "RMSE\n(norm.)",   "lower"),
+        *([("_avg_norm_rmse", "RMSE\n(norm.)", "lower")] if has_norm_rmse else []),
         ("w2_mean",               "$W_2$",            "lower"),
         ("heldout_ppc_rmse_mean", "PPC\nRMSE",        "lower"),
         ("coverage_90",           "Cov\n@90",         "target_0.9"),
@@ -983,7 +988,7 @@ def parse_args() -> argparse.Namespace:
                         "Defaults to largest available.")
     p.add_argument("--tseg", type=int, default=1000,
                    help="T_seg for single-panel plots.")
-    p.add_argument("--w2-tsegs", type=int, nargs="+", default=[1000, 3000],
+    p.add_argument("--w2-tsegs", type=int, nargs="+", default=[1000, 2000, 3000],
                    help="T_seg values to show as columns in the W₂ plot.")
     return p.parse_args()
 

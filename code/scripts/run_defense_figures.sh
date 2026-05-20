@@ -88,7 +88,7 @@ conda run -p "${ENV_PREFIX}" --no-capture-output python \
     --exp-prefix       "${EXP_PREFIX}"       \
     --primary-params   mu                    \
     --tseg             1000                  \
-    --w2-tsegs         1000 3000             \
+    --w2-tsegs         1000 2000 3000         \
     ${EXTRA_ARGS}
 
 echo "=================================================="
