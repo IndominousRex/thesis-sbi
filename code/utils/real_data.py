@@ -33,7 +33,7 @@ def controls_from_array_np(ctrl_array: np.ndarray) -> Dict[str, jnp.ndarray]:
     }
 
 
-# Observation labels for real data
+# Observation labels for real data (short, for internal use / metrics printing)
 OBS_LABELS = [
     "yaw_rate",
     "v_body_x",
@@ -44,6 +44,19 @@ OBS_LABELS = [
     "tire_rate_fr",
     "tire_rate_rl",
     "tire_rate_rr",
+]
+
+# Observation labels with physical units (for figures / presentations)
+OBS_LABELS_WITH_UNITS = [
+    "Yaw rate [rad/s]",
+    r"$v_x$ [m/s]",
+    r"$v_y$ [m/s]",
+    r"$a_x$ [m/s²]",
+    r"$a_y$ [m/s²]",
+    r"$\omega_\mathrm{FL}$ [rad/s]",
+    r"$\omega_\mathrm{FR}$ [rad/s]",
+    r"$\omega_\mathrm{RL}$ [rad/s]",
+    r"$\omega_\mathrm{RR}$ [rad/s]",
 ]
 
 

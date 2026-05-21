@@ -41,3 +41,5 @@ notes/
 .vscode/
 tmp/
 experiments/
+.claude/
+.claude_cache/

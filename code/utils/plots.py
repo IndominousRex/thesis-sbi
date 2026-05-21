@@ -270,6 +270,9 @@ def plot_ppc_trajectories(
     max_dims: Optional[int] = None,
     ncols: int = 3,
     title: str = "Posterior Predictive Check (time series)",
+    dpi: int = 200,
+    label_fontsize: int = 11,
+    tick_fontsize: int = 10,
 ):
     """
     Plot PPC with:
@@ -282,9 +285,12 @@ def plot_ppc_trajectories(
     Args:
         y_real: (T, D)
         y_ppc:  (K, T, D)
-        obs_labels: labels for each dim
+        obs_labels: labels for each dim (include units, e.g. "Yaw rate [rad/s]")
         dt: timestep
         out_path: output file
+        dpi: output resolution (default 200 for defense-quality figures)
+        label_fontsize: y-axis label font size
+        tick_fontsize: tick label font size
     """
     assert y_real.ndim == 2, f"Expected (T,D), got {y_real.shape}"
     assert y_ppc.ndim == 3, f"Expected (K,T,D), got {y_ppc.shape}"
@@ -313,19 +319,19 @@ def plot_ppc_trajectories(
     # Compute median trajectory across PPC samples
     y_median = np.median(y_ppc, axis=0)  # (T, D)
 
-    # Figure
+    # Figure — slightly larger panels for readability
     ncols = max(1, ncols)
     nrows = int(np.ceil(max_dims / ncols))
     fig, axes = plt.subplots(
         nrows,
         ncols,
-        figsize=(4.5 * ncols, 2.5 * nrows),
+        figsize=(5.0 * ncols, 3.0 * nrows),
         sharex=True,
     )
     axes = np.array(axes).reshape(-1)
 
     # Enhanced title: show total number of samples
-    fig.suptitle(f"{title}   (PPC samples: {K})", fontsize=12, y=0.98)
+    fig.suptitle(f"{title}   (PPC samples: {K})", fontsize=13, y=0.98, fontweight="bold")
 
     for d in range(max_dims):
         ax = axes[d]
@@ -350,13 +356,13 @@ def plot_ppc_trajectories(
             label="PPC median",
         )
 
-        # Real trajectory - lighter color so it doesn't hide PPC median on overlap
+        # Real trajectory
         ax.plot(
             t,
             y_real[:, d],
             color="#1b9e77",
-            alpha=0.85,
-            lw=1.1,
+            alpha=0.90,
+            lw=1.4,
             label="Real",
         )
 
@@ -369,14 +375,15 @@ def plot_ppc_trajectories(
         ax.set_ylim(y_min - margin, y_max + margin)
 
         label = obs_labels[d] if d < len(obs_labels) else f"obs_{d}"
-        ax.set_ylabel(label)
+        ax.set_ylabel(label, fontsize=label_fontsize)
+        ax.tick_params(labelsize=tick_fontsize)
 
         if d == 0:
             # Add single legend to first subplot only
-            ax.legend(loc="upper right")
+            ax.legend(loc="upper right", fontsize=tick_fontsize)
 
         if row_idx == nrows - 1:
-            ax.set_xlabel("time [s]")
+            ax.set_xlabel("Time [s]", fontsize=label_fontsize)
 
     for ax in axes[max_dims:]:
         ax.axis("off")
@@ -384,7 +391,7 @@ def plot_ppc_trajectories(
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     if out_path is not None:
         _ensure_dir(out_path)
-        plt.savefig(out_path, dpi=150)
+        plt.savefig(out_path, dpi=dpi, bbox_inches="tight", facecolor="white")
         plt.close()
         print(f"[plots] Saved PPC trajectories to {out_path}")
     else:

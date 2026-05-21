@@ -47,6 +47,7 @@ from utils.real_data import (
     build_simulated_window_for_eval,
     posterior_predictive_from_real,
     OBS_LABELS,
+    OBS_LABELS_WITH_UNITS,
     prep_x_obs_from_df,
 )
 from utils.plots import (
@@ -1350,7 +1351,7 @@ def run_simulated_ppc_diagnostic(
             plot_ppc_trajectories(
                 y_real=y_real,
                 y_ppc=y_ppc,
-                obs_labels=OBS_LABELS,
+                obs_labels=OBS_LABELS_WITH_UNITS,
                 dt=cfg.dt,
                 out_path=ppc_path,
                 max_trajs=20,
@@ -2455,13 +2456,23 @@ def run_real_data_evaluation(
     )
     print(f"[REAL] PPC shapes: y_real={y_real.shape}, y_ppc={y_ppc.shape}")
 
+    # Save raw PPC arrays so figures can be regenerated without re-running inference
+    ppc_data_path = exp_dir / "ppc_real_data.npz"
+    np.savez_compressed(
+        ppc_data_path,
+        y_real=y_real.astype(np.float32),
+        y_ppc=y_ppc.astype(np.float32),
+        dt=np.array(cfg.dt),
+    )
+    print(f"[REAL] Saved PPC arrays to {ppc_data_path}")
+
     # Plot PPC time-series on real segment
     if not cfg.no_plots:
         ppc_path = fig_dir / "ppc_timeseries_real.png"
         plot_ppc_trajectories(
             y_real=y_real,
             y_ppc=y_ppc,
-            obs_labels=OBS_LABELS,
+            obs_labels=OBS_LABELS_WITH_UNITS,
             dt=cfg.dt,
             out_path=ppc_path,
             max_trajs=20,
@@ -2489,7 +2500,7 @@ def run_real_data_evaluation(
             plot_ppc_trajectories(
                 y_real=y_sim,
                 y_ppc=y_ppc_sim,
-                obs_labels=OBS_LABELS,
+                obs_labels=OBS_LABELS_WITH_UNITS,
                 dt=cfg.dt,
                 out_path=ppc_sim_path,
                 max_trajs=20,
@@ -2693,6 +2704,14 @@ def run_multi_trajectory_ppc(
 
         print(f"  PPC shapes: y_real={y_real.shape}, y_ppc={y_ppc.shape}")
 
+        # Save raw arrays for this trajectory (enables replot without re-inference)
+        np.savez_compressed(
+            ppc_fig_dir / f"ppc_{traj_name}_data.npz",
+            y_real=y_real.astype(np.float32),
+            y_ppc=y_ppc.astype(np.float32),
+            dt=np.array(cfg.dt),
+        )
+
         # Plot PPC for this trajectory
         if not cfg.no_plots:
             ppc_path = ppc_fig_dir / f"ppc_{traj_name}.png"
@@ -2702,7 +2721,7 @@ def run_multi_trajectory_ppc(
             plot_ppc_trajectories(
                 y_real=y_real,
                 y_ppc=y_ppc,
-                obs_labels=OBS_LABELS,
+                obs_labels=OBS_LABELS_WITH_UNITS,
                 dt=cfg.dt,
                 out_path=ppc_path,
                 max_trajs=20,
