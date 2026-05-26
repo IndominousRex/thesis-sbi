@@ -1574,6 +1574,15 @@ def run_parameter_posterior_plots(
                 out_path=grid_path,
                 example_id=f"ex{ex_idx}",
             )
+            # Save raw arrays for defense re-plotting (ex0 only to keep disk usage low)
+            if ex_idx == 0:
+                np.savez_compressed(
+                    fig_dir / "prior_posterior_data_ex0.npz",
+                    prior_samples=prior_pool_np.astype(np.float32),
+                    posterior_samples=theta_post_np.astype(np.float32),
+                    theta_true=theta_true_np.astype(np.float32),
+                    param_names=np.array(param_names),
+                )
             posterior_summary = _posterior_case_summary(
                 theta_true_np=theta_true_np,
                 theta_samples_np=theta_post_np,
@@ -1639,6 +1648,15 @@ def run_parameter_posterior_plots(
             out_path=grid_path,
             example_id=f"ex{ex_idx}",
         )
+        # Save raw arrays for defense re-plotting (ex0 only to keep disk usage low)
+        if ex_idx == 0:
+            np.savez_compressed(
+                fig_dir / "prior_posterior_data_ex0.npz",
+                prior_samples=prior_pool_np.astype(np.float32),
+                posterior_samples=theta_post_np.astype(np.float32),
+                theta_true=theta_true_np.astype(np.float32),
+                param_names=np.array(param_names),
+            )
         posterior_summary = _posterior_case_summary(
             theta_true_np=theta_true_np,
             theta_samples_np=theta_post_np,
