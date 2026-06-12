@@ -42,4 +42,4 @@ notes/
 tmp/
 experiments/
 .claude/
-.claude_cache/
+.claude_cache/data/
