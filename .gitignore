@@ -43,3 +43,9 @@ tmp/
 experiments/
 .claude/
 .claude_cache/data/
+/code/markovsbi/
+/code/simformer-main/
+/admin/
+/presentations/
+/text/
+EOF
